@@ -2,7 +2,10 @@ import { join } from 'path';
 
 export default () => ({
   port: parseInt(process.env.PORT ?? '3001', 10),
-  corsOrigin: process.env.CORS_ORIGIN ?? 'http://localhost:3000',
+  // Defaults to the deployed Vercel frontend so CORS works out of the box without setting
+  // CORS_ORIGIN on Render's dashboard; override with CORS_ORIGIN for local dev against
+  // localhost:3000 (see .env.example) or a different frontend deployment.
+  corsOrigin: process.env.CORS_ORIGIN ?? 'https://iames-students-club-roan.vercel.app',
   mongodbUri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017/college-social',
   // Where local (non-S3) uploads live and get served from. On Render this points at the mounted
   // persistent disk (see render.yaml) so files survive redeploys/restarts.
@@ -22,7 +25,7 @@ export default () => ({
     apiKey: process.env.RESEND_API_KEY ?? '',
     fromEmail: process.env.RESEND_FROM_EMAIL ?? '',
   },
-  frontendUrl: process.env.FRONTEND_URL ?? 'http://localhost:3000',
+  frontendUrl: process.env.FRONTEND_URL ?? 'https://iames-students-club-roan.vercel.app',
   aws: {
     region: process.env.AWS_REGION ?? '',
     accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',

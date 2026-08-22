@@ -37,7 +37,7 @@ interface CallSignalPayload {
 // This same socket also carries group-channel traffic (joinChannel/sendChannelMessage/channelTyping)
 // and WebRTC call signaling (callUser/answerCall/iceCandidate/endCall/rejectCall).
 @WebSocketGateway({
-  cors: { origin: process.env.CORS_ORIGIN ?? 'http://localhost:3000', credentials: true },
+  cors: { origin: process.env.CORS_ORIGIN ?? 'https://iames-students-club-roan.vercel.app', credentials: true },
   namespace: '/chat',
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
