@@ -6,6 +6,7 @@ import * as cookieParser from 'cookie-parser';
 import { Model } from 'mongoose';
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
+import { corsOriginValidator } from './common/cors-origin';
 import { User, UserDocument } from './users/schemas/user.schema';
 import { SELECTABLE_DEPARTMENTS } from './common/enums/department.enum';
 import { ACADEMIC_YEARS } from './common/enums/academic-year.enum';
@@ -58,7 +59,7 @@ async function bootstrap() {
   app.useGlobalFilters(new HttpExceptionFilter());
 
   app.enableCors({
-    origin: config.get<string>('corsOrigin'),
+    origin: corsOriginValidator,
     credentials: true,
   });
 

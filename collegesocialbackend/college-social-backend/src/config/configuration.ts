@@ -2,10 +2,8 @@ import { join } from 'path';
 
 export default () => ({
   port: parseInt(process.env.PORT ?? '3001', 10),
-  // Defaults to the deployed Vercel frontend so CORS works out of the box without setting
-  // CORS_ORIGIN on Render's dashboard; override with CORS_ORIGIN for local dev against
-  // localhost:3000 (see .env.example) or a different frontend deployment.
-  corsOrigin: process.env.CORS_ORIGIN ?? 'https://iames-students-club-roan.vercel.app',
+  // CORS is handled by src/common/cors-origin.ts (pattern-matches any *.vercel.app alias for
+  // this project), not read from config -- see main.ts/chat.gateway.ts.
   mongodbUri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017/college-social',
   // Where local (non-S3) uploads live and get served from. On Render this points at the mounted
   // persistent disk (see render.yaml) so files survive redeploys/restarts.

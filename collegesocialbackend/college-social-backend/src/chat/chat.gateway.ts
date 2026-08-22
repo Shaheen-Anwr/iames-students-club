@@ -21,6 +21,7 @@ import { CreateChannelMessageDto } from '../groups/dto/create-channel-message.dt
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { UsersService } from '../users/users.service';
 import { Role } from '../common/enums/role.enum';
+import { corsOriginValidator } from '../common/cors-origin';
 
 interface AuthedSocket extends Socket {
   data: { userId: string; collegeId: string; role: string };
@@ -37,7 +38,7 @@ interface CallSignalPayload {
 // This same socket also carries group-channel traffic (joinChannel/sendChannelMessage/channelTyping)
 // and WebRTC call signaling (callUser/answerCall/iceCandidate/endCall/rejectCall).
 @WebSocketGateway({
-  cors: { origin: process.env.CORS_ORIGIN ?? 'https://iames-students-club-roan.vercel.app', credentials: true },
+  cors: { origin: corsOriginValidator, credentials: true },
   namespace: '/chat',
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
