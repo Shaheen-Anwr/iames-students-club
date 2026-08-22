@@ -1,0 +1,50 @@
+services:
+  - type: web
+    name: college-social-backend
+    runtime: node
+    plan: starter
+    buildCommand: npm install && npm run build
+    startCommand: npm run start:prod
+    healthCheckPath: /api
+    # Persistent disk for uploaded photos/lectures/videos/audio (s3.service.ts falls back to
+    # local disk under ./uploads when AWS_* env vars are unset). Free-tier services can't attach
+    # disks, hence "starter" above -- without this, every deploy/restart/idle-spindown would wipe
+    # anything users had uploaded.
+    disk:
+      name: uploads
+      mountPath: /var/data/uploads
+      sizeGB: 1
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: UPLOADS_DIR
+        value: /var/data/uploads
+      # Everything below must be filled in on the Render dashboard (Environment tab) --
+      # values are left out of this file on purpose since they're secrets / deployment-specific.
+      - key: MONGODB_URI
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_EXPIRES_IN
+        value: 15m
+      - key: REFRESH_TOKEN_EXPIRES_IN_DAYS
+        value: "30"
+      - key: CORS_ORIGIN
+        sync: false
+      - key: FRONTEND_URL
+        sync: false
+      - key: MAX_FILE_SIZE_MB
+        value: "200"
+      - key: COLLEGE_EMAIL_DOMAIN
+        sync: false
+      - key: RESEND_API_KEY
+        sync: false
+      - key: RESEND_FROM_EMAIL
+        sync: false
+      # No AWS_* vars: left unset, uploads use the persistent disk above instead of S3.
+      - key: AI_API_KEY
+        sync: false
+      - key: AI_BASE_URL
+        value: https://api.groq.com/openai/v1
+      - key: AI_MODEL
+        value: openai/gpt-oss-120b

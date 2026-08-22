@@ -1,0 +1,405 @@
+'use client';
+
+import { useEffect, useRef, useState } from 'react';
+import Link from 'next/link';
+import { ArrowRight, Image as ImageIcon, MessageCircle, Phone, Search, Video, X } from 'lucide-react';
+import { Avatar } from '@/components/ui/Avatar';
+import { RoleBadge } from '@/components/ui/Badge';
+import { Spinner } from '@/components/ui/Spinner';
+import { Input } from '@/components/ui/Input';
+import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { useSocket } from '@/lib/socket-context';
+import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/chat-helpers';
+import { assetUrl } from '@/lib/utils';
+import { chatBackgroundStyle, useChatBackground } from '@/lib/chat-background';
+import type { Attachment, Message } from '@/lib/types';
+import { useChat } from './ChatProvider';
+import { useCall } from './CallProvider';
+import { MessageBubble } from './MessageBubble';
+import { MessageInput } from './MessageInput';
+import { ForwardModal } from './ForwardModal';
+import { GroupInfoPanel } from './GroupInfoPanel';
+import { ChatBackgroundModal } from './ChatBackgroundModal';
+
+let typingTimeout: ReturnType<typeof setTimeout> | null = null;
+
+export function ChatWindow({ conversationId }: { conversationId: string }) {
+  const { user } = useAuth();
+  const { socket } = useSocket();
+  const { findConversation, refresh } = useChat();
+  const { startCall } = useCall();
+  const conversation = findConversation(conversationId);
+
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [typing, setTyping] = useState(false);
+  const [replyingTo, setReplyingTo] = useState<Message | null>(null);
+  const [editingMessage, setEditingMessage] = useState<Message | null>(null);
+  const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [searchResults, setSearchResults] = useState<Message[]>([]);
+  const [backgroundModalOpen, setBackgroundModalOpen] = useState(false);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const { background, setBackground } = useChatBackground(conversationId);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    api.get<Message[]>(`/chat/conversations/${conversationId}/messages?limit=50`).then((data) => {
+      if (cancelled) return;
+      setMessages([...data].reverse());
+      setLoading(false);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (!socket) return;
+    socket.emit('joinConversation', conversationId);
+    socket.emit('markRead', conversationId);
+    socket.emit('markDelivered', conversationId);
+
+    const onNewMessage = (message: Message) => {
+      if (message.conversation !== conversationId) return;
+      setMessages((prev) => (prev.some((m) => m._id === message._id) ? prev : [...prev, message]));
+      if (message.sender?._id !== user?._id) {
+        socket.emit('markRead', conversationId);
+        socket.emit('markDelivered', conversationId);
+      }
+    };
+
+    const onMessageEdited = (message: Message) => {
+      if (message.conversation !== conversationId) return;
+      setMessages((prev) => prev.map((m) => (m._id === message._id ? message : m)));
+    };
+
+    const onMessageDeleted = (payload: { message: Message; forEveryone: boolean }) => {
+      if (payload.message.conversation !== conversationId) return;
+      if (payload.forEveryone) {
+        setMessages((prev) => prev.map((m) => (m._id === payload.message._id ? payload.message : m)));
+      } else {
+        // "Delete for me" -- the message still exists for other participants, just not for us.
+        setMessages((prev) => prev.filter((m) => m._id !== payload.message._id));
+      }
+    };
+
+    const onMessageReacted = (message: Message) => {
+      if (message.conversation !== conversationId) return;
+      setMessages((prev) => prev.map((m) => (m._id === message._id ? message : m)));
+    };
+
+    const onMessagesRead = (payload: { conversationId: string; userId: string; messageIds: string[] }) => {
+      if (payload.conversationId !== conversationId) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          payload.messageIds.includes(m._id) ? { ...m, readBy: [...new Set([...(m.readBy ?? []), payload.userId])] } : m,
+        ),
+      );
+    };
+
+    const onMessagesDelivered = (payload: { conversationId: string; userId: string; messageIds: string[] }) => {
+      if (payload.conversationId !== conversationId) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          payload.messageIds.includes(m._id)
+            ? { ...m, deliveredTo: [...new Set([...(m.deliveredTo ?? []), payload.userId])] }
+            : m,
+        ),
+      );
+    };
+
+    const onTyping = (payload: { conversationId: string; userId: string }) => {
+      if (payload.conversationId !== conversationId || payload.userId === user?._id) return;
+      setTyping(true);
+      if (typingTimeout) clearTimeout(typingTimeout);
+      typingTimeout = setTimeout(() => setTyping(false), 2000);
+    };
+
+    const onStopTyping = (payload: { conversationId: string; userId: string }) => {
+      if (payload.conversationId !== conversationId || payload.userId === user?._id) return;
+      setTyping(false);
+    };
+
+    socket.on('newMessage', onNewMessage);
+    socket.on('messageEdited', onMessageEdited);
+    socket.on('messageDeleted', onMessageDeleted);
+    socket.on('messageReacted', onMessageReacted);
+    socket.on('messagesRead', onMessagesRead);
+    socket.on('messagesDelivered', onMessagesDelivered);
+    socket.on('userTyping', onTyping);
+    socket.on('userStopTyping', onStopTyping);
+    return () => {
+      socket.off('newMessage', onNewMessage);
+      socket.off('messageEdited', onMessageEdited);
+      socket.off('messageDeleted', onMessageDeleted);
+      socket.off('messageReacted', onMessageReacted);
+      socket.off('messagesRead', onMessagesRead);
+      socket.off('messagesDelivered', onMessagesDelivered);
+      socket.off('userTyping', onTyping);
+      socket.off('userStopTyping', onStopTyping);
+    };
+  }, [socket, conversationId, user?._id]);
+
+  useEffect(() => {
+    if (!searchOpen) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [messages.length, searchOpen]);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const handle = setTimeout(async () => {
+      const results = await api.get<Message[]>(
+        `/chat/conversations/${conversationId}/search?q=${encodeURIComponent(searchQuery.trim())}`,
+      );
+      setSearchResults(results);
+    }, 300);
+    return () => clearTimeout(handle);
+  }, [searchQuery, conversationId]);
+
+  function handleSend(text: string, attachments?: Attachment[], replyTo?: string) {
+    if (!socket) return;
+    socket.emit('sendMessage', { conversationId, text, attachments, replyTo });
+    socket.emit('stopTyping', conversationId);
+  }
+
+  function handleTyping() {
+    socket?.emit('typing', conversationId);
+  }
+
+  function handleStopTyping() {
+    socket?.emit('stopTyping', conversationId);
+  }
+
+  function handleReact(message: Message, emoji: string) {
+    socket?.emit('reactToMessage', { messageId: message._id, emoji });
+  }
+
+  function handleSubmitEdit(messageId: string, text: string) {
+    socket?.emit('editMessage', { messageId, text });
+    setEditingMessage(null);
+  }
+
+  async function handleDelete(message: Message, forEveryone: boolean) {
+    socket?.emit('deleteMessage', { messageId: message._id, forEveryone });
+  }
+
+  async function handleForwardConfirm(conversationIds: string[]) {
+    if (!forwardTarget) return;
+    socket?.emit('forwardMessage', { messageId: forwardTarget._id, conversationIds });
+    setForwardTarget(null);
+  }
+
+  async function handleToggleStar(message: Message) {
+    const isStarred = message.starredBy?.includes(user!._id);
+    const updated = isStarred
+      ? await api.delete<Message>(`/chat/messages/${message._id}/star`)
+      : await api.post<Message>(`/chat/messages/${message._id}/star`);
+    setMessages((prev) => prev.map((m) => (m._id === updated._id ? updated : m)));
+  }
+
+  function jumpToReply(messageId: string) {
+    messageRefs.current[messageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    const el = messageRefs.current[messageId];
+    if (el) {
+      el.classList.add('ring-2', 'ring-accent', 'rounded-2xl');
+      setTimeout(() => el.classList.remove('ring-2', 'ring-accent', 'rounded-2xl'), 1200);
+    }
+  }
+
+  async function handleCall(callType: 'audio' | 'video') {
+    if (!conversation || conversation.isGroup) return;
+    const other = conversationAvatarUser(conversation, user!._id);
+    if (!other) return;
+    await startCall({ userId: other._id, name: other.name, photoUrl: other.photoUrl }, conversationId, callType);
+  }
+
+  if (!user) return null;
+
+  const title = conversation ? conversationTitle(conversation, user._id) : 'جارٍ التحميل…';
+  const avatarUser = conversation ? conversationAvatarUser(conversation, user._id) : undefined;
+  const presence = !conversation?.isGroup ? presenceLabel(avatarUser) : null;
+
+  return (
+    <div className="flex h-full min-h-0 flex-col">
+      <div className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3.5">
+        <Link
+          href="/chat"
+          className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground lg:hidden"
+        >
+          <ArrowRight className="h-5 w-5" />
+        </Link>
+        <button onClick={() => setInfoOpen(true)} className="flex min-w-0 flex-1 items-center gap-3 text-start">
+          <Avatar src={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)} name={title} size="sm" />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-semibold text-foreground">{title}</p>
+            <p className="text-xs text-muted-foreground">
+              {typing ? (
+                <span className="animate-fade-in text-accent">يكتب الآن…</span>
+              ) : conversation?.isGroup ? (
+                `${conversation.participants.length} أعضاء`
+              ) : presence ? (
+                presence
+              ) : avatarUser ? (
+                <RoleBadge role={avatarUser.role} />
+              ) : null}
+            </p>
+          </div>
+        </button>
+        {!conversation?.isGroup && (
+          <>
+            <button
+              onClick={() => handleCall('audio')}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+            >
+              <Phone className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => handleCall('video')}
+              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+            >
+              <Video className="h-4 w-4" />
+            </button>
+          </>
+        )}
+        <button
+          onClick={() => setBackgroundModalOpen(true)}
+          title="خلفية المحادثة"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+        >
+          <ImageIcon className="h-4 w-4" />
+        </button>
+        <button
+          onClick={() => setSearchOpen((v) => !v)}
+          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+        >
+          <Search className="h-4 w-4" />
+        </button>
+      </div>
+
+      {searchOpen && (
+        <div className="border-b border-border bg-surface px-4 py-2.5">
+          <div className="flex items-center gap-2">
+            <Input
+              autoFocus
+              placeholder="ابحث في المحادثة"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="flex-1"
+            />
+            <button
+              onClick={() => {
+                setSearchOpen(false);
+                setSearchQuery('');
+              }}
+              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-2"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          {searchQuery.trim() && (
+            <div className="mt-2 max-h-56 space-y-1 overflow-y-auto scrollbar-thin">
+              {searchResults.length === 0 ? (
+                <p className="py-3 text-center text-xs text-muted-foreground">لا نتائج</p>
+              ) : (
+                searchResults.map((m) => (
+                  <button
+                    key={m._id}
+                    onClick={() => {
+                      setSearchOpen(false);
+                      jumpToReply(m._id);
+                    }}
+                    className="block w-full truncate rounded-lg px-2.5 py-2 text-start text-sm hover:bg-surface-2"
+                  >
+                    <span className="font-medium text-foreground">{m.sender?.name ?? 'مستخدم محذوف'}: </span>
+                    <span className="text-muted-foreground">{m.text}</span>
+                  </button>
+                ))
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
+      <div
+        className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-surface-2 px-4 py-5 scrollbar-thin sm:px-6"
+        style={chatBackgroundStyle(background)}
+      >
+        {loading || !conversation ? (
+          <div className="flex h-full items-center justify-center">
+            <Spinner className="h-6 w-6" />
+          </div>
+        ) : messages.length === 0 ? (
+          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2/70">
+              <MessageCircle className="h-6 w-6 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-foreground">لا توجد رسائل بعد</p>
+              <p className="mt-1 text-xs text-muted-foreground">قل مرحبًا وابدأ المحادثة 👋</p>
+            </div>
+          </div>
+        ) : (
+          messages.map((message, index) => {
+            const prev = messages[index - 1];
+            const isOwn = message.sender?._id === user._id;
+            const showAvatar = !prev || prev.sender?._id !== message.sender?._id;
+            return (
+              <div key={message._id} ref={(el) => { messageRefs.current[message._id] = el; }} className="transition-all">
+                <MessageBubble
+                  message={message}
+                  isOwn={isOwn}
+                  showAvatar={showAvatar}
+                  conversation={conversation}
+                  currentUserId={user._id}
+                  onReply={setReplyingTo}
+                  onEdit={setEditingMessage}
+                  onDelete={handleDelete}
+                  onReact={handleReact}
+                  onForward={setForwardTarget}
+                  onToggleStar={handleToggleStar}
+                  onJumpToReply={jumpToReply}
+                />
+              </div>
+            );
+          })
+        )}
+        <div ref={bottomRef} />
+      </div>
+
+      <MessageInput
+        onSend={handleSend}
+        onTyping={handleTyping}
+        onStopTyping={handleStopTyping}
+        replyingTo={replyingTo}
+        onCancelReply={() => setReplyingTo(null)}
+        editingMessage={editingMessage}
+        onCancelEdit={() => setEditingMessage(null)}
+        onSubmitEdit={handleSubmitEdit}
+      />
+
+      <ForwardModal open={!!forwardTarget} onClose={() => setForwardTarget(null)} onForward={handleForwardConfirm} />
+      <ChatBackgroundModal
+        open={backgroundModalOpen}
+        onClose={() => setBackgroundModalOpen(false)}
+        background={background}
+        onChange={setBackground}
+      />
+      {conversation && (
+        <GroupInfoPanel
+          open={infoOpen}
+          onClose={() => setInfoOpen(false)}
+          conversation={conversation}
+          onChanged={refresh}
+        />
+      )}
+    </div>
+  );
+}

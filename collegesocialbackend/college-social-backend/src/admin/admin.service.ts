@@ -1,0 +1,178 @@
+import { BadRequestException, Injectable } from '@nestjs/common';
+import * as bcrypt from 'bcrypt';
+import { UsersService, PaginatedUsers, UserStats } from '../users/users.service';
+import { UserDocument } from '../users/schemas/user.schema';
+import { Role } from '../common/enums/role.enum';
+import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { PostsService, PaginatedPosts, PostStats } from '../posts/posts.service';
+import { GroupsService, GroupStats } from '../groups/groups.service';
+import { QuizzesService, QuizStats } from '../quizzes/quizzes.service';
+import { AssignmentsService, AssignmentStats } from '../assignments/assignments.service';
+import { AnnouncementsService, AnnouncementStats } from '../announcements/announcements.service';
+import { GamificationService, GamificationStats } from '../gamification/gamification.service';
+import { QaService, QaStats } from '../qa/qa.service';
+import { ChatService, ChatStats } from '../chat/chat.service';
+import { AiConversationsService, AiConversationStats } from '../ai/ai-conversations.service';
+import { LectureIndexService, LectureIndexStats } from '../ai/lecture-index.service';
+import { ScheduleService, ScheduleStats } from '../schedule/schedule.service';
+import { PlannerService, PlannerStats } from '../planner/planner.service';
+import { NotificationsService, NotificationStats } from '../notifications/notifications.service';
+import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
+
+const SALT_ROUNDS = 10;
+
+export interface AdminOverviewStats {
+  users: UserStats;
+  posts: PostStats;
+  groups: GroupStats;
+  quizzes: QuizStats;
+  assignments: AssignmentStats;
+  announcements: AnnouncementStats;
+  gamification: GamificationStats;
+  qa: QaStats;
+  chat: ChatStats;
+  ai: AiConversationStats & { lectureIndex: LectureIndexStats };
+  schedule: ScheduleStats;
+  planner: PlannerStats;
+  notifications: NotificationStats;
+}
+
+@Injectable()
+export class AdminService {
+  constructor(
+    private readonly usersService: UsersService,
+    private readonly postsService: PostsService,
+    private readonly groupsService: GroupsService,
+    private readonly quizzesService: QuizzesService,
+    private readonly assignmentsService: AssignmentsService,
+    private readonly announcementsService: AnnouncementsService,
+    private readonly gamificationService: GamificationService,
+    private readonly qaService: QaService,
+    private readonly chatService: ChatService,
+    private readonly aiConversationsService: AiConversationsService,
+    private readonly lectureIndexService: LectureIndexService,
+    private readonly scheduleService: ScheduleService,
+    private readonly plannerService: PlannerService,
+    private readonly notificationsService: NotificationsService,
+    private readonly realtimeEmitter: RealtimeEmitterService,
+  ) {}
+
+  async listUsers(page: number, limit: number, search?: string, verified?: boolean): Promise<PaginatedUsers> {
+    return this.usersService.findAllPaginated(page, limit, search, verified);
+  }
+
+  async verifyEmail(id: string): Promise<UserDocument> {
+    return this.usersService.setEmailVerified(id);
+  }
+
+  async listPosts(page: number, limit: number, search?: string): Promise<PaginatedPosts> {
+    return this.postsService.adminListPosts(page, limit, search);
+  }
+
+  async removePost(id: string): Promise<void> {
+    await this.postsService.adminRemovePost(id);
+    this.realtimeEmitter.emitToAdmins('admin:activity', {
+      type: 'moderation',
+      summary: 'قام مدير بحذف منشور',
+      at: new Date(),
+    });
+  }
+
+  async getStats(): Promise<AdminOverviewStats> {
+    const [
+      users,
+      posts,
+      groups,
+      quizzes,
+      assignments,
+      announcements,
+      gamification,
+      qa,
+      chat,
+      aiConversations,
+      lectureIndex,
+      schedule,
+      planner,
+      notifications,
+    ] = await Promise.all([
+      this.usersService.getStats(),
+      this.postsService.getStats(),
+      this.groupsService.getStats(),
+      this.quizzesService.getStats(),
+      this.assignmentsService.getStats(),
+      this.announcementsService.getStats(),
+      this.gamificationService.getStats(),
+      this.qaService.getStats(),
+      this.chatService.getStats(),
+      this.aiConversationsService.getStats(),
+      this.lectureIndexService.getStats(),
+      this.scheduleService.getStats(),
+      this.plannerService.getStats(),
+      this.notificationsService.getStats(),
+    ]);
+    return {
+      users,
+      posts,
+      groups,
+      quizzes,
+      assignments,
+      announcements,
+      gamification,
+      qa,
+      chat,
+      ai: { ...aiConversations, lectureIndex },
+      schedule,
+      planner,
+      notifications,
+    };
+  }
+
+  async updateRole(id: string, role: Role, actor: AuthenticatedUser): Promise<UserDocument> {
+    if (id === actor.userId && role !== Role.ADMIN) {
+      throw new BadRequestException('لا يمكنك إزالة صلاحية المدير عن نفسك');
+    }
+    if (role !== Role.ADMIN) {
+      await this.assertNotLastAdmin(id);
+    }
+    return this.usersService.updateRole(id, role);
+  }
+
+  async updateActive(id: string, isActive: boolean, actor: AuthenticatedUser): Promise<UserDocument> {
+    if (id === actor.userId && !isActive) {
+      throw new BadRequestException('لا يمكنك إيقاف حسابك الخاص');
+    }
+    if (!isActive) {
+      await this.assertNotLastAdmin(id);
+    }
+    return this.usersService.updateActive(id, isActive);
+  }
+
+  async setPassword(id: string, password: string): Promise<UserDocument> {
+    const passwordHash = await bcrypt.hash(password, SALT_ROUNDS);
+    return this.usersService.updatePasswordHash(id, passwordHash);
+  }
+
+  async remove(id: string, actor: AuthenticatedUser): Promise<void> {
+    if (id === actor.userId) {
+      throw new BadRequestException('لا يمكنك حذف حسابك الخاص');
+    }
+    await this.assertNotLastAdmin(id);
+    await this.usersService.remove(id);
+    this.realtimeEmitter.emitToAdmins('admin:activity', {
+      type: 'moderation',
+      summary: 'قام مدير بحذف حساب مستخدم',
+      at: new Date(),
+    });
+  }
+
+  // Guards against locking everyone out by demoting/deactivating/deleting the only admin.
+  private async assertNotLastAdmin(targetId: string): Promise<void> {
+    const target = await this.usersService.findById(targetId);
+    if (target.role !== Role.ADMIN) return;
+
+    const adminCount = await this.usersService.countAdmins();
+    if (adminCount <= 1) {
+      throw new BadRequestException('لا يمكن إزالة آخر مدير متبقٍ');
+    }
+  }
+}
