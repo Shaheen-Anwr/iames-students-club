@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Logo } from '@/components/ui/Logo';
+import { ForgotPasswordModal } from './ForgotPasswordModal';
 
 export function LoginForm() {
   const { login } = useAuth();
@@ -20,6 +21,7 @@ export function LoginForm() {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [forgotPasswordOpen, setForgotPasswordOpen] = useState(false);
 
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
@@ -67,6 +69,16 @@ export function LoginForm() {
           required
         />
 
+        <div className="flex justify-end">
+          <button
+            type="button"
+            onClick={() => setForgotPasswordOpen(true)}
+            className="text-sm font-medium text-accent hover:text-foreground"
+          >
+            نسيت كلمة المرور؟
+          </button>
+        </div>
+
         {error && (
           <p className="rounded-lg bg-danger/10 px-3 py-2 text-sm text-danger" role="alert">
             {error}
@@ -84,6 +96,8 @@ export function LoginForm() {
           أنشئ حسابًا جديدًا
         </Link>
       </p>
+
+      <ForgotPasswordModal open={forgotPasswordOpen} onClose={() => setForgotPasswordOpen(false)} />
     </div>
   );
 }

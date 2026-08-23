@@ -40,5 +40,9 @@ export default () => ({
     // above may not support image input). Left blank, the assistant tells the student vision
     // isn't configured yet instead of silently sending an image to a model that can't read it.
     visionModel: process.env.AI_VISION_MODEL ?? '',
+    // Max user messages a single student can send to the AI assistant per calendar day, across all
+    // their conversations -- protects the provider quota/bill from a single runaway user. See
+    // AiConversationsService.sendMessageStream.
+    dailyMessageQuota: parseInt(process.env.AI_DAILY_MESSAGE_QUOTA ?? '40', 10),
   },
 });

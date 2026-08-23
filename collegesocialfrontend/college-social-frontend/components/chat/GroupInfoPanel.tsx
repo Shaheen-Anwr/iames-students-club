@@ -12,6 +12,7 @@ import {
   Pencil,
   Pin,
   Search,
+  ShieldOff,
   Timer,
   Trash2,
   UserPlus,
@@ -45,7 +46,7 @@ interface GroupInfoPanelProps {
 }
 
 export function GroupInfoPanel({ open, onClose, conversation, onChanged }: GroupInfoPanelProps) {
-  const { user } = useAuth();
+  const { user, updateLocalUser } = useAuth();
   const { showToast } = useToast();
   const router = useRouter();
   const isAdmin = user ? isGroupAdmin(conversation, user._id) : false;
@@ -134,6 +135,25 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
     await run(() => api.delete(`/chat/conversations/${conversation._id}/messages`));
   }
 
+  async function deleteConversation() {
+    if (!confirm('ستختفي هذه المحادثة من قائمتك. هل تريد المتابعة؟')) return;
+    await run(() => api.delete(`/chat/conversations/${conversation._id}`));
+    onClose();
+    router.push('/chat');
+  }
+
+  async function toggleBlock() {
+    if (!others[0]) return;
+    const targetId = others[0]._id;
+    if (!blocked && !confirm('لن يتمكن هذا المستخدم من مراسلتك بعد الحظر. هل تريد المتابعة؟')) return;
+    await run(async () => {
+      const updated = blocked
+        ? await api.delete<User>(`/users/${targetId}/block`)
+        : await api.post<User>(`/users/${targetId}/block`);
+      updateLocalUser(updated);
+    });
+  }
+
   async function setDisappearing(seconds: number) {
     await run(() => api.patch(`/chat/conversations/${conversation._id}`, { disappearingSeconds: seconds }));
   }
@@ -144,6 +164,7 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
   const pinned = isPinned(conversation, user._id);
   const archived = isArchived(conversation, user._id);
   const muted = isMuted(conversation, user._id);
+  const blocked = !conversation.isGroup && !!others[0] && !!user.blockedUsers?.includes(others[0]._id);
 
   return (
     <Modal open={open} onClose={onClose} title={conversation.isGroup ? 'معلومات المجموعة' : 'معلومات جهة الاتصال'} className="max-w-lg">
@@ -345,6 +366,23 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
             className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-foreground hover:bg-surface-2"
           >
             <Trash2 className="h-4 w-4" /> مسح الرسائل
+          </button>
+          {!conversation.isGroup && (
+            <button
+              onClick={toggleBlock}
+              className={cn(
+                'flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm hover:bg-surface-2',
+                blocked ? 'text-accent' : 'text-foreground',
+              )}
+            >
+              <ShieldOff className="h-4 w-4" /> {blocked ? 'إلغاء حظر المستخدم' : 'حظر المستخدم'}
+            </button>
+          )}
+          <button
+            onClick={deleteConversation}
+            className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-danger hover:bg-danger/10"
+          >
+            <Trash2 className="h-4 w-4" /> حذف المحادثة
           </button>
           {conversation.isGroup && (
             <button

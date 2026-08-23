@@ -79,6 +79,12 @@ export class Conversation {
   @Prop({ type: [ClearedEntrySchema], default: [] })
   clearedBy: ClearedEntry[];
 
+  // "Delete chat" -- hides the conversation from this user's list entirely (unlike archivedBy,
+  // which just moves it to the Archived tab). Cleared automatically the next time a message
+  // lands in the conversation (see ChatService.saveMessage), so it reappears like a fresh chat.
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  deletedBy: Types.ObjectId[];
+
   // Seconds after which new messages auto-delete for everyone; 0/null = disabled.
   @Prop({ type: Number, default: 0 })
   disappearingSeconds: number;

@@ -42,4 +42,33 @@ export class EmailService {
       this.logger.warn(`Failed to send verification email to ${to}: ${err instanceof Error ? err.message : err}`);
     }
   }
+
+  // Never throws, same reasoning as sendVerificationEmail -- a failed send shouldn't fail the
+  // forgot-password request (which returns a generic success either way, see AuthService).
+  async sendPasswordResetEmail(to: string, name: string, code: string): Promise<void> {
+    if (!this.resend) {
+      this.logger.warn(`RESEND_API_KEY not set -- skipping password reset email to ${to}. Code: ${code}`);
+      return;
+    }
+
+    try {
+      await this.resend.emails.send({
+        from: this.fromEmail,
+        to,
+        subject: `${code} هو رمز إعادة تعيين كلمة المرور`,
+        html: `
+          <div dir="rtl" style="font-family: Tahoma, Arial, sans-serif; max-width: 480px; margin: 0 auto;">
+            <h2>مرحبًا ${name}،</h2>
+            <p>استخدم الرمز التالي لإعادة تعيين كلمة المرور الخاصة بحسابك. صالح لمدة 10 دقائق.</p>
+            <p style="text-align: center; font-size: 32px; font-weight: bold; letter-spacing: 8px; background: #eef2f7; color: #1d3557; padding: 16px; border-radius: 12px; margin: 20px 0;">
+              ${code}
+            </p>
+            <p style="color: #64748b; font-size: 13px;">إذا لم تطلب إعادة تعيين كلمة المرور، تجاهل هذه الرسالة -- حسابك آمن ولن يتغيّر شيء.</p>
+          </div>
+        `,
+      });
+    } catch (err) {
+      this.logger.warn(`Failed to send password reset email to ${to}: ${err instanceof Error ? err.message : err}`);
+    }
+  }
 }

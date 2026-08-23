@@ -54,6 +54,10 @@ export class ChatService {
 
     // For 1-to-1 chats, reuse an existing conversation instead of creating duplicates
     if (!isGroup && participantIds.length === 2) {
+      const [a, b] = participantIds;
+      if (await this.usersService.areBlocked(a, b)) {
+        throw new ForbiddenException('لا يمكن بدء محادثة مع هذا المستخدم');
+      }
       const existing = await this.conversationModel
         .findOne({
           isGroup: false,
@@ -80,7 +84,7 @@ export class ChatService {
   async listConversationsForUser(userId: string): Promise<(ConversationDocument & { unreadCount: number })[]> {
     const uid = new Types.ObjectId(userId);
     const conversations = await this.conversationModel
-      .find({ participants: uid })
+      .find({ participants: uid, deletedBy: { $ne: uid } })
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt')
       .exec();
@@ -163,6 +167,13 @@ export class ChatService {
       throw new BadRequestException('لا يمكن إرسال رسالة فارغة');
     }
 
+    if (!conversation.isGroup) {
+      const other = conversation.participants.find((p) => p.toString() !== senderId);
+      if (other && (await this.usersService.areBlocked(senderId, other.toString()))) {
+        throw new ForbiddenException('لا يمكنك إرسال رسالة إلى هذا المستخدم');
+      }
+    }
+
     // A mention only counts if that user is actually a participant of this conversation --
     // otherwise it's a stale/tampered token and gets silently dropped, same as an invalid user id.
     const participantIds = new Set(conversation.participants.map((p) => p.toString()));
@@ -182,10 +193,12 @@ export class ChatService {
     }).save();
 
     const previewText = text?.slice(0, 120) || this.attachmentPreview(attachments);
+    // A new message "revives" the conversation for anyone who had deleted it -- same behavior
+    // as most chat apps, where deleting only hides it until the next incoming message.
     await this.conversationModel
       .findByIdAndUpdate(conversationId, {
-        lastMessagePreview: previewText,
-        lastMessageAt: new Date(),
+        $set: { lastMessagePreview: previewText, lastMessageAt: new Date() },
+        $pull: { deletedBy: { $in: conversation.participants } },
       })
       .exec();
 
@@ -490,6 +503,20 @@ export class ChatService {
       ...conversation.clearedBy.filter((c) => c.user.toString() !== userId),
       { user: new Types.ObjectId(userId), at: new Date() },
     ];
+    await conversation.save();
+  }
+
+  // "Delete chat" -- hides the conversation from this user's list (see listConversationsForUser)
+  // and clears its history for them, same as clearChat. Reappears automatically the next time a
+  // message lands in it (see the $pull in saveMessage above).
+  async deleteConversation(conversationId: string, userId: string): Promise<void> {
+    const conversation = await this.assertParticipant(conversationId, userId);
+    const uid = new Types.ObjectId(userId);
+    conversation.clearedBy = [
+      ...conversation.clearedBy.filter((c) => c.user.toString() !== userId),
+      { user: uid, at: new Date() },
+    ];
+    if (!conversation.deletedBy.some((d) => d.toString() === userId)) conversation.deletedBy.push(uid);
     await conversation.save();
   }
 

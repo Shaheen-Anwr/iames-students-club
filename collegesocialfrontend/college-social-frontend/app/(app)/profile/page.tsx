@@ -4,6 +4,8 @@ import { useState } from 'react';
 import { useAuth } from '@/lib/auth-context';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { EditProfileForm } from '@/components/profile/EditProfileForm';
+import { ChangePasswordForm } from '@/components/profile/ChangePasswordForm';
+import { PersonalEmailForm } from '@/components/profile/PersonalEmailForm';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Spinner } from '@/components/ui/Spinner';
 import type { ProfileTab } from '@/components/profile/ProfileTabs';
@@ -32,7 +34,13 @@ export default function ProfilePage() {
           onTabChange={setTab}
         />
         {tab === 'posts' && <UserPostsFeed userId={user._id} />}
-        {tab === 'about' && <EditProfileForm user={user} />}
+        {tab === 'about' && (
+          <div className="space-y-4">
+            <EditProfileForm user={user} />
+            <PersonalEmailForm />
+            <ChangePasswordForm />
+          </div>
+        )}
       </div>
     </div>
   );

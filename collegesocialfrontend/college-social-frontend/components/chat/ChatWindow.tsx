@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Image as ImageIcon, MessageCircle, Phone, Search, Video, X } from 'lucide-react';
+import { ArrowRight, Image as ImageIcon, MessageCircle, Phone, Search, ShieldOff, Video, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
@@ -13,7 +13,7 @@ import { useSocket } from '@/lib/socket-context';
 import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/chat-helpers';
 import { assetUrl } from '@/lib/utils';
 import { chatBackgroundStyle, useChatBackground } from '@/lib/chat-background';
-import type { Attachment, Message } from '@/lib/types';
+import type { Attachment, Message, User } from '@/lib/types';
 import { useChat } from './ChatProvider';
 import { useCall } from './CallProvider';
 import { MessageBubble } from './MessageBubble';
@@ -25,7 +25,7 @@ import { ChatBackgroundModal } from './ChatBackgroundModal';
 let typingTimeout: ReturnType<typeof setTimeout> | null = null;
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
-  const { user } = useAuth();
+  const { user, updateLocalUser } = useAuth();
   const { socket } = useSocket();
   const { findConversation, refresh } = useChat();
   const { startCall } = useCall();
@@ -214,6 +214,12 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     }
   }
 
+  async function handleUnblock() {
+    if (!avatarUser) return;
+    const updated = await api.delete<User>(`/users/${avatarUser._id}/block`);
+    updateLocalUser(updated);
+  }
+
   async function handleCall(callType: 'audio' | 'video') {
     if (!conversation || conversation.isGroup) return;
     const other = conversationAvatarUser(conversation, user!._id);
@@ -226,6 +232,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const title = conversation ? conversationTitle(conversation, user._id) : 'جارٍ التحميل…';
   const avatarUser = conversation ? conversationAvatarUser(conversation, user._id) : undefined;
   const presence = !conversation?.isGroup ? presenceLabel(avatarUser) : null;
+  const blockedByMe =
+    !conversation?.isGroup && !!avatarUser && !!user.blockedUsers?.includes(avatarUser._id);
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -374,16 +382,26 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         <div ref={bottomRef} />
       </div>
 
-      <MessageInput
-        onSend={handleSend}
-        onTyping={handleTyping}
-        onStopTyping={handleStopTyping}
-        replyingTo={replyingTo}
-        onCancelReply={() => setReplyingTo(null)}
-        editingMessage={editingMessage}
-        onCancelEdit={() => setEditingMessage(null)}
-        onSubmitEdit={handleSubmitEdit}
-      />
+      {blockedByMe ? (
+        <div className="flex items-center justify-center gap-2 border-t border-border bg-surface px-4 py-3.5 text-center text-sm text-muted-foreground">
+          <ShieldOff className="h-4 w-4 shrink-0" />
+          لقد قمت بحظر هذا المستخدم.
+          <button onClick={handleUnblock} className="font-medium text-accent hover:underline">
+            إلغاء الحظر
+          </button>
+        </div>
+      ) : (
+        <MessageInput
+          onSend={handleSend}
+          onTyping={handleTyping}
+          onStopTyping={handleStopTyping}
+          replyingTo={replyingTo}
+          onCancelReply={() => setReplyingTo(null)}
+          editingMessage={editingMessage}
+          onCancelEdit={() => setEditingMessage(null)}
+          onSubmitEdit={handleSubmitEdit}
+        />
+      )}
 
       <ForwardModal open={!!forwardTarget} onClose={() => setForwardTarget(null)} onForward={handleForwardConfirm} />
       <ChatBackgroundModal

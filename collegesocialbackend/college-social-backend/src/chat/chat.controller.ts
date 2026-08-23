@@ -139,6 +139,12 @@ export class ChatController {
     return { success: true };
   }
 
+  @Delete('conversations/:id')
+  async deleteConversation(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    await this.chatService.deleteConversation(id, user.userId);
+    return { success: true };
+  }
+
   @Get('starred')
   async listStarred(@CurrentUser() user: AuthenticatedUser) {
     return this.chatService.listStarred(user.userId);

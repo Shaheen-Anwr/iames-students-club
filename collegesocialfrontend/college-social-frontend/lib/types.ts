@@ -12,6 +12,7 @@ export interface User {
   name: string;
   collegeEmail: string;
   collegeEmailVerifiedAt?: string | null;
+  personalEmail?: string | null;
   photoUrl?: string | null;
   coverPhotoUrl?: string | null;
   role: Role;
@@ -26,6 +27,7 @@ export interface User {
   badges?: string[];
   isOnline?: boolean;
   lastSeenAt?: string | null;
+  blockedUsers?: string[];
 }
 
 export type BadgeId = 'first_post' | 'active_streak_7' | 'helpful_10' | 'assignments_5' | 'quizzes_5';

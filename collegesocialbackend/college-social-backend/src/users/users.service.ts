@@ -1,6 +1,6 @@
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import * as crypto from 'crypto';
 import { User, UserDocument } from './schemas/user.schema';
 import { RegisterDto } from '../auth/dto/register.dto';
@@ -13,6 +13,7 @@ import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 
 const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000; // 15min -- a typed OTP is meant to be used immediately
+const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000; // Shorter than email verification -- more sensitive
 
 export interface PaginatedUsers {
   data: UserDocument[];
@@ -49,6 +50,46 @@ export class UsersService {
     const user = await this.userModel.findById(id).select('-passwordHash').exec();
     if (!user) throw new NotFoundException('المستخدم غير موجود');
     return user;
+  }
+
+  // Only for password verification (see AuthService.changePassword) -- findById() above
+  // deliberately strips passwordHash for every other caller.
+  async findByIdWithPassword(id: string): Promise<UserDocument> {
+    const user = await this.userModel.findById(id).exec();
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
+  async blockUser(userId: string, targetId: string): Promise<UserDocument> {
+    if (userId === targetId) throw new BadRequestException('لا يمكنك حظر نفسك');
+    const user = await this.userModel
+      .findByIdAndUpdate(userId, { $addToSet: { blockedUsers: new Types.ObjectId(targetId) } }, { new: true })
+      .select('-passwordHash')
+      .exec();
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
+  async unblockUser(userId: string, targetId: string): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(userId, { $pull: { blockedUsers: new Types.ObjectId(targetId) } }, { new: true })
+      .select('-passwordHash')
+      .exec();
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
+  // Bidirectional: true if either side has blocked the other.
+  async areBlocked(userId: string, otherId: string): Promise<boolean> {
+    const count = await this.userModel
+      .countDocuments({
+        $or: [
+          { _id: new Types.ObjectId(userId), blockedUsers: new Types.ObjectId(otherId) },
+          { _id: new Types.ObjectId(otherId), blockedUsers: new Types.ObjectId(userId) },
+        ],
+      })
+      .exec();
+    return count > 0;
   }
 
   // The college email's local part must exactly equal the student's college ID, e.g.
@@ -137,6 +178,59 @@ export class UsersService {
     const expiresAt = new Date(Date.now() + VERIFICATION_CODE_TTL_MS);
     await this.setVerificationToken(user.id, codeHash, expiresAt);
     await this.emailService.sendVerificationEmail(user.collegeEmail, user.name, code);
+  }
+
+  // Blocks a student from registering their college email as their own recovery address --
+  // defeats the point of having a separate, independently-reachable personal email (see
+  // AuthService.setPersonalEmail). COLLEGE_EMAIL_DOMAIN includes the "@" prefix, same as
+  // assertValidCollegeEmail; left blank in .env, this check is skipped entirely.
+  private assertPersonalEmailNotCollege(personalEmail: string): void {
+    const domain = process.env.COLLEGE_EMAIL_DOMAIN;
+    if (!domain) return;
+    if (personalEmail.toLowerCase().endsWith(domain.toLowerCase())) {
+      throw new BadRequestException('يجب استخدام بريد شخصي مختلف عن بريدك الجامعي');
+    }
+  }
+
+  async findByPersonalEmail(personalEmail: string): Promise<UserDocument | null> {
+    return this.userModel.findOne({ personalEmail: personalEmail.toLowerCase() }).exec();
+  }
+
+  // Overwrites any previously-set personal email -- see AuthController#setPersonalEmail, which
+  // requires the caller's current password before calling this.
+  async updatePersonalEmail(id: string, personalEmail: string): Promise<UserDocument> {
+    this.assertPersonalEmailNotCollege(personalEmail);
+    try {
+      const user = await this.userModel
+        .findByIdAndUpdate(id, { personalEmail }, { new: true })
+        .select('-passwordHash')
+        .exec();
+      if (!user) throw new NotFoundException('المستخدم غير موجود');
+      return user;
+    } catch (err) {
+      if ((err as { code?: number }).code === 11000) {
+        throw new ConflictException('هذا البريد الشخصي مستخدم من قبل حساب آخر');
+      }
+      throw err;
+    }
+  }
+
+  async setPasswordResetToken(id: string, tokenHash: string, expiresAt: Date): Promise<void> {
+    await this.userModel.findByIdAndUpdate(id, { passwordResetTokenHash: tokenHash, passwordResetExpiresAt: expiresAt }).exec();
+  }
+
+  async clearPasswordResetToken(id: string): Promise<void> {
+    await this.userModel.findByIdAndUpdate(id, { passwordResetTokenHash: null, passwordResetExpiresAt: null }).exec();
+  }
+
+  // Generates a fresh 6-digit reset code, stores its hash, and emails the raw code to the
+  // student's personal (not college) email -- see AuthService.forgotPassword.
+  async issuePasswordResetEmail(user: UserDocument): Promise<void> {
+    const code = crypto.randomInt(0, 1_000_000).toString().padStart(6, '0');
+    const codeHash = crypto.createHash('sha256').update(code).digest('hex');
+    const expiresAt = new Date(Date.now() + PASSWORD_RESET_TTL_MS);
+    await this.setPasswordResetToken(user.id, codeHash, expiresAt);
+    await this.emailService.sendPasswordResetEmail(user.personalEmail!, user.name, code);
   }
 
   async update(id: string, dto: UpdateUserDto): Promise<UserDocument> {

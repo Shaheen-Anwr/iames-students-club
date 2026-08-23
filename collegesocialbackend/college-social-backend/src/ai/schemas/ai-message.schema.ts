@@ -23,6 +23,12 @@ export class AiMessage {
   @Prop({ type: Types.ObjectId, ref: 'AiConversation', required: true, index: true })
   conversation: Types.ObjectId;
 
+  // Denormalized from AiConversation.owner so the daily quota check (AiConversationsService) can
+  // count a student's messages across all their conversations with a single indexed query, instead
+  // of first fetching every conversation id they own.
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
+  owner: Types.ObjectId;
+
   @Prop({ required: true, enum: ['user', 'assistant'] })
   role: 'user' | 'assistant';
 
@@ -60,3 +66,6 @@ export class AiMessage {
 }
 
 export const AiMessageSchema = SchemaFactory.createForClass(AiMessage);
+
+// Backs the daily quota count: "how many 'user' messages has this owner sent since midnight".
+AiMessageSchema.index({ owner: 1, role: 1, createdAt: 1 });

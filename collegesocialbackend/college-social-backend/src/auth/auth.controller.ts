@@ -5,6 +5,10 @@ import { AuthService, RequestMeta } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { VerifyEmailDto } from './dto/verify-email.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { SetPersonalEmailDto } from './dto/set-personal-email.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from './types/authenticated-user.type';
@@ -124,6 +128,49 @@ export class AuthController {
   @Post('resend-verification')
   async resendVerification(@CurrentUser() user: AuthenticatedUser) {
     await this.authService.resendVerification(user.userId);
+    return { success: true };
+  }
+
+  // POST /api/auth/change-password  { currentPassword, newPassword } -- while logged in, as
+  // opposed to an email-based reset flow (which this app doesn't have).
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('change-password')
+  async changePassword(@CurrentUser() user: AuthenticatedUser, @Body() dto: ChangePasswordDto) {
+    await this.authService.changePassword(user.userId, user.sessionId, dto);
+    return { success: true };
+  }
+
+  // POST /api/auth/personal-email  { currentPassword, personalEmail } -- sets/updates the
+  // recovery email used by forgot-password below. Requires the current password so a hijacked
+  // session (no known password) can't plant a recovery address for a later takeover.
+  @UseGuards(JwtAuthGuard)
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('personal-email')
+  async setPersonalEmail(@CurrentUser() user: AuthenticatedUser, @Body() dto: SetPersonalEmailDto) {
+    await this.authService.setPersonalEmail(user.userId, dto);
+    return { success: true };
+  }
+
+  // POST /api/auth/forgot-password  { personalEmail } -- unauthenticated. Always returns the same
+  // generic response regardless of whether the email matches an account (see AuthService).
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('forgot-password')
+  async forgotPassword(@Body() dto: ForgotPasswordDto) {
+    await this.authService.forgotPassword(dto);
+    return { success: true, message: 'إذا كان هذا البريد مرتبطًا بحساب، ستصلك رسالة تحتوي على رمز التحقق خلال لحظات.' };
+  }
+
+  // POST /api/auth/reset-password  { personalEmail, code, newPassword } -- unauthenticated. Revokes
+  // every existing session on success (see AuthService.resetPassword).
+  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  @HttpCode(HttpStatus.OK)
+  @Post('reset-password')
+  async resetPassword(@Body() dto: ResetPasswordDto) {
+    await this.authService.resetPassword(dto);
     return { success: true };
   }
 }

@@ -56,7 +56,7 @@ async function refreshAccessToken(): Promise<string> {
 }
 
 // Auth endpoints that must never trigger a refresh-and-retry themselves.
-const NO_REFRESH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh'];
+const NO_REFRESH_PATHS = ['/auth/login', '/auth/register', '/auth/refresh', '/auth/forgot-password', '/auth/reset-password'];
 
 async function request<T>(path: string, options: RequestInit = {}, isRetry = false): Promise<T> {
   const token = getToken();

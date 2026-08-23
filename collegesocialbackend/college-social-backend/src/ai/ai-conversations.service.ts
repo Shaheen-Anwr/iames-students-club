@@ -50,6 +50,7 @@ function wrapUntrusted(label: string, text: string): string {
 @Injectable()
 export class AiConversationsService {
   private readonly visionModel: string;
+  private readonly dailyMessageQuota: number;
 
   constructor(
     @InjectModel(AiConversation.name) private conversationModel: Model<AiConversationDocument>,
@@ -65,6 +66,15 @@ export class AiConversationsService {
     config: ConfigService,
   ) {
     this.visionModel = config.get<string>('ai.visionModel') ?? '';
+    this.dailyMessageQuota = config.get<number>('ai.dailyMessageQuota') ?? 40;
+  }
+
+  // Counts this student's 'user' messages sent since local midnight, across all their
+  // conversations -- see AiMessage.owner and its compound index.
+  private async countMessagesToday(ownerId: string): Promise<number> {
+    return this.messageModel
+      .countDocuments({ owner: new Types.ObjectId(ownerId), role: 'user', createdAt: { $gte: daysAgoStart(1) } })
+      .exec();
   }
 
   async listMine(ownerId: string): Promise<AiConversationDocument[]> {
@@ -103,8 +113,18 @@ export class AiConversationsService {
   ): AsyncGenerator<AiStreamEvent> {
     const conversation = await this.findOwned(conversationId, ownerId);
 
+    const usedToday = await this.countMessagesToday(ownerId);
+    if (usedToday >= this.dailyMessageQuota) {
+      yield {
+        type: 'error',
+        message: `لقد استنفدت الحد الأقصى لعدد الرسائل اليومية مع المساعد الذكي (${this.dailyMessageQuota} رسالة). حاول مرة أخرى غدًا.`,
+      };
+      return;
+    }
+
     await new this.messageModel({
       conversation: conversation._id,
+      owner: conversation.owner,
       role: 'user',
       text,
       attachmentUrl: attachment?.url,
@@ -230,6 +250,7 @@ export class AiConversationsService {
 
     const reply = await new this.messageModel({
       conversation: conversation._id,
+      owner: conversation.owner,
       role: 'assistant',
       text: replyText,
       sources,

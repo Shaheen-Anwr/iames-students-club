@@ -10,6 +10,10 @@ import { UserDocument } from '../users/schemas/user.schema';
 import { GamificationService } from '../gamification/gamification.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { SetPersonalEmailDto } from './dto/set-personal-email.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
 import { Session, SessionDocument } from './schemas/session.schema';
 
 const SALT_ROUNDS = 10;
@@ -109,6 +113,56 @@ export class AuthService {
     await this.sessionModel.updateMany(filter, { revokedAt: new Date() }).exec();
   }
 
+  async changePassword(userId: string, sessionId: string, dto: ChangePasswordDto): Promise<void> {
+    const user = await this.usersService.findByIdWithPassword(userId);
+    const matches = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!matches) throw new UnauthorizedException('كلمة المرور الحالية غير صحيحة');
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+    await this.usersService.updatePasswordHash(userId, passwordHash);
+    // Revoke every other session as a security measure, matching the change-password UX of most
+    // apps -- the caller's own session (already re-authenticated by supplying the current
+    // password) stays logged in.
+    await this.logoutAll(userId, sessionId);
+  }
+
+  async setPersonalEmail(userId: string, dto: SetPersonalEmailDto): Promise<void> {
+    const user = await this.usersService.findByIdWithPassword(userId);
+    const matches = await bcrypt.compare(dto.currentPassword, user.passwordHash);
+    if (!matches) throw new UnauthorizedException('كلمة المرور الحالية غير صحيحة');
+    await this.usersService.updatePersonalEmail(userId, dto.personalEmail);
+  }
+
+  // Always resolves the same way regardless of whether personalEmail matches an account --
+  // callers must not be able to tell which emails are registered (standard reset-flow
+  // enumeration guard). The controller returns one generic message unconditionally.
+  async forgotPassword(dto: ForgotPasswordDto): Promise<void> {
+    const user = await this.usersService.findByPersonalEmail(dto.personalEmail);
+    if (user) await this.usersService.issuePasswordResetEmail(user);
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<void> {
+    const user = await this.usersService.findByPersonalEmail(dto.personalEmail);
+    const codeHash = crypto.createHash('sha256').update(dto.code).digest('hex');
+    const valid =
+      !!user &&
+      user.passwordResetTokenHash === codeHash &&
+      !!user.passwordResetExpiresAt &&
+      user.passwordResetExpiresAt > new Date();
+    if (!valid) {
+      // Same message whether the email doesn't exist or the code is wrong/expired -- don't leak
+      // which case it was.
+      throw new UnauthorizedException('رمز التحقق غير صالح أو منتهي الصلاحية');
+    }
+
+    const passwordHash = await bcrypt.hash(dto.newPassword, SALT_ROUNDS);
+    await this.usersService.updatePasswordHash(user.id, passwordHash);
+    await this.usersService.clearPasswordResetToken(user.id);
+    // No session to exempt here (unlike changePassword) -- the whole point is the student is
+    // locked out, so every existing session dies and they must log in fresh with the new password.
+    await this.logoutAll(user.id);
+  }
+
   async listSessions(userId: string, currentSessionId: string) {
     const sessions = await this.sessionModel
       .find({ user: new Types.ObjectId(userId), revokedAt: null })
@@ -204,6 +258,7 @@ export class AuthService {
       role: user.role,
       department: user.department,
       collegeEmailVerifiedAt: user.collegeEmailVerifiedAt,
+      personalEmail: user.personalEmail,
     };
   }
 }

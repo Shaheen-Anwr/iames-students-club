@@ -1,5 +1,5 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
-import { HydratedDocument } from 'mongoose';
+import { HydratedDocument, Types } from 'mongoose';
 import { Role } from '../../common/enums/role.enum';
 import { Department } from '../../common/enums/department.enum';
 import { AcademicYear } from '../../common/enums/academic-year.enum';
@@ -33,6 +33,20 @@ export class User {
 
   @Prop({ type: Date, default: null })
   emailVerificationExpiresAt: Date | null;
+
+  // Recovery email for the forgot-password flow -- deliberately separate from collegeEmail, which
+  // a locked-out student may not be able to check independently of this platform. Null until the
+  // student sets one from profile settings (see AuthController#setPersonalEmail). `sparse` lets
+  // every account without one coexist under the unique index, same as collegeEmail.
+  @Prop({ type: String, default: null, unique: true, sparse: true, lowercase: true, trim: true })
+  personalEmail: string | null;
+
+  // Single active password-reset code at a time; overwritten on each forgot-password request.
+  @Prop({ type: String, default: null })
+  passwordResetTokenHash: string | null;
+
+  @Prop({ type: Date, default: null })
+  passwordResetExpiresAt: Date | null;
 
   // Cloudinary URL. Null until the user uploads one.
   @Prop({ type: String, required: false, default: null })
@@ -90,6 +104,11 @@ export class User {
 
   @Prop({ type: Date, default: null })
   lastSeenAt: Date | null;
+
+  // Users this account has blocked. Checked bidirectionally (see UsersService.areBlocked) so
+  // either side blocking the other stops 1:1 messaging -- groups are unaffected.
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  blockedUsers: Types.ObjectId[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
