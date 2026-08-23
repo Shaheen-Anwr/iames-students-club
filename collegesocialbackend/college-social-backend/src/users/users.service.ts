@@ -85,7 +85,18 @@ export class UsersService {
       role: isFirstUser ? Role.ADMIN : data.role,
       department: data.department ?? null,
     });
-    await user.save();
+    try {
+      await user.save();
+    } catch (err) {
+      // Two requests can both pass the findOne check above before either saves (e.g. a flaky
+      // mobile connection retrying the same submit, or a genuine ID collision under concurrent
+      // signups) -- the unique index catches it here, so surface the same friendly message
+      // instead of letting a raw E11000 bubble up as a 500.
+      if ((err as { code?: number }).code === 11000) {
+        throw new ConflictException('الرقم الجامعي أو البريد الجامعي مسجّل مسبقًا');
+      }
+      throw err;
+    }
 
     this.realtimeEmitter.emitToAdmins('admin:activity', {
       type: 'signup',

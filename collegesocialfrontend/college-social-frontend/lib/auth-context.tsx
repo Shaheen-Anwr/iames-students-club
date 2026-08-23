@@ -99,13 +99,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     setToken(res.accessToken);
 
     if (photo) {
-      await api.upload('/upload/photo', photo);
+      // Best-effort: the account already exists at this point, so a dropped connection (common
+      // on mobile) uploading the photo shouldn't fail the whole registration and strand the user
+      // mid-flow with a session but no way to retry (a second submit would now hit "already
+      // registered"). They can always add a photo later from their profile.
+      try {
+        await api.upload('/upload/photo', photo);
+      } catch {
+        showToast('تم إنشاء الحساب، لكن تعذّر رفع الصورة الشخصية. يمكنك إضافتها لاحقًا من ملفك الشخصي.');
+      }
     }
 
     const me = await api.get<User>('/users/me');
     setUser(me);
     return me;
-  }, []);
+  }, [showToast]);
 
   const logout = useCallback(async () => {
     try {

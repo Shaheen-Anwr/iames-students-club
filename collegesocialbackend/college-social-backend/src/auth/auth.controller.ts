@@ -46,7 +46,10 @@ export class AuthController {
   }
 
   // POST /api/auth/register  { collegeId, password, name, collegeEmail, role }
-  @Throttle({ default: { limit: 5, ttl: 60000 } })
+  // Looser than login's throttle: register has no secret to brute-force (worst case is spam
+  // accounts, already blocked by the unique index + admin verification gate), and students on
+  // campus WiFi or mobile-carrier NAT commonly share one public IP during a signup rush.
+  @Throttle({ default: { limit: 20, ttl: 60000 } })
   @Post('register')
   async register(@Body() dto: RegisterDto, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
     const { refreshToken, ...body } = await this.authService.register(dto, this.requestMeta(req));
