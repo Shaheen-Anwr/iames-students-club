@@ -67,6 +67,7 @@ export function AvatarUploader({
       <div className="absolute bottom-0 end-0">
         <Dropdown
           align="end"
+          placement="top"
           trigger={
             <span className="flex h-8 w-8 items-center justify-center rounded-full bg-accent text-white shadow-soft ring-2 ring-surface transition-transform hover:scale-110 hover:opacity-90 active:scale-95">
               {uploading || removing ? <Spinner className="h-4 w-4 text-white" /> : <Camera className="h-4 w-4" />}

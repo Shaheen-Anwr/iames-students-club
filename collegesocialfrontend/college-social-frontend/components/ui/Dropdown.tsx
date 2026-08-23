@@ -15,10 +15,11 @@ interface DropdownProps {
   trigger: React.ReactNode;
   items: DropdownItem[];
   align?: 'start' | 'end';
+  placement?: 'bottom' | 'top';
   className?: string;
 }
 
-export function Dropdown({ trigger, items, align = 'end', className }: DropdownProps) {
+export function Dropdown({ trigger, items, align = 'end', placement = 'bottom', className }: DropdownProps) {
   const [open, setOpen] = useState(false);
   const ref = useRef<HTMLDivElement>(null);
 
@@ -46,7 +47,8 @@ export function Dropdown({ trigger, items, align = 'end', className }: DropdownP
       {open && (
         <div
           className={cn(
-            'glass absolute top-full z-40 mt-2 w-48 rounded-xl p-1 shadow-card animate-bubble-in',
+            'glass absolute z-40 w-48 rounded-xl p-1 shadow-card animate-bubble-in',
+            placement === 'top' ? 'bottom-full mb-2' : 'top-full mt-2',
             align === 'end' ? 'end-0' : 'start-0',
             className,
           )}

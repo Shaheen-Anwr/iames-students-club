@@ -72,6 +72,7 @@ export function CoverPhotoUploader({
         {coverPhotoUrl ? (
           <Dropdown
             align="end"
+            placement="top"
             trigger={
               <span className="flex items-center gap-1.5 rounded-full bg-black/50 px-3 py-2 text-xs font-medium text-white backdrop-blur-sm transition-colors hover:bg-black/60">
                 {busy ? <Spinner className="h-3.5 w-3.5 text-white" /> : <Camera className="h-3.5 w-3.5" />}
