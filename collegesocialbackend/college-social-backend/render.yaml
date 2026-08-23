@@ -6,10 +6,10 @@ services:
     buildCommand: npm install && npm run build
     startCommand: npm run start:prod
     healthCheckPath: /api
-    # Persistent disk for uploaded photos/lectures/videos/audio (s3.service.ts falls back to
-    # local disk under ./uploads when AWS_* env vars are unset). Free-tier services can't attach
-    # disks, hence "starter" above -- without this, every deploy/restart/idle-spindown would wipe
-    # anything users had uploaded.
+    # Persistent disk for uploaded photos/lectures/videos/audio (storage.service.ts falls back to
+    # local disk under ./uploads when CLOUDINARY_* env vars are unset). Free-tier services can't
+    # attach disks, hence "starter" above -- without this, every deploy/restart/idle-spindown would
+    # wipe anything users had uploaded.
     disk:
       name: uploads
       mountPath: /var/data/uploads
@@ -41,7 +41,12 @@ services:
         sync: false
       - key: RESEND_FROM_EMAIL
         sync: false
-      # No AWS_* vars: left unset, uploads use the persistent disk above instead of S3.
+      - key: CLOUDINARY_CLOUD_NAME
+        sync: false
+      - key: CLOUDINARY_API_KEY
+        sync: false
+      - key: CLOUDINARY_API_SECRET
+        sync: false
       - key: AI_API_KEY
         sync: false
       - key: AI_BASE_URL
