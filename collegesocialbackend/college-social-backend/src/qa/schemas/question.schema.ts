@@ -33,7 +33,14 @@ export class Question {
   // Denormalized to avoid an N+1 count query per list item.
   @Prop({ default: 0 })
   answerCount: number;
+
+  // Set only for questions asked inside a study group (by its owner) -- null for every
+  // pre-existing global question. Visibility for these is gated by group membership, independent
+  // of `scope`/`department` above (which stay PUBLIC/null and are simply unused for group items).
+  @Prop({ type: Types.ObjectId, ref: 'StudyGroup', default: null, index: true })
+  group: Types.ObjectId | null;
 }
 
 export const QuestionSchema = SchemaFactory.createForClass(Question);
 QuestionSchema.index({ title: 'text', body: 'text' });
+QuestionSchema.index({ group: 1, createdAt: -1 });

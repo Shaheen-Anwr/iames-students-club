@@ -219,6 +219,9 @@ export function TopNavbar() {
             className="flex items-center gap-2 rounded-full p-0.5 pe-2 hover:bg-surface-2"
           >
             <Avatar src={assetUrl(user.photoUrl)} name={user.name} size="sm" />
+            <span className="hidden max-w-[8rem] truncate text-sm font-medium text-foreground sm:block">
+              {user.name}
+            </span>
           </button>
           {menuOpen && (
             <div className="glass absolute top-12 end-0 w-60 rounded-xl p-2 shadow-card animate-bubble-in">

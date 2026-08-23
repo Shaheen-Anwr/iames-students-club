@@ -4,8 +4,10 @@ import { Model, Types } from 'mongoose';
 import { Question, QuestionDocument, QuestionScope } from './schemas/question.schema';
 import { Answer, AnswerDocument } from './schemas/answer.schema';
 import { AskQuestionDto } from './dto/ask-question.dto';
+import { CreateGroupQuestionDto } from './dto/create-group-question.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Department } from '../common/enums/department.enum';
+import { GroupsService } from '../groups/groups.service';
 
 export interface PaginatedQuestions {
   data: QuestionDocument[];
@@ -27,6 +29,7 @@ export class QaService {
     @InjectModel(Question.name) private questionModel: Model<QuestionDocument>,
     @InjectModel(Answer.name) private answerModel: Model<AnswerDocument>,
     private readonly notificationsService: NotificationsService,
+    private readonly groupsService: GroupsService,
   ) {}
 
   async askQuestion(authorId: string, authorDepartment: Department | null, dto: AskQuestionDto): Promise<QuestionDocument> {
@@ -43,6 +46,7 @@ export class QaService {
   }
 
   // Same public/department split as PostsService.feed() -- viewerDepartment comes from the JWT.
+  // group-scoped questions are excluded unconditionally, same as AssignmentsService.visibilityFilter.
   async listQuestions(
     page = 1,
     limit = 20,
@@ -50,7 +54,7 @@ export class QaService {
     scope?: QuestionScope,
     viewerDepartment?: Department | null,
   ): Promise<QuestionDocument[]> {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { group: null };
     if (courseCode) filter.courseCode = courseCode;
     if (scope === QuestionScope.DEPARTMENT) {
       filter.scope = QuestionScope.DEPARTMENT;
@@ -72,6 +76,7 @@ export class QaService {
     return this.questionModel
       .find({
         $text: { $search: query },
+        group: null,
         $or: [{ scope: QuestionScope.PUBLIC }, { scope: QuestionScope.DEPARTMENT, department: viewerDepartment ?? null }],
       })
       .limit(limit)
@@ -79,14 +84,44 @@ export class QaService {
       .exec();
   }
 
-  async findOne(id: string): Promise<QuestionDocument> {
+  // viewerId is only required when the question turns out to be group-scoped -- every existing
+  // call site for a global/public/department question keeps working unchanged.
+  async findOne(id: string, viewerId?: string): Promise<QuestionDocument> {
     const question = await this.questionModel.findById(id).populate('author', 'name role photoUrl collegeId').exec();
     if (!question) throw new NotFoundException('السؤال غير موجود');
+    if (question.group) {
+      await this.groupsService.assertMember(question.group.toString(), viewerId ?? '');
+    }
     return question;
   }
 
+  async createForGroup(groupId: string, authorId: string, dto: CreateGroupQuestionDto): Promise<QuestionDocument> {
+    await this.groupsService.assertOwner(groupId, authorId);
+    const question = new this.questionModel({
+      author: new Types.ObjectId(authorId),
+      title: dto.title,
+      body: dto.body,
+      courseCode: dto.courseCode ?? null,
+      scope: QuestionScope.PUBLIC,
+      department: null,
+      group: new Types.ObjectId(groupId),
+    });
+    return question.save();
+  }
+
+  async listQuestionsForGroup(groupId: string, requesterId: string, page = 1, limit = 20): Promise<QuestionDocument[]> {
+    await this.groupsService.assertMember(groupId, requesterId);
+    return this.questionModel
+      .find({ group: new Types.ObjectId(groupId) })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('author', 'name role photoUrl collegeId')
+      .exec();
+  }
+
   async answer(questionId: string, authorId: string, body: string): Promise<AnswerDocument> {
-    const question = await this.findOne(questionId);
+    const question = await this.findOne(questionId, authorId);
     const answer = await new this.answerModel({
       question: question._id,
       author: new Types.ObjectId(authorId),
@@ -108,7 +143,8 @@ export class QaService {
 
   // Accepted answer first, then most-upvoted, then oldest -- a reasonable default ordering for a
   // Q&A thread without introducing a separate "best answer" ranking algorithm.
-  async listAnswers(questionId: string): Promise<AnswerDocument[]> {
+  async listAnswers(questionId: string, viewerId?: string): Promise<AnswerDocument[]> {
+    await this.findOne(questionId, viewerId); // gate on group membership when applicable
     const answers = await this.answerModel
       .find({ question: new Types.ObjectId(questionId) })
       .sort({ createdAt: 1 })

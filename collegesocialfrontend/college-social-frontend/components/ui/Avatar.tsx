@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { cn, initials } from '@/lib/utils';
 
 interface AvatarProps {
@@ -26,6 +27,12 @@ const dotSizeClasses = {
 };
 
 export function Avatar({ src, name, size = 'md', className, ring, online }: AvatarProps) {
+  const [errored, setErrored] = useState(false);
+
+  useEffect(() => {
+    setErrored(false);
+  }, [src]);
+
   return (
     <div className="relative shrink-0">
       <div
@@ -36,11 +43,11 @@ export function Avatar({ src, name, size = 'md', className, ring, online }: Avat
           className,
         )}
       >
-        {src ? (
+        {src && !errored ? (
           // Uploaded avatars are user photos from the backend; keep as plain <img> to avoid
           // configuring next/image remote patterns for a dynamic, per-deployment backend origin.
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={name} className="h-full w-full object-cover" />
+          <img src={src} alt={name} className="h-full w-full object-cover" onError={() => setErrored(true)} />
         ) : (
           <span>{initials(name) || '?'}</span>
         )}
