@@ -9,7 +9,7 @@ const FEATURES = [
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid min-h-screen grid-cols-1 lg:grid-cols-2">
+    <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-2">
       <div className="relative hidden flex-col justify-between overflow-hidden bg-[#05070b] p-12 text-white lg:flex">
         <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-accent/30 blur-3xl" />
         <div className="absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-accent-2/20 blur-3xl" />
@@ -37,7 +37,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <p className="relative text-xs text-white/50">مخصصة لطلاب وأساتذة IEAMS Students Community فقط.</p>
       </div>
 
-      <div className="flex items-center justify-center bg-background px-6 py-12">
+      <div className="flex items-start justify-center bg-background px-6 py-8 sm:items-center sm:py-12">
         <div className="w-full max-w-sm">{children}</div>
       </div>
     </div>
