@@ -16,7 +16,15 @@ const ATTACHMENT_OPTIONS: { type: Exclude<PostAttachmentType, 'none'>; label: st
   { type: 'file', label: 'ملف آخر', icon: Paperclip, accept: '*' },
 ];
 
-export function CreateAssignmentForm({ onCreated, onClose }: { onCreated: (assignment: Assignment) => void; onClose: () => void }) {
+export function CreateAssignmentForm({
+  groupId,
+  onCreated,
+  onClose,
+}: {
+  groupId?: string;
+  onCreated: (assignment: Assignment) => void;
+  onClose: () => void;
+}) {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -46,8 +54,8 @@ export function CreateAssignmentForm({ onCreated, onClose }: { onCreated: (assig
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !courseCode.trim() || !dueDate) {
-      showToast('العنوان ورمز المقرر وتاريخ التسليم مطلوبة.', 'error');
+    if (!title.trim() || !dueDate || (!groupId && !courseCode.trim())) {
+      showToast(groupId ? 'العنوان وتاريخ التسليم مطلوبان.' : 'العنوان ورمز المقرر وتاريخ التسليم مطلوبة.', 'error');
       return;
     }
 
@@ -62,10 +70,10 @@ export function CreateAssignmentForm({ onCreated, onClose }: { onCreated: (assig
         attachmentOriginalName = file.name;
       }
 
-      const assignment = await api.post<Assignment>('/assignments', {
+      const assignment = await api.post<Assignment>(groupId ? `/assignments/group/${groupId}` : '/assignments', {
         title: title.trim(),
         description: description.trim() || undefined,
-        courseCode: courseCode.trim(),
+        courseCode: courseCode.trim() || undefined,
         dueDate: new Date(dueDate).toISOString(),
         attachmentType: file && pendingType ? pendingType : 'none',
         attachmentUrl,
@@ -89,7 +97,13 @@ export function CreateAssignmentForm({ onCreated, onClose }: { onCreated: (assig
       <Textarea rows={3} placeholder="تفاصيل الواجب (اختياري)" value={description} onChange={(e) => setDescription(e.target.value)} />
 
       <div className="grid grid-cols-2 gap-3">
-        <Input label="رمز المقرر" value={courseCode} onChange={(e) => setCourseCode(e.target.value)} placeholder="مثال: CS101" required />
+        <Input
+          label={groupId ? 'رمز المقرر (اختياري)' : 'رمز المقرر'}
+          value={courseCode}
+          onChange={(e) => setCourseCode(e.target.value)}
+          placeholder="مثال: CS101"
+          required={!groupId}
+        />
         <Input label="تاريخ ووقت التسليم" type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
       </div>
 

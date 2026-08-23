@@ -13,9 +13,9 @@ import type { Assignment } from '@/lib/types';
 import { AssignmentCard } from './AssignmentCard';
 import { CreateAssignmentForm } from './CreateAssignmentForm';
 
-export function AssignmentsBoard() {
+export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { groupId?: string; canCreate?: boolean } = {}) {
   const { user } = useAuth();
-  const canCreate = user?.role === 'admin' || user?.role === 'professor';
+  const canCreate = groupId ? !!canCreateOverride : user?.role === 'admin' || user?.role === 'professor';
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [courseCode, setCourseCode] = useState('');
@@ -24,6 +24,13 @@ export function AssignmentsBoard() {
 
   useEffect(() => {
     setLoading(true);
+    if (groupId) {
+      api
+        .get<Assignment[]>(`/assignments/group/${groupId}?limit=50`)
+        .then(setAssignments)
+        .finally(() => setLoading(false));
+      return;
+    }
     const params = new URLSearchParams({ limit: '50' });
     if (courseCode.trim()) params.set('courseCode', courseCode.trim());
     if (upcomingOnly) params.set('upcoming', 'true');
@@ -31,7 +38,7 @@ export function AssignmentsBoard() {
       .get<Assignment[]>(`/assignments?${params.toString()}`)
       .then(setAssignments)
       .finally(() => setLoading(false));
-  }, [courseCode, upcomingOnly]);
+  }, [groupId, courseCode, upcomingOnly]);
 
   function handleCreated(assignment: Assignment) {
     setAssignments((prev) => [assignment, ...prev].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()));
@@ -53,24 +60,26 @@ export function AssignmentsBoard() {
         )}
       </div>
 
-      <div className="flex flex-wrap items-center gap-2">
-        <Input
-          placeholder="تصفية حسب رمز المقرر"
-          value={courseCode}
-          onChange={(e) => setCourseCode(e.target.value)}
-          className="max-w-xs"
-        />
-        <button
-          type="button"
-          onClick={() => setUpcomingOnly((prev) => !prev)}
-          className={cn(
-            'flex h-10 shrink-0 items-center rounded-full px-4 text-sm font-medium transition-all active:scale-95',
-            upcomingOnly ? 'bg-gradient-accent text-white shadow-soft' : 'bg-surface-2/70 text-muted-foreground hover:bg-surface-2',
-          )}
-        >
-          القادمة فقط
-        </button>
-      </div>
+      {!groupId && (
+        <div className="flex flex-wrap items-center gap-2">
+          <Input
+            placeholder="تصفية حسب رمز المقرر"
+            value={courseCode}
+            onChange={(e) => setCourseCode(e.target.value)}
+            className="max-w-xs"
+          />
+          <button
+            type="button"
+            onClick={() => setUpcomingOnly((prev) => !prev)}
+            className={cn(
+              'flex h-10 shrink-0 items-center rounded-full px-4 text-sm font-medium transition-all active:scale-95',
+              upcomingOnly ? 'bg-gradient-accent text-white shadow-soft' : 'bg-surface-2/70 text-muted-foreground hover:bg-surface-2',
+            )}
+          >
+            القادمة فقط
+          </button>
+        </div>
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12">
@@ -104,7 +113,7 @@ export function AssignmentsBoard() {
 
       {canCreate && (
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="إنشاء واجب">
-          <CreateAssignmentForm onCreated={handleCreated} onClose={() => setModalOpen(false)} />
+          <CreateAssignmentForm groupId={groupId} onCreated={handleCreated} onClose={() => setModalOpen(false)} />
         </Modal>
       )}
     </div>

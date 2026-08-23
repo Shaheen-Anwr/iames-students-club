@@ -11,7 +11,7 @@ import type { QuizSummary } from '@/lib/types';
 import { QuizCard } from './QuizCard';
 import { CreateQuizForm } from './CreateQuizForm';
 
-export function QuizzesBoard() {
+export function QuizzesBoard({ groupId, canCreate = true }: { groupId?: string; canCreate?: boolean } = {}) {
   const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
   const [loading, setLoading] = useState(true);
   const [courseCode, setCourseCode] = useState('');
@@ -19,13 +19,20 @@ export function QuizzesBoard() {
 
   useEffect(() => {
     setLoading(true);
+    if (groupId) {
+      api
+        .get<QuizSummary[]>(`/quizzes/group/${groupId}?limit=50`)
+        .then(setQuizzes)
+        .finally(() => setLoading(false));
+      return;
+    }
     const params = new URLSearchParams({ limit: '50' });
     if (courseCode.trim()) params.set('courseCode', courseCode.trim());
     api
       .get<QuizSummary[]>(`/quizzes?${params.toString()}`)
       .then(setQuizzes)
       .finally(() => setLoading(false));
-  }, [courseCode]);
+  }, [groupId, courseCode]);
 
   function handleCreated(quiz: QuizSummary) {
     setQuizzes((prev) => [quiz, ...prev]);
@@ -42,18 +49,22 @@ export function QuizzesBoard() {
           <h1 className="text-xl font-semibold text-foreground">الاختبارات</h1>
           <p className="mt-0.5 text-xs text-muted-foreground">اختبر معلوماتك وتابع تقدّمك في مقرراتك</p>
         </div>
-        <Button size="sm" onClick={() => setModalOpen(true)} className="rounded-full">
-          <Plus className="h-4 w-4" />
-          إنشاء اختبار
-        </Button>
+        {canCreate && (
+          <Button size="sm" onClick={() => setModalOpen(true)} className="rounded-full">
+            <Plus className="h-4 w-4" />
+            إنشاء اختبار
+          </Button>
+        )}
       </div>
 
-      <Input
-        placeholder="تصفية حسب رمز المقرر"
-        value={courseCode}
-        onChange={(e) => setCourseCode(e.target.value)}
-        className="max-w-xs rounded-full border-transparent bg-surface-2/70"
-      />
+      {!groupId && (
+        <Input
+          placeholder="تصفية حسب رمز المقرر"
+          value={courseCode}
+          onChange={(e) => setCourseCode(e.target.value)}
+          className="max-w-xs rounded-full border-transparent bg-surface-2/70"
+        />
+      )}
 
       {loading ? (
         <div className="flex justify-center py-12">
@@ -68,10 +79,12 @@ export function QuizzesBoard() {
             <p className="text-sm font-medium text-foreground">لا توجد اختبارات حاليًا</p>
             <p className="text-xs text-muted-foreground">كن أول من ينشئ اختبارًا لزملائك!</p>
           </div>
-          <Button size="sm" onClick={() => setModalOpen(true)} className="mt-1 rounded-full">
-            <Plus className="h-4 w-4" />
-            إنشاء اختبار
-          </Button>
+          {canCreate && (
+            <Button size="sm" onClick={() => setModalOpen(true)} className="mt-1 rounded-full">
+              <Plus className="h-4 w-4" />
+              إنشاء اختبار
+            </Button>
+          )}
         </div>
       ) : (
         <div className="space-y-4">
@@ -81,9 +94,11 @@ export function QuizzesBoard() {
         </div>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="إنشاء اختبار">
-        <CreateQuizForm onCreated={handleCreated} onClose={() => setModalOpen(false)} />
-      </Modal>
+      {canCreate && (
+        <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="إنشاء اختبار">
+          <CreateQuizForm groupId={groupId} onCreated={handleCreated} onClose={() => setModalOpen(false)} />
+        </Modal>
+      )}
     </div>
   );
 }

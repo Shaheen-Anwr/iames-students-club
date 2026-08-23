@@ -24,11 +24,10 @@ export default () => ({
     fromEmail: process.env.RESEND_FROM_EMAIL ?? '',
   },
   frontendUrl: process.env.FRONTEND_URL ?? 'https://iames-students-club-roan.vercel.app',
-  aws: {
-    region: process.env.AWS_REGION ?? '',
-    accessKeyId: process.env.AWS_ACCESS_KEY_ID ?? '',
-    secretAccessKey: process.env.AWS_SECRET_ACCESS_KEY ?? '',
-    bucket: process.env.AWS_S3_BUCKET ?? '',
+  cloudinary: {
+    cloudName: process.env.CLOUDINARY_CLOUD_NAME ?? '',
+    apiKey: process.env.CLOUDINARY_API_KEY ?? '',
+    apiSecret: process.env.CLOUDINARY_API_SECRET ?? '',
   },
   // Defaults to Groq's free, OpenAI-compatible API (https://console.groq.com -- no credit card
   // needed) so the AI assistant works out of the box on a free tier. Any OpenAI-compatible

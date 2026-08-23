@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { Copy, Globe, Hash, LogOut, Plus, Check } from 'lucide-react';
+import { BookOpen, Copy, Globe, Hash, LogOut, Plus, Check } from 'lucide-react';
 import { Spinner } from '@/components/ui/Spinner';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
@@ -109,6 +109,17 @@ export function GroupSidebar({ groupId }: { groupId: string }) {
             مجموعة عامة
           </div>
         )}
+
+        <Link
+          href={`/groups/${groupId}/study`}
+          className={cn(
+            'mt-3 flex items-center gap-2 rounded-xl px-2.5 py-2.5 text-sm text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground',
+            pathname.startsWith(`/groups/${groupId}/study`) && 'bg-accent/10 font-medium text-accent hover:bg-accent/10 hover:text-accent',
+          )}
+        >
+          <BookOpen className="h-3.5 w-3.5 shrink-0" />
+          مساحة الدراسة
+        </Link>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-2.5 py-3.5 scrollbar-thin">

@@ -159,6 +159,7 @@ export class QaService {
   async toggleUpvote(answerId: string, userId: string): Promise<AnswerDocument> {
     const answer = await this.answerModel.findById(answerId).exec();
     if (!answer) throw new NotFoundException('الإجابة غير موجودة');
+    await this.findOne(answer.question.toString(), userId); // gate on group membership when applicable
     const uid = new Types.ObjectId(userId);
     const alreadyUpvoted = answer.upvotes.some((u) => u.equals(uid));
     if (alreadyUpvoted) {
@@ -172,7 +173,7 @@ export class QaService {
   async acceptAnswer(answerId: string, requesterId: string): Promise<AnswerDocument> {
     const answer = await this.answerModel.findById(answerId).exec();
     if (!answer) throw new NotFoundException('الإجابة غير موجودة');
-    const question = await this.findOne(answer.question.toString());
+    const question = await this.findOne(answer.question.toString(), requesterId);
     if (!question.author || question.author._id.toString() !== requesterId) {
       throw new ForbiddenException('يمكن لصاحب السؤال فقط قبول إجابة');
     }

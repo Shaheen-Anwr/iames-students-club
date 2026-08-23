@@ -351,6 +351,8 @@ export interface Assignment {
   completedBy: string[];
   createdAt: string;
   isPersonal?: boolean;
+  // Set only for assignments created inside a study group -- null/absent for every global one.
+  group?: string | null;
 }
 
 // Public question shape -- correctIndex is only present once the viewer has attempted the quiz
@@ -377,6 +379,8 @@ export interface QuizSummary {
   attemptCount: number;
   myScore: number | null;
   createdAt: string;
+  // Set only for quizzes created inside a study group -- null/absent for every global one.
+  group?: string | null;
 }
 
 export interface QuizDetail {
@@ -649,6 +653,8 @@ export interface Question {
   department?: Department | null;
   answerCount: number;
   createdAt: string;
+  // Set only for questions asked inside a study group -- null/absent for every global one.
+  group?: string | null;
 }
 
 export interface Answer {

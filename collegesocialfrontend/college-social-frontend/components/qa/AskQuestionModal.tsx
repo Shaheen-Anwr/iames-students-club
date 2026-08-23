@@ -13,7 +13,15 @@ import { useToast } from '@/lib/toast-context';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
 import type { PostScope, Question } from '@/lib/types';
 
-export function AskQuestionModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function AskQuestionModal({
+  groupId,
+  open,
+  onClose,
+}: {
+  groupId?: string;
+  open: boolean;
+  onClose: () => void;
+}) {
   const { user } = useAuth();
   const router = useRouter();
   const { showToast } = useToast();
@@ -41,14 +49,20 @@ export function AskQuestionModal({ open, onClose }: { open: boolean; onClose: ()
     if (!title.trim() || !body.trim()) return;
     setSubmitting(true);
     try {
-      const question = await api.post<Question>('/qa', {
-        title: title.trim(),
-        body: body.trim(),
-        courseCode: courseCode.trim() || undefined,
-        scope: user?.department ? scope : 'public',
-      });
+      const question = groupId
+        ? await api.post<Question>(`/qa/group/${groupId}`, {
+            title: title.trim(),
+            body: body.trim(),
+            courseCode: courseCode.trim() || undefined,
+          })
+        : await api.post<Question>('/qa', {
+            title: title.trim(),
+            body: body.trim(),
+            courseCode: courseCode.trim() || undefined,
+            scope: user?.department ? scope : 'public',
+          });
       handleClose();
-      router.push(`/study/qa/${question._id}`);
+      router.push(groupId ? `/groups/${groupId}/study/qa/${question._id}` : `/study/qa/${question._id}`);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال السؤال', 'error');
     } finally {
@@ -73,7 +87,7 @@ export function AskQuestionModal({ open, onClose }: { open: boolean; onClose: ()
           onChange={(e) => setCourseCode(e.target.value)}
         />
 
-        {user?.department && (
+        {!groupId && user?.department && (
           <div className="flex gap-1 rounded-full bg-surface-2/70 p-1">
             <button
               type="button"

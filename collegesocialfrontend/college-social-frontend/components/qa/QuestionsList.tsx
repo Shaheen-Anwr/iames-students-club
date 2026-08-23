@@ -13,7 +13,7 @@ import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import type { PostScope, Question } from '@/lib/types';
 import { AskQuestionModal } from './AskQuestionModal';
 
-export function QuestionsList() {
+export function QuestionsList({ groupId, canCreate = true }: { groupId?: string; canCreate?: boolean } = {}) {
   const { user } = useAuth();
   const [scope, setScope] = useState<PostScope>(user?.department ? 'department' : 'public');
   const [questions, setQuestions] = useState<Question[]>([]);
@@ -22,16 +22,23 @@ export function QuestionsList() {
 
   useEffect(() => {
     setLoading(true);
+    if (groupId) {
+      api
+        .get<Question[]>(`/qa/group/${groupId}?limit=30`)
+        .then(setQuestions)
+        .finally(() => setLoading(false));
+      return;
+    }
     api
       .get<Question[]>(`/qa?limit=30&scope=${scope}`)
       .then(setQuestions)
       .finally(() => setLoading(false));
-  }, [scope]);
+  }, [groupId, scope]);
 
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        {user?.department ? (
+        {!groupId && user?.department ? (
           <div className="flex gap-1 rounded-full bg-surface-2/70 p-1">
             <button
               onClick={() => setScope('department')}
@@ -55,10 +62,12 @@ export function QuestionsList() {
         ) : (
           <span />
         )}
-        <Button size="sm" onClick={() => setModalOpen(true)}>
-          <Plus className="h-4 w-4" />
-          اطرح سؤالاً
-        </Button>
+        {canCreate && (
+          <Button size="sm" onClick={() => setModalOpen(true)}>
+            <Plus className="h-4 w-4" />
+            اطرح سؤالاً
+          </Button>
+        )}
       </div>
 
       {loading ? (
@@ -75,7 +84,7 @@ export function QuestionsList() {
           {questions.map((q) => (
             <Link
               key={q._id}
-              href={`/study/qa/${q._id}`}
+              href={groupId ? `/groups/${groupId}/study/qa/${q._id}` : `/study/qa/${q._id}`}
               className="block rounded-2xl border border-border bg-surface p-4 transition-colors hover:bg-surface-2"
             >
               <div className="flex items-start gap-3">
@@ -99,7 +108,7 @@ export function QuestionsList() {
         </div>
       )}
 
-      <AskQuestionModal open={modalOpen} onClose={() => setModalOpen(false)} />
+      {canCreate && <AskQuestionModal groupId={groupId} open={modalOpen} onClose={() => setModalOpen(false)} />}
     </div>
   );
 }

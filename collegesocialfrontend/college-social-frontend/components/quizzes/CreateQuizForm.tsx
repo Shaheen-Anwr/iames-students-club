@@ -20,7 +20,15 @@ function emptyQuestion(): DraftQuestion {
   return { text: '', options: ['', ''], correctIndex: 0 };
 }
 
-export function CreateQuizForm({ onCreated, onClose }: { onCreated: (quiz: QuizSummary) => void; onClose: () => void }) {
+export function CreateQuizForm({
+  groupId,
+  onCreated,
+  onClose,
+}: {
+  groupId?: string;
+  onCreated: (quiz: QuizSummary) => void;
+  onClose: () => void;
+}) {
   const { showToast } = useToast();
 
   const [title, setTitle] = useState('');
@@ -77,7 +85,7 @@ export function CreateQuizForm({ onCreated, onClose }: { onCreated: (quiz: QuizS
 
     setSubmitting(true);
     try {
-      const quiz = await api.post<QuizSummary>('/quizzes', {
+      const quiz = await api.post<QuizSummary>(groupId ? `/quizzes/group/${groupId}` : '/quizzes', {
         title: title.trim(),
         description: description.trim() || undefined,
         courseCode: courseCode.trim() || undefined,

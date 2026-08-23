@@ -5,6 +5,7 @@ import { Answer, AnswerSchema } from './schemas/answer.schema';
 import { QaService } from './qa.service';
 import { QaController } from './qa.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { GroupsModule } from '../groups/groups.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: Answer.name, schema: AnswerSchema },
     ]),
     NotificationsModule,
+    GroupsModule,
   ],
   controllers: [QaController],
   providers: [QaService],
