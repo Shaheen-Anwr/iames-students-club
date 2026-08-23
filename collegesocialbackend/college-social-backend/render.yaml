@@ -37,9 +37,17 @@ services:
         value: "200"
       - key: COLLEGE_EMAIL_DOMAIN
         sync: false
-      - key: RESEND_API_KEY
+      # smtp-relay.brevo.com:587 is Brevo's free-tier relay (see EmailService/.env.example for why
+      # SMTP over a transactional-provider API) -- only the credentials below are secret/per-account.
+      - key: SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: SMTP_PORT
+        value: "587"
+      - key: SMTP_USER
         sync: false
-      - key: RESEND_FROM_EMAIL
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM_EMAIL
         sync: false
       - key: CLOUDINARY_CLOUD_NAME
         sync: false
@@ -53,3 +61,12 @@ services:
         value: https://api.groq.com/openai/v1
       - key: AI_MODEL
         value: openai/gpt-oss-120b
+      # Web Push (phone notifications). Public key is safe to commit -- it's already baked into
+      # the frontend build too (see .env.production there), so this MUST match that value exactly.
+      # Only the private key is a real secret and needs to be pasted on the dashboard.
+      - key: VAPID_PUBLIC_KEY
+        value: BC7ySzBzkY79id34X7Ysw6dn1hjFge6Z7hWXInwpJsNw-_4EPmm5K6kdnAkhVaE6x0rUK5_0vyQqBqodVNxd6yY
+      - key: VAPID_PRIVATE_KEY
+        sync: false
+      - key: VAPID_SUBJECT
+        value: mailto:admin@example.com

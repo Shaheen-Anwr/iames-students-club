@@ -12,7 +12,9 @@ export type NotificationType =
   | 'comment_reply'
   | 'comment_reaction'
   | 'qa_answer'
-  | 'mention';
+  | 'mention'
+  | 'friend_request'
+  | 'friend_accept';
 
 @Schema({ timestamps: true })
 export class Notification {
@@ -24,7 +26,19 @@ export class Notification {
 
   @Prop({
     required: true,
-    enum: ['chat_message', 'channel_message', 'post_comment', 'post_reaction', 'post_share', 'comment_reply', 'comment_reaction', 'qa_answer', 'mention'],
+    enum: [
+      'chat_message',
+      'channel_message',
+      'post_comment',
+      'post_reaction',
+      'post_share',
+      'comment_reply',
+      'comment_reaction',
+      'qa_answer',
+      'mention',
+      'friend_request',
+      'friend_accept',
+    ],
   })
   type: NotificationType;
 

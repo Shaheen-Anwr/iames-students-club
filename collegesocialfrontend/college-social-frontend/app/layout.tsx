@@ -18,14 +18,24 @@ const fontLatin = IBM_Plex_Sans({
 export const metadata: Metadata = {
   title: 'IEAMS Students Club',
   description: 'الشبكة الاجتماعية لـ IEAMS Students Community — المحاضرات والملفات والدردشة في مكان واحد.',
+  manifest: '/manifest.json',
+  icons: {
+    icon: [
+      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
+      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
+    ],
+    apple: '/icons/apple-touch-icon.png',
+  },
 };
 
 // viewportFit=cover exposes env(safe-area-inset-*) so fixed bars can clear the iOS
-// notch/home-indicator; no maximumScale lock, so pinch-zoom stays available.
+// notch/home-indicator; no maximumScale lock, so pinch-zoom stays available. themeColor
+// matches the brand navy, used for the PWA's manifest/installed-app chrome.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  themeColor: '#1d3557',
 };
 
 // Blocking inline script: applies the saved theme class before React hydrates, so there's no

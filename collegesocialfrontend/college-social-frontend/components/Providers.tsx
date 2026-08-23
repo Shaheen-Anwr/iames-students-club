@@ -7,10 +7,12 @@ import { ThemeProvider } from '@/lib/theme-context';
 import { NotificationsProvider } from '@/lib/notifications-context';
 import { AiProvider } from '@/lib/ai-context';
 import { CallProvider } from '@/components/chat/CallProvider';
+import { PwaRegistrar } from '@/components/PwaRegistrar';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <ThemeProvider>
+      <PwaRegistrar />
       <ToastProvider>
         <AuthProvider>
           <SocketProvider>

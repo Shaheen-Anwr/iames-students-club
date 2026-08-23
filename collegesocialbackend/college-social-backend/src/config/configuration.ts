@@ -19,9 +19,14 @@ export default () => ({
     maxFileSizeMb: parseInt(process.env.MAX_FILE_SIZE_MB ?? '200', 10),
   },
   collegeEmailDomain: process.env.COLLEGE_EMAIL_DOMAIN ?? '',
-  resend: {
-    apiKey: process.env.RESEND_API_KEY ?? '',
-    fromEmail: process.env.RESEND_FROM_EMAIL ?? '',
+  // Plain SMTP for verification/reset emails -- works with any provider, no code changes to
+  // switch. See EmailService and .env.example for why (Brevo's free tier is the recommended one).
+  smtp: {
+    host: process.env.SMTP_HOST ?? '',
+    port: parseInt(process.env.SMTP_PORT ?? '587', 10),
+    user: process.env.SMTP_USER ?? '',
+    pass: process.env.SMTP_PASS ?? '',
+    fromEmail: process.env.SMTP_FROM_EMAIL ?? '',
   },
   frontendUrl: process.env.FRONTEND_URL ?? 'https://iames-students-club-roan.vercel.app',
   cloudinary: {
@@ -44,5 +49,12 @@ export default () => ({
     // their conversations -- protects the provider quota/bill from a single runaway user. See
     // AiConversationsService.sendMessageStream.
     dailyMessageQuota: parseInt(process.env.AI_DAILY_MESSAGE_QUOTA ?? '40', 10),
+  },
+  // Web Push (VAPID). Generate a pair with `npx web-push generate-vapid-keys`. Until both keys
+  // are set, PushService no-ops (logs a warning once) instead of throwing -- see PushService.
+  push: {
+    publicKey: process.env.VAPID_PUBLIC_KEY ?? '',
+    privateKey: process.env.VAPID_PRIVATE_KEY ?? '',
+    subject: process.env.VAPID_SUBJECT ?? 'mailto:admin@example.com',
   },
 });

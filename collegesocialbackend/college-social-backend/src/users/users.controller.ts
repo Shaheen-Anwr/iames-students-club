@@ -35,6 +35,12 @@ export class UsersController {
     return this.gamificationService.getLeaderboard(Number(limit) || 20);
   }
 
+  // GET /api/users/suggestions -- same reason as leaderboard above: must stay above @Get(':id').
+  @Get('suggestions')
+  async suggestions(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
+    return this.usersService.suggestFriends(user.userId, Number(limit) || 8);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.usersService.findById(id);
@@ -48,5 +54,25 @@ export class UsersController {
   @Delete(':id/block')
   async unblock(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.usersService.unblockUser(user.userId, id);
+  }
+
+  @Post(':id/friend-request')
+  async sendFriendRequest(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.sendFriendRequest(user.userId, id);
+  }
+
+  @Post(':id/friend-accept')
+  async acceptFriendRequest(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.acceptFriendRequest(user.userId, id);
+  }
+
+  @Delete(':id/friend-request')
+  async removeFriendRequest(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.removeFriendRequest(user.userId, id);
+  }
+
+  @Delete(':id/friend')
+  async unfriend(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.unfriend(user.userId, id);
   }
 }

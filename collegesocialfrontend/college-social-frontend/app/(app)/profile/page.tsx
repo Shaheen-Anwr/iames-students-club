@@ -6,6 +6,7 @@ import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { EditProfileForm } from '@/components/profile/EditProfileForm';
 import { ChangePasswordForm } from '@/components/profile/ChangePasswordForm';
 import { PersonalEmailForm } from '@/components/profile/PersonalEmailForm';
+import { PushNotificationsToggle } from '@/components/profile/PushNotificationsToggle';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Spinner } from '@/components/ui/Spinner';
 import type { ProfileTab } from '@/components/profile/ProfileTabs';
@@ -38,6 +39,7 @@ export default function ProfilePage() {
           <div className="space-y-4">
             <EditProfileForm user={user} />
             <PersonalEmailForm />
+            <PushNotificationsToggle />
             <ChangePasswordForm />
           </div>
         )}

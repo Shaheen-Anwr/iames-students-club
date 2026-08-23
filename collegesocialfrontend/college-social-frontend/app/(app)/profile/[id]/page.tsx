@@ -7,6 +7,7 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { AboutCard } from '@/components/profile/AboutCard';
+import { FriendActionButton } from '@/components/profile/FriendActionButton';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -67,10 +68,13 @@ export default function UserProfilePage() {
           onTabChange={setTab}
         />
         {!isOwn && (
-          <Button onClick={handleMessage} loading={messaging} size="lg" className="w-full">
-            <MessageCircle className="h-4 w-4" />
-            مراسلة
-          </Button>
+          <div className="flex gap-2">
+            <Button onClick={handleMessage} loading={messaging} size="lg" className="flex-1">
+              <MessageCircle className="h-4 w-4" />
+              مراسلة
+            </Button>
+            <FriendActionButton targetUser={profile} size="lg" className="flex-1" />
+          </div>
         )}
         {tab === 'posts' ? <UserPostsFeed userId={profile._id} /> : <AboutCard user={profile} />}
       </div>

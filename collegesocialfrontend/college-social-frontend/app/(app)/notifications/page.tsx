@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, Heart, HelpCircle, MessageCircle, MessageSquareText, Share2, Users } from 'lucide-react';
+import { Bell, Heart, HelpCircle, MessageCircle, MessageSquareText, Share2, Users, UserPlus, UserCheck } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -20,6 +20,8 @@ const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   comment_reply: 'رد على تعليقك',
   comment_reaction: 'تفاعل مع تعليقك',
   qa_answer: 'أجاب على سؤالك',
+  friend_request: 'أرسل لك طلب صداقة',
+  friend_accept: 'قبل طلب صداقتك',
 };
 
 const NOTIFICATION_ICONS: Record<Notification['type'], React.ComponentType<{ className?: string }>> = {
@@ -31,6 +33,8 @@ const NOTIFICATION_ICONS: Record<Notification['type'], React.ComponentType<{ cla
   comment_reply: MessageSquareText,
   comment_reaction: Heart,
   qa_answer: HelpCircle,
+  friend_request: UserPlus,
+  friend_accept: UserCheck,
 };
 
 function notificationHref(notification: Notification): string {
@@ -41,6 +45,9 @@ function notificationHref(notification: Notification): string {
       return notification.groupId && notification.channelId ? `/groups/${notification.groupId}/${notification.channelId}` : '/groups';
     case 'qa_answer':
       return notification.questionId ? `/study/qa/${notification.questionId}` : '/study/qa';
+    case 'friend_request':
+    case 'friend_accept':
+      return notification.actor ? `/profile/${notification.actor._id}` : '/feed';
     case 'post_comment':
     case 'post_reaction':
     case 'post_share':

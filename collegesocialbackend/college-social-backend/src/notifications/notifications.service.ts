@@ -1,8 +1,11 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
 import { Notification, NotificationDocument, NotificationType } from './schemas/notification.schema';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
+import { PushService } from '../push/push.service';
+import { buildPushPayload } from '../push/push-payload.util';
 
 export interface NotificationStats {
   total: number;
@@ -25,9 +28,13 @@ interface CreateNotificationInput {
 
 @Injectable()
 export class NotificationsService {
+  private readonly logger = new Logger(NotificationsService.name);
+
   constructor(
     @InjectModel(Notification.name) private notificationModel: Model<NotificationDocument>,
     private readonly realtimeEmitter: RealtimeEmitterService,
+    private readonly pushService: PushService,
+    private readonly config: ConfigService,
   ) {}
 
   async create(input: CreateNotificationInput): Promise<NotificationDocument> {
@@ -45,6 +52,13 @@ export class NotificationsService {
 
     const populated = await notification.populate('actor', 'name role photoUrl');
     this.realtimeEmitter.emitToUser(input.recipient.toString(), 'newNotification', populated);
+
+    // Fire-and-forget -- a push failure must never break notification creation itself.
+    const frontendUrl = this.config.get<string>('frontendUrl')!;
+    this.pushService
+      .sendToUser(input.recipient.toString(), buildPushPayload(populated, frontendUrl))
+      .catch((err) => this.logger.warn(`Push send failed: ${err?.message ?? err}`));
+
     return populated;
   }
 

@@ -7,6 +7,25 @@ import { Specialization } from '../../common/enums/specialization.enum';
 
 export type UserDocument = HydratedDocument<User>;
 
+// One browser/device's Web Push subscription. Embedded (not a separate collection) since it's
+// small and always accessed together with its owning user -- see PushService.
+@Schema({ _id: false })
+export class PushSubscription {
+  @Prop({ required: true })
+  endpoint: string;
+
+  @Prop({ type: { p256dh: String, auth: String }, required: true })
+  keys: { p256dh: string; auth: string };
+
+  @Prop({ type: String, default: null })
+  userAgent: string | null;
+
+  @Prop({ type: Date, default: Date.now })
+  createdAt: Date;
+}
+
+export const PushSubscriptionSchema = SchemaFactory.createForClass(PushSubscription);
+
 @Schema({ timestamps: true })
 export class User {
   // The college's own student/professor ID, e.g. "2430525". Used to log in.
@@ -35,10 +54,13 @@ export class User {
   emailVerificationExpiresAt: Date | null;
 
   // Recovery email for the forgot-password flow -- deliberately separate from collegeEmail, which
-  // a locked-out student may not be able to check independently of this platform. Null until the
-  // student sets one from profile settings (see AuthController#setPersonalEmail). `sparse` lets
-  // every account without one coexist under the unique index, same as collegeEmail.
-  @Prop({ type: String, default: null, unique: true, sparse: true, lowercase: true, trim: true })
+  // a locked-out student may not be able to check independently of this platform. Absent until the
+  // student sets one from profile settings (see AuthController#setPersonalEmail). Deliberately NO
+  // `default: null` here, unlike this file's other nullable fields -- `sparse` only excludes a
+  // document from the unique index when the field is entirely missing, not when it's present with
+  // value null, so a schema default of null would make every account without one collide on that
+  // same null under the unique index (breaks after the very first such account is created).
+  @Prop({ type: String, unique: true, sparse: true, lowercase: true, trim: true })
   personalEmail: string | null;
 
   // Single active password-reset code at a time; overwritten on each forgot-password request.
@@ -109,6 +131,23 @@ export class User {
   // either side blocking the other stops 1:1 messaging -- groups are unaffected.
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
   blockedUsers: Types.ObjectId[];
+
+  // Friendship -- request/accept flow. Mutual once both sides carry each other in `friends`;
+  // until then the pending request lives as a mirrored pair across these two arrays (sender's
+  // friendRequestsSent / recipient's friendRequestsReceived). See UsersService for the full flow.
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  friends: Types.ObjectId[];
+
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  friendRequestsSent: Types.ObjectId[];
+
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  friendRequestsReceived: Types.ObjectId[];
+
+  // Web Push subscriptions, one per browser/device the user enabled phone notifications on.
+  // See PushService for send/prune logic.
+  @Prop({ type: [PushSubscriptionSchema], default: [] })
+  pushSubscriptions: PushSubscription[];
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

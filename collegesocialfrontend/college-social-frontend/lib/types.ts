@@ -28,6 +28,9 @@ export interface User {
   isOnline?: boolean;
   lastSeenAt?: string | null;
   blockedUsers?: string[];
+  friends?: string[];
+  friendRequestsSent?: string[];
+  friendRequestsReceived?: string[];
 }
 
 export type BadgeId = 'first_post' | 'active_streak_7' | 'helpful_10' | 'assignments_5' | 'quizzes_5';
@@ -626,7 +629,9 @@ export type NotificationType =
   | 'post_share'
   | 'comment_reply'
   | 'comment_reaction'
-  | 'qa_answer';
+  | 'qa_answer'
+  | 'friend_request'
+  | 'friend_accept';
 
 export interface Notification {
   _id: string;

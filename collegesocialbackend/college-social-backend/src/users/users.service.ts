@@ -1,4 +1,4 @@
-import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ConflictException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import * as crypto from 'crypto';
@@ -11,6 +11,7 @@ import { SPECIALIZATIONS_BY_DEPARTMENT } from '../common/enums/specialization.en
 import { EmailService } from '../email/email.service';
 import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000; // 15min -- a typed OTP is meant to be used immediately
 const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000; // Shorter than email verification -- more sensitive
@@ -40,6 +41,7 @@ export class UsersService {
     @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly emailService: EmailService,
     private readonly realtimeEmitter: RealtimeEmitterService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async findByCollegeId(collegeId: string): Promise<UserDocument | null> {
@@ -90,6 +92,110 @@ export class UsersService {
       })
       .exec();
     return count > 0;
+  }
+
+  // --- Friendship: request/accept, mirrored across both users' documents (see user.schema.ts) ---
+
+  async sendFriendRequest(userId: string, targetId: string): Promise<UserDocument> {
+    if (userId === targetId) throw new BadRequestException('لا يمكنك إضافة نفسك كصديق');
+    const [me, target] = await Promise.all([this.userModel.findById(userId).exec(), this.userModel.findById(targetId).exec()]);
+    if (!me || !target) throw new NotFoundException('المستخدم غير موجود');
+    if (me.friends.some((f) => f.toString() === targetId)) throw new BadRequestException('أنتما صديقان بالفعل');
+    if (await this.areBlocked(userId, targetId)) throw new ForbiddenException('لا يمكنك إضافة هذا المستخدم');
+
+    // They already asked us first -- accept theirs instead of crossing two pending requests.
+    if (me.friendRequestsReceived.some((f) => f.toString() === targetId)) {
+      return this.acceptFriendRequest(userId, targetId);
+    }
+
+    const uid = new Types.ObjectId(userId);
+    const tid = new Types.ObjectId(targetId);
+    if (!me.friendRequestsSent.some((f) => f.toString() === targetId)) me.friendRequestsSent.push(tid);
+    if (!target.friendRequestsReceived.some((f) => f.toString() === userId)) target.friendRequestsReceived.push(uid);
+    await Promise.all([me.save(), target.save()]);
+
+    await this.notificationsService.create({ recipient: targetId, actor: userId, type: 'friend_request' });
+    return this.findById(userId);
+  }
+
+  async acceptFriendRequest(userId: string, requesterId: string): Promise<UserDocument> {
+    const [me, requester] = await Promise.all([
+      this.userModel.findById(userId).exec(),
+      this.userModel.findById(requesterId).exec(),
+    ]);
+    if (!me || !requester) throw new NotFoundException('المستخدم غير موجود');
+    if (!me.friendRequestsReceived.some((f) => f.toString() === requesterId)) {
+      throw new BadRequestException('لا يوجد طلب صداقة من هذا المستخدم');
+    }
+
+    const uid = new Types.ObjectId(userId);
+    const rid = new Types.ObjectId(requesterId);
+    me.friendRequestsReceived = me.friendRequestsReceived.filter((f) => f.toString() !== requesterId) as unknown as Types.ObjectId[];
+    requester.friendRequestsSent = requester.friendRequestsSent.filter((f) => f.toString() !== userId) as unknown as Types.ObjectId[];
+    if (!me.friends.some((f) => f.toString() === requesterId)) me.friends.push(rid);
+    if (!requester.friends.some((f) => f.toString() === userId)) requester.friends.push(uid);
+    await Promise.all([me.save(), requester.save()]);
+
+    await this.notificationsService.create({ recipient: requesterId, actor: userId, type: 'friend_accept' });
+    return this.findById(userId);
+  }
+
+  // Covers both "cancel a request I sent" and "decline a request I received" -- symmetric removal
+  // regardless of which direction the pending request was in.
+  async removeFriendRequest(userId: string, otherId: string): Promise<UserDocument> {
+    const [me, other] = await Promise.all([this.userModel.findById(userId).exec(), this.userModel.findById(otherId).exec()]);
+    if (!me || !other) throw new NotFoundException('المستخدم غير موجود');
+
+    me.friendRequestsSent = me.friendRequestsSent.filter((f) => f.toString() !== otherId) as unknown as Types.ObjectId[];
+    me.friendRequestsReceived = me.friendRequestsReceived.filter((f) => f.toString() !== otherId) as unknown as Types.ObjectId[];
+    other.friendRequestsSent = other.friendRequestsSent.filter((f) => f.toString() !== userId) as unknown as Types.ObjectId[];
+    other.friendRequestsReceived = other.friendRequestsReceived.filter((f) => f.toString() !== userId) as unknown as Types.ObjectId[];
+    await Promise.all([me.save(), other.save()]);
+    return this.findById(userId);
+  }
+
+  async unfriend(userId: string, otherId: string): Promise<UserDocument> {
+    const [me, other] = await Promise.all([this.userModel.findById(userId).exec(), this.userModel.findById(otherId).exec()]);
+    if (!me || !other) throw new NotFoundException('المستخدم غير موجود');
+
+    me.friends = me.friends.filter((f) => f.toString() !== otherId) as unknown as Types.ObjectId[];
+    other.friends = other.friends.filter((f) => f.toString() !== userId) as unknown as Types.ObjectId[];
+    await Promise.all([me.save(), other.save()]);
+    return this.findById(userId);
+  }
+
+  // "People you may know" -- excludes self, existing friends, pending requests either direction,
+  // and anyone blocked either direction. Prefers same department (most relevant in a college app),
+  // then fills any remaining slots from the rest of the eligible pool.
+  async suggestFriends(userId: string, limit = 8): Promise<UserDocument[]> {
+    const me = await this.userModel.findById(userId).exec();
+    if (!me) throw new NotFoundException('المستخدم غير موجود');
+
+    const excludeIds = [
+      new Types.ObjectId(userId),
+      ...me.friends,
+      ...me.friendRequestsSent,
+      ...me.friendRequestsReceived,
+      ...me.blockedUsers,
+    ];
+    const baseFilter = {
+      _id: { $nin: excludeIds },
+      blockedUsers: { $ne: new Types.ObjectId(userId) },
+      isActive: true,
+    };
+
+    const bySameDepartment = me.department
+      ? await this.userModel.find({ ...baseFilter, department: me.department }).select('-passwordHash').limit(limit).exec()
+      : [];
+    if (bySameDepartment.length >= limit) return bySameDepartment;
+
+    const alreadyPicked = excludeIds.concat(bySameDepartment.map((u) => u._id as Types.ObjectId));
+    const rest = await this.userModel
+      .find({ ...baseFilter, _id: { $nin: alreadyPicked } })
+      .select('-passwordHash')
+      .limit(limit - bySameDepartment.length)
+      .exec();
+    return [...bySameDepartment, ...rest];
   }
 
   // The college email's local part must exactly equal the student's college ID, e.g.

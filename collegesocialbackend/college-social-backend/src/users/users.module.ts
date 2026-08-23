@@ -5,9 +5,15 @@ import { UsersService } from './users.service';
 import { UsersController } from './users.controller';
 import { EmailModule } from '../email/email.module';
 import { GamificationModule } from '../gamification/gamification.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]), EmailModule, GamificationModule],
+  imports: [
+    MongooseModule.forFeature([{ name: User.name, schema: UserSchema }]),
+    EmailModule,
+    GamificationModule,
+    NotificationsModule,
+  ],
   controllers: [UsersController],
   providers: [UsersService],
   exports: [UsersService],

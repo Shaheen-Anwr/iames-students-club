@@ -6,6 +6,7 @@ import { FeedAiChatCard } from '@/components/feed/FeedAiChatCard';
 import { FeedAccountCard } from '@/components/feed/FeedAccountCard';
 import { FeedChatsCard } from '@/components/feed/FeedChatsCard';
 import { FeedTodayCard } from '@/components/feed/FeedTodayCard';
+import { FeedFriendSuggestionsCard } from '@/components/feed/FeedFriendSuggestionsCard';
 import { ChatProvider } from '@/components/chat/ChatProvider';
 
 export default function FeedPage() {
@@ -44,6 +45,7 @@ export default function FeedPage() {
               <div className="sticky top-0 space-y-4">
                 <FeedTodayCard />
                 <FeedAccountCard />
+                <FeedFriendSuggestionsCard />
                 <FeedChatsCard />
               </div>
             </aside>
