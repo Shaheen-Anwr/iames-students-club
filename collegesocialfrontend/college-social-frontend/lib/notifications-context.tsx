@@ -27,6 +27,8 @@ const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   comment_reply: 'رد على تعليقك',
   comment_reaction: 'تفاعل مع تعليقك',
   qa_answer: 'أجاب على سؤالك',
+  friend_request: 'أرسل لك طلب صداقة',
+  friend_accept: 'قبل طلب صداقتك',
 };
 
 // Mounted globally (in Providers.tsx) rather than scoped like ChatProvider/GroupsProvider --
