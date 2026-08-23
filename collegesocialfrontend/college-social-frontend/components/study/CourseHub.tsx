@@ -33,7 +33,7 @@ function courseColor(code: string) {
 
 export function CourseHub() {
   const { user } = useAuth();
-  const isAdmin = user?.role === 'admin';
+  const canManageCourses = user?.role === 'admin' || user?.role === 'professor';
   const [courses, setCourses] = useState<CourseSummary[]>([]);
   const [myEntries, setMyEntries] = useState<ScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
@@ -67,7 +67,7 @@ export function CourseHub() {
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <h2 className="text-sm font-semibold text-foreground">مقرراتي</h2>
-          {isAdmin && (
+          {canManageCourses && (
             <Button size="sm" onClick={() => setModalOpen(true)}>
               <Plus className="h-4 w-4" />
               أضف مقررًا
@@ -76,7 +76,7 @@ export function CourseHub() {
         </div>
         {myCourseNames.length === 0 ? (
           <p className="text-xs text-muted-foreground">
-            {isAdmin ? 'لم تُضِف أي مقررات إلى الجدول بعد.' : 'ستظهر هنا مقررات جدولك الدراسي بمجرد نشره من إدارة الكلية.'}
+            {canManageCourses ? 'لم تُضِف أي مقررات إلى الجدول بعد.' : 'ستظهر هنا مقررات جدولك الدراسي بمجرد نشره من إدارة الكلية.'}
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
@@ -131,7 +131,7 @@ export function CourseHub() {
         )}
       </div>
 
-      {isAdmin && (
+      {canManageCourses && (
         <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="إضافة مقرر">
           <ScheduleEntryForm onSaved={handleAdded} onClose={() => setModalOpen(false)} />
         </Modal>

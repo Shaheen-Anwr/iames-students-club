@@ -12,8 +12,8 @@ import { Department } from '../common/enums/department.enum';
 import { AcademicYear } from '../common/enums/academic-year.enum';
 import { Specialization } from '../common/enums/specialization.enum';
 
-// The official weekly timetable, published per department/academicYear/specialization by admins.
-// Reads are open to everyone (like the public lecture library); writes are admin-only.
+// The official weekly timetable, published per department/academicYear/specialization by admins
+// and professors. Reads are open to everyone (like the public lecture library).
 @UseGuards(JwtAuthGuard)
 @Controller('schedule')
 export class ScheduleController {
@@ -36,21 +36,21 @@ export class ScheduleController {
   }
 
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.PROFESSOR)
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateScheduleEntryDto) {
     return this.scheduleService.create(user.userId, dto);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.PROFESSOR)
   @Patch(':id')
   async update(@Param('id') id: string, @Body() dto: UpdateScheduleEntryDto) {
     return this.scheduleService.update(id, dto);
   }
 
   @UseGuards(RolesGuard)
-  @Roles(Role.ADMIN)
+  @Roles(Role.ADMIN, Role.PROFESSOR)
   @Delete(':id')
   async remove(@Param('id') id: string) {
     await this.scheduleService.remove(id);
