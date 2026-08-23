@@ -23,7 +23,7 @@ export default function ChatLayout({ children }: { children: React.ReactNode }) 
           >
             <ConversationList />
           </div>
-          <div className={cn('min-h-0 flex-1 flex-col', isDetail ? 'flex' : 'hidden lg:flex')}>{children}</div>
+          <div className={cn('min-h-0 min-w-0 flex-1 flex-col', isDetail ? 'flex' : 'hidden lg:flex')}>{children}</div>
         </div>
       </GroupsProvider>
     </ChatProvider>
