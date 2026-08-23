@@ -72,7 +72,7 @@ export function RegisterForm() {
       return;
     }
     if (emailMismatch) {
-      setError(`البريد الجامعي يجب أن يكون ${expectedEmail} بالضبط`);
+      setError(`البريد الجامعي يجب أن يكون ⁦${expectedEmail}⁩ بالضبط`);
       return;
     }
 
@@ -167,6 +167,7 @@ export function RegisterForm() {
             label="البريد الجامعي"
             name="collegeEmail"
             type="email"
+            dir="ltr"
             placeholder="2430525@iames.mans.edu.eg"
             value={collegeEmail}
             onChange={(e) => handleCollegeEmailChange(e.target.value)}
@@ -180,10 +181,12 @@ export function RegisterForm() {
           ) : emailMismatch ? (
             <p className="mt-1 flex items-center gap-1 text-xs text-danger">
               <X className="h-3.5 w-3.5" />
-              يجب أن يكون البريد {expectedEmail} بالضبط
+              يجب أن يكون البريد <bdi dir="ltr">{expectedEmail}</bdi> بالضبط
             </p>
           ) : (
-            <p className="mt-1 text-xs text-muted-foreground">يُملأ تلقائيًا من رقمك الجامعي، مثل 2430525@iames.mans.edu.eg</p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              يُملأ تلقائيًا من رقمك الجامعي، مثل <bdi dir="ltr">2430525@iames.mans.edu.eg</bdi>
+            </p>
           )}
         </div>
         <div className="grid grid-cols-2 gap-3">

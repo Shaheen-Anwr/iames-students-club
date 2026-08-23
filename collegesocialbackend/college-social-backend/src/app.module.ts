@@ -41,7 +41,12 @@ import { AppController } from './app.controller';
       }),
     }),
     // Global default rate limit; auth endpoints override with tighter limits via @Throttle().
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 20 }]),
+    // errorMessage is set explicitly -- otherwise a 429 falls back to @nestjs/throttler's English
+    // default, which stands out badly on this all-Arabic UI (e.g. surfaced as a chat toast).
+    ThrottlerModule.forRoot({
+      throttlers: [{ ttl: 60000, limit: 20 }],
+      errorMessage: 'محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل',
+    }),
     // Serves /uploads/** as static files, e.g. http://localhost:3001/uploads/photos/xyz.jpg
     // ServeStaticModule.forRoot() runs at module-load time, before DI, so this reads UPLOADS_DIR
     // straight from process.env (same default as configuration.ts's uploadsDir) rather than via

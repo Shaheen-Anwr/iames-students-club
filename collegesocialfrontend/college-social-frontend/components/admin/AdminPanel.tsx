@@ -287,7 +287,7 @@ export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnl
                               {u.name} {isSelf && <span className="text-xs font-normal text-muted-foreground">(أنت)</span>}
                             </p>
                             <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                              {u.collegeEmail}
+                              <bdi dir="ltr">{u.collegeEmail}</bdi>
                               {u.collegeEmailVerifiedAt && (
                                 <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-label="بريد موثّق" />
                               )}

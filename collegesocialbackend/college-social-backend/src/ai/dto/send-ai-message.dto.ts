@@ -1,5 +1,5 @@
 import { IsIn, IsNotEmpty, IsOptional, IsString, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 class AiMessageAttachmentDto {
   @IsString()
@@ -15,6 +15,10 @@ class AiMessageAttachmentDto {
 }
 
 export class SendAiMessageDto {
+  // Trimmed before validation so a whitespace-only message (e.g. "   ") is caught by
+  // @IsNotEmpty below instead of slipping through as a "non-empty" string and burning a real
+  // AI request.
+  @Transform(({ value }) => (typeof value === 'string' ? value.trim() : value))
   @IsString()
   @IsNotEmpty({ message: 'الرسالة لا يمكن أن تكون فارغة' })
   text: string;

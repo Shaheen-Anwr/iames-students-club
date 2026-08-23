@@ -72,6 +72,7 @@ export class AiConversationsService {
   }
 
   private async findOwned(id: string, ownerId: string): Promise<AiConversationDocument> {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('المحادثة غير موجودة');
     const conversation = await this.conversationModel.findOne({ _id: id, owner: new Types.ObjectId(ownerId) }).exec();
     if (!conversation) throw new NotFoundException('المحادثة غير موجودة');
     return conversation;

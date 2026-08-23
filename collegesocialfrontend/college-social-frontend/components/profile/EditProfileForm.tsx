@@ -80,7 +80,7 @@ export function EditProfileForm({ user }: { user: User }) {
           <div className="flex items-center justify-between">
             <dt className="text-muted-foreground">البريد الجامعي</dt>
             <dd className="flex items-center gap-2 font-medium text-foreground">
-              {user.collegeEmail}
+              <bdi dir="ltr">{user.collegeEmail}</bdi>
               <span
                 className={cn(
                   'rounded-full px-2 py-0.5 text-[11px] font-medium',
@@ -134,7 +134,7 @@ export function EditProfileForm({ user }: { user: User }) {
       <h2 className="mb-4 text-sm font-semibold text-foreground">تعديل الملف الشخصي</h2>
       <form onSubmit={handleSubmit} className="space-y-4">
         <Input label="الاسم الكامل" value={name} onChange={(e) => setName(e.target.value)} required />
-        <Input label="البريد الجامعي" type="email" value={collegeEmail} onChange={(e) => setCollegeEmail(e.target.value)} required />
+        <Input label="البريد الجامعي" type="email" dir="ltr" value={collegeEmail} onChange={(e) => setCollegeEmail(e.target.value)} required />
         <div>
           <label className="mb-1.5 block text-sm font-medium text-foreground">نبذة</label>
           <Textarea rows={3} value={bio} onChange={(e) => setBio(e.target.value)} placeholder="اكتب نبذة قصيرة عن نفسك..." maxLength={500} />
