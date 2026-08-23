@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { ClipboardList, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
@@ -15,12 +16,16 @@ import { CreateAssignmentForm } from './CreateAssignmentForm';
 
 export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { groupId?: string; canCreate?: boolean } = {}) {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const canCreate = groupId ? !!canCreateOverride : user?.role === 'admin' || user?.role === 'professor';
   const [assignments, setAssignments] = useState<Assignment[]>([]);
   const [loading, setLoading] = useState(true);
   const [courseCode, setCourseCode] = useState('');
   const [upcomingOnly, setUpcomingOnly] = useState(false);
-  const [modalOpen, setModalOpen] = useState(false);
+  // Opens the create-assignment modal automatically when a professor lands here fresh off
+  // registration (RegisterForm.tsx redirects them to /study/assignments?new=1), so posting
+  // their first assignment is the very next step instead of a page they have to find.
+  const [modalOpen, setModalOpen] = useState(() => canCreate && searchParams.get('new') === '1');
 
   useEffect(() => {
     setLoading(true);

@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { Megaphone, Pin, Plus } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { api } from '@/lib/api';
@@ -12,11 +13,14 @@ import { CreateAnnouncementModal } from './CreateAnnouncementModal';
 
 export function AnnouncementsStrip() {
   const { user } = useAuth();
+  const searchParams = useSearchParams();
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [loading, setLoading] = useState(true);
-  const [modalOpen, setModalOpen] = useState(false);
 
   const canPost = user?.role === 'professor' || user?.role === 'admin';
+  // Opens automatically when the home page's "نشر إعلان" quick action links here with
+  // ?announce=1, same pattern as AssignmentsBoard's ?new=1.
+  const [modalOpen, setModalOpen] = useState(() => canPost && searchParams.get('announce') === '1');
 
   useEffect(() => {
     api

@@ -1,6 +1,8 @@
 import Cookies from 'js-cookie';
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? 'http://localhost:3001/api';
+// Relative by default -- see next.config.js's rewrites(), which proxies /api/* to the real
+// backend so the refresh-token cookie stays same-site instead of a droppable cross-site one.
+const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 export const TOKEN_COOKIE = 'college_social_token';
 
 export class ApiError extends Error {

@@ -12,6 +12,7 @@ import { GreetingHeader } from '@/components/home/GreetingHeader';
 import { QuickActions } from '@/components/home/QuickActions';
 import { TodayWidget } from '@/components/home/TodayWidget';
 import { CompactLeaderboard } from '@/components/home/CompactLeaderboard';
+import { MyAssignmentsCard } from '@/components/home/MyAssignmentsCard';
 import { NotificationsPreview } from '@/components/home/NotificationsPreview';
 import { HomeSkeleton } from '@/components/home/HomeSkeleton';
 import type { DashboardResponse } from '@/lib/types';
@@ -19,6 +20,7 @@ import type { DashboardResponse } from '@/lib/types';
 export default function HomePage() {
   const { user } = useAuth();
   const [data, setData] = useState<DashboardResponse | null>(null);
+  const isProfessor = user?.role === 'professor';
 
   useEffect(() => {
     let cancelled = false;
@@ -53,7 +55,7 @@ export default function HomePage() {
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 animate-fade-in">
           <TodayWidget schedule={data.todaySchedule} dueToday={data.dueToday} />
-          <CompactLeaderboard entries={data.leaderboard} />
+          {isProfessor ? <MyAssignmentsCard /> : <CompactLeaderboard entries={data.leaderboard} />}
         </div>
 
         <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 animate-fade-in">
@@ -61,18 +63,20 @@ export default function HomePage() {
           <NotificationsPreview />
         </div>
 
-        <Card className="p-4 animate-fade-in">
-          <div className="mb-3 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Award className="h-4 w-4 text-gold" />
-              <h2 className="text-sm font-semibold text-foreground">أوسمتك</h2>
+        {!isProfessor && (
+          <Card className="p-4 animate-fade-in">
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Award className="h-4 w-4 text-gold" />
+                <h2 className="text-sm font-semibold text-foreground">أوسمتك</h2>
+              </div>
+              <Link href="/profile" className="text-xs font-medium text-muted-foreground hover:text-accent">
+                عرض الملف الشخصي
+              </Link>
             </div>
-            <Link href="/profile" className="text-xs font-medium text-muted-foreground hover:text-accent">
-              عرض الملف الشخصي
-            </Link>
-          </div>
-          <BadgeShelf badges={user.badges ?? []} />
-        </Card>
+            <BadgeShelf badges={user.badges ?? []} />
+          </Card>
+        )}
       </div>
     </div>
   );

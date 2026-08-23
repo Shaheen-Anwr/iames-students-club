@@ -10,6 +10,7 @@ import { AnnouncementDocument } from '../announcements/schemas/announcement.sche
 import { UserDocument } from '../users/schemas/user.schema';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { urgencyOf, Urgency } from '../common/utils/urgency.util';
+import { Role } from '../common/enums/role.enum';
 
 export interface DueItem {
   type: 'assignment' | 'planner';
@@ -65,8 +66,14 @@ export class DashboardService {
         urgency: urgencyOf(task.dueDate, task.done),
       }));
 
+    // Students see assignments they haven't submitted yet; professors/admins didn't "complete"
+    // anything they authored, so completedBy is meaningless for them -- show their own upcoming
+    // assignments instead, as a reminder of what's about to close.
+    const isTeachingStaff = user.role === Role.PROFESSOR || user.role === Role.ADMIN;
     const assignmentDue: DueItem[] = upcomingAssignments
-      .filter((assignment) => !assignment.completedBy.some((cid) => cid.equals(uid)))
+      .filter((assignment) =>
+        isTeachingStaff ? assignment.createdBy.equals(uid) : !assignment.completedBy.some((cid) => cid.equals(uid)),
+      )
       .map((assignment) => ({
         type: 'assignment' as const,
         id: assignment.id,

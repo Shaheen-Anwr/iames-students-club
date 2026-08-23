@@ -87,7 +87,11 @@ export function RegisterForm() {
         department,
         photo,
       });
-      router.push(me.department ? '/feed?scope=department&new=1' : '/feed?new=1');
+      if (me.role === 'professor') {
+        router.push('/study/assignments?new=1');
+      } else {
+        router.push(me.department ? '/feed?scope=department&new=1' : '/feed?new=1');
+      }
     } catch (err) {
       const message = err instanceof ApiError ? err.message : 'حدث خطأ ما. حاول مرة أخرى.';
       setError(message);
