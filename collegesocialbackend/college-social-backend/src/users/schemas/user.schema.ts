@@ -38,6 +38,10 @@ export class User {
   @Prop({ type: String, required: false, default: null })
   photoUrl: string | null;
 
+  // Profile banner image, shown behind the avatar on ProfileHeader. Null until uploaded.
+  @Prop({ type: String, required: false, default: null })
+  coverPhotoUrl: string | null;
+
   @Prop({ type: String, required: true, enum: Role, default: Role.STUDENT })
   role: Role;
 

@@ -13,6 +13,7 @@ export interface User {
   collegeEmail: string;
   collegeEmailVerifiedAt?: string | null;
   photoUrl?: string | null;
+  coverPhotoUrl?: string | null;
   role: Role;
   isActive?: boolean;
   createdAt?: string;
@@ -44,15 +45,6 @@ export interface LeaderboardEntry {
   role: Role;
   points: number;
   streakCount: number;
-}
-
-export interface Session {
-  id: string;
-  userAgent: string | null;
-  ip: string | null;
-  createdAt: string;
-  lastUsedAt: string;
-  current: boolean;
 }
 
 export interface PaginatedUsers {

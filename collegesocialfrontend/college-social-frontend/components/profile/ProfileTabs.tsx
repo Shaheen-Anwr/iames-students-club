@@ -2,29 +2,23 @@
 
 import { cn } from '@/lib/utils';
 
-export type ProfileTab = 'posts' | 'about' | 'sessions';
+export type ProfileTab = 'posts' | 'about';
 
 const TABS: { id: ProfileTab; label: string }[] = [
   { id: 'posts', label: 'المنشورات' },
   { id: 'about', label: 'معلومات' },
 ];
 
-const OWN_ONLY_TABS: { id: ProfileTab; label: string }[] = [{ id: 'sessions', label: 'الجلسات النشطة' }];
-
 export function ProfileTabs({
   active,
   onChange,
-  isOwn = false,
 }: {
   active: ProfileTab;
   onChange: (tab: ProfileTab) => void;
-  isOwn?: boolean;
 }) {
-  const tabs = isOwn ? [...TABS, ...OWN_ONLY_TABS] : TABS;
-
   return (
     <div className="flex gap-1 border-b border-border pb-2">
-      {tabs.map((tab) => (
+      {TABS.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onChange(tab.id)}

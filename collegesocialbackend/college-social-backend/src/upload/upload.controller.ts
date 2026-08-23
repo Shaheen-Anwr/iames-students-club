@@ -36,6 +36,16 @@ export class UploadController {
     return { url, size: file.size, mimeType: file.mimetype };
   }
 
+  // POST /api/upload/cover-photo -> uploads + immediately sets the caller's profile cover photo
+  @Post('cover-photo')
+  @UseInterceptors(FileInterceptor('file', buildMulterOptions('cover-photos')))
+  async uploadCoverPhoto(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthenticatedUser) {
+    if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
+    const url = await this.s3Service.upload(file.buffer, 'cover-photos', file.mimetype, file.originalname);
+    await this.usersService.updateCoverPhoto(user.userId, url);
+    return { url, size: file.size, mimeType: file.mimetype };
+  }
+
   // POST /api/upload/post-images -> up to 10 photos for an image feed post (field name "files")
   @Post('post-images')
   @UseInterceptors(FilesInterceptor('files', 10, buildMulterOptions('post-images')))

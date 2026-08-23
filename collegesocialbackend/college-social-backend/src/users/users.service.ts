@@ -166,6 +166,15 @@ export class UsersService {
     return user;
   }
 
+  async updateCoverPhoto(id: string, coverPhotoUrl: string): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(id, { coverPhotoUrl }, { new: true })
+      .select('-passwordHash')
+      .exec();
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
   async search(query: string): Promise<UserDocument[]> {
     return this.userModel
       .find({

@@ -2,27 +2,42 @@ import { RoleBadge } from '@/components/ui/Badge';
 import { Avatar } from '@/components/ui/Avatar';
 import { StreakPointsPill } from '@/components/gamification/StreakPointsPill';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
-import { assetUrl } from '@/lib/utils';
+import { assetUrl, cn } from '@/lib/utils';
 import type { User } from '@/lib/types';
 import { AvatarUploader } from './AvatarUploader';
+import { CoverPhotoUploader } from './CoverPhotoUploader';
 import { ProfileTabs, type ProfileTab } from './ProfileTabs';
 
 export function ProfileHeader({
   user,
   isOwn,
   onPhotoUploaded,
+  onCoverPhotoUploaded,
   tab,
   onTabChange,
 }: {
   user: User;
   isOwn: boolean;
   onPhotoUploaded?: (url: string) => void;
+  onCoverPhotoUploaded?: (url: string) => void;
   tab: ProfileTab;
   onTabChange: (tab: ProfileTab) => void;
 }) {
   return (
     <div className="overflow-hidden rounded-xl2 border border-border bg-surface shadow-soft">
-      <div className="h-36 bg-gradient-to-l from-background via-surface-2 to-accent/20 sm:h-48" />
+      {isOwn && onCoverPhotoUploaded ? (
+        <CoverPhotoUploader coverPhotoUrl={assetUrl(user.coverPhotoUrl)} onUploaded={onCoverPhotoUploaded} />
+      ) : (
+        <div
+          className={cn(
+            'h-36 sm:h-48',
+            user.coverPhotoUrl
+              ? 'bg-cover bg-center'
+              : 'bg-gradient-to-l from-background via-surface-2 to-accent/20',
+          )}
+          style={user.coverPhotoUrl ? { backgroundImage: `url(${assetUrl(user.coverPhotoUrl)})` } : undefined}
+        />
+      )}
       <div className="px-5 pb-2 sm:px-6">
         <div className="-mt-14 flex items-end gap-4 sm:-mt-16">
           {isOwn && onPhotoUploaded ? (
@@ -51,7 +66,7 @@ export function ProfileHeader({
         <StreakPointsPill user={user} size="lg" className="mt-4 max-w-md" />
 
         <div className="mt-4">
-          <ProfileTabs active={tab} onChange={onTabChange} isOwn={isOwn} />
+          <ProfileTabs active={tab} onChange={onTabChange} />
         </div>
       </div>
     </div>

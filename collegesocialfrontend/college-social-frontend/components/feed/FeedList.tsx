@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
 import { api } from '@/lib/api';
+import { assetUrl } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departments';
 import { ACADEMIC_YEARS, getAcademicYearsForDepartment, type AcademicYear } from '@/lib/academic-years';
@@ -154,7 +155,7 @@ export function FeedList() {
   return (
     <div className="space-y-4">
       <div className="flex items-center gap-3">
-        <Avatar src={user?.photoUrl} name={user?.name ?? '?'} size="md" />
+        <Avatar src={assetUrl(user?.photoUrl)} name={user?.name ?? '?'} size="md" />
         <h1 className="bg-gradient-accent bg-clip-text text-xl font-extrabold tracking-tight text-transparent">
           {isNewUser
             ? `Welcome to our community${user?.name ? `, ${user.name}` : ''}!`

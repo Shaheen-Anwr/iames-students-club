@@ -1,10 +1,11 @@
 import { BadRequestException } from '@nestjs/common';
 import { memoryStorage } from 'multer';
 
-export type UploadCategory = 'photos' | 'post-images' | 'lectures' | 'files' | 'videos' | 'audio' | 'chat-backgrounds';
+export type UploadCategory = 'photos' | 'cover-photos' | 'post-images' | 'lectures' | 'files' | 'videos' | 'audio' | 'chat-backgrounds';
 
 const ALLOWED_MIME_BY_CATEGORY: Record<UploadCategory, RegExp> = {
   photos: /^image\/(jpe?g|png|webp|gif)$/,
+  'cover-photos': /^image\/(jpe?g|png|webp|gif)$/,
   'post-images': /^image\/(jpe?g|png|webp|gif)$/,
   'chat-backgrounds': /^image\/(jpe?g|png|webp|gif)$/,
   lectures: /^(application\/pdf|application\/vnd\.(openxmlformats|ms-powerpoint|ms-excel).*|application\/msword|text\/plain)$/,

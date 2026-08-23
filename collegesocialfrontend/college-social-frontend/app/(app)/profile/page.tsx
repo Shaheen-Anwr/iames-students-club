@@ -5,7 +5,6 @@ import { useAuth } from '@/lib/auth-context';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { EditProfileForm } from '@/components/profile/EditProfileForm';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
-import { SessionsPanel } from '@/components/profile/SessionsPanel';
 import { Spinner } from '@/components/ui/Spinner';
 import type { ProfileTab } from '@/components/profile/ProfileTabs';
 
@@ -28,12 +27,12 @@ export default function ProfilePage() {
           user={user}
           isOwn
           onPhotoUploaded={(photoUrl) => updateLocalUser({ photoUrl })}
+          onCoverPhotoUploaded={(coverPhotoUrl) => updateLocalUser({ coverPhotoUrl })}
           tab={tab}
           onTabChange={setTab}
         />
         {tab === 'posts' && <UserPostsFeed userId={user._id} />}
         {tab === 'about' && <EditProfileForm user={user} />}
-        {tab === 'sessions' && <SessionsPanel />}
       </div>
     </div>
   );
