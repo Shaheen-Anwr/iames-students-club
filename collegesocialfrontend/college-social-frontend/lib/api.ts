@@ -94,7 +94,7 @@ async function request<T>(path: string, options: RequestInit = {}, isRetry = fal
 }
 
 export type AiStreamEvent =
-  | { type: 'delta'; text: string }
+  | { type: 'delta'; text: string; stub?: boolean }
   | { type: 'tool_call'; name: string; args: unknown }
   | { type: 'tool_result'; name: string; summary: string }
   | { type: 'done'; message: import('./types').AiMessage }

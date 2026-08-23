@@ -3,12 +3,13 @@
 import { FormEvent, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
-import { Camera, GraduationCap, BookOpen } from 'lucide-react';
+import { Camera, GraduationCap, BookOpen, Check, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import type { Role } from '@/lib/types';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departments';
+import { buildCollegeEmail } from '@/lib/constants';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
 import { Logo } from '@/components/ui/Logo';
@@ -21,6 +22,7 @@ export function RegisterForm() {
   const [collegeId, setCollegeId] = useState('');
   const [name, setName] = useState('');
   const [collegeEmail, setCollegeEmail] = useState('');
+  const [emailEditedManually, setEmailEditedManually] = useState(false);
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [role, setRole] = useState<Role>('student');
@@ -37,6 +39,22 @@ export function RegisterForm() {
     setPhotoPreview(URL.createObjectURL(file));
   }
 
+  function handleCollegeIdChange(value: string) {
+    setCollegeId(value);
+    if (!emailEditedManually) {
+      setCollegeEmail(value.trim() ? buildCollegeEmail(value.trim()) : '');
+    }
+  }
+
+  function handleCollegeEmailChange(value: string) {
+    setCollegeEmail(value);
+    setEmailEditedManually(value !== buildCollegeEmail(collegeId.trim()));
+  }
+
+  const expectedEmail = collegeId.trim() ? buildCollegeEmail(collegeId.trim()) : '';
+  const emailMatches = collegeEmail.length > 0 && collegeEmail.toLowerCase() === expectedEmail.toLowerCase();
+  const emailMismatch = collegeEmail.length > 0 && expectedEmail.length > 0 && !emailMatches;
+
   async function handleSubmit(e: FormEvent) {
     e.preventDefault();
     setError(null);
@@ -51,6 +69,10 @@ export function RegisterForm() {
     }
     if (!department) {
       setError('الرجاء اختيار الشعبة.');
+      return;
+    }
+    if (emailMismatch) {
+      setError(`البريد الجامعي يجب أن يكون ${expectedEmail} بالضبط`);
       return;
     }
 
@@ -137,7 +159,7 @@ export function RegisterForm() {
           name="collegeId"
           placeholder="مثال: 2430525"
           value={collegeId}
-          onChange={(e) => setCollegeId(e.target.value)}
+          onChange={(e) => handleCollegeIdChange(e.target.value)}
           required
         />
         <div>
@@ -147,10 +169,22 @@ export function RegisterForm() {
             type="email"
             placeholder="2430525@iames.mans.edu.eg"
             value={collegeEmail}
-            onChange={(e) => setCollegeEmail(e.target.value)}
+            onChange={(e) => handleCollegeEmailChange(e.target.value)}
             required
           />
-          <p className="mt-1 text-xs text-muted-foreground">يجب أن يطابق رقمك الجامعي تمامًا، مثل 2430525@iames.mans.edu.eg</p>
+          {emailMatches ? (
+            <p className="mt-1 flex items-center gap-1 text-xs text-success">
+              <Check className="h-3.5 w-3.5" />
+              يطابق الرقم الجامعي
+            </p>
+          ) : emailMismatch ? (
+            <p className="mt-1 flex items-center gap-1 text-xs text-danger">
+              <X className="h-3.5 w-3.5" />
+              يجب أن يكون البريد {expectedEmail} بالضبط
+            </p>
+          ) : (
+            <p className="mt-1 text-xs text-muted-foreground">يُملأ تلقائيًا من رقمك الجامعي، مثل 2430525@iames.mans.edu.eg</p>
+          )}
         </div>
         <div className="grid grid-cols-2 gap-3">
           <Input

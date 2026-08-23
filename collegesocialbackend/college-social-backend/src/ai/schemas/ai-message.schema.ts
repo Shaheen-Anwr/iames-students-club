@@ -51,6 +51,12 @@ export class AiMessage {
   // route to link to yet; the frontend just shows a small "post attached" chip.
   @Prop({ type: String, required: false })
   sharedPostId?: string;
+
+  // True when this 'assistant' reply is the stub fallback (AI_API_KEY unset, or the provider
+  // request failed) rather than a real model completion -- see AiService.streamCompletion. Lets
+  // the frontend render it as a setup/outage notice instead of a genuine answer.
+  @Prop({ default: false })
+  stub: boolean;
 }
 
 export const AiMessageSchema = SchemaFactory.createForClass(AiMessage);

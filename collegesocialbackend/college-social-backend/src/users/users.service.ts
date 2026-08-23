@@ -175,6 +175,24 @@ export class UsersService {
     return user;
   }
 
+  async removePhoto(id: string): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(id, { photoUrl: null }, { new: true })
+      .select('-passwordHash')
+      .exec();
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
+  async removeCoverPhoto(id: string): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(id, { coverPhotoUrl: null }, { new: true })
+      .select('-passwordHash')
+      .exec();
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
   async search(query: string): Promise<UserDocument[]> {
     return this.userModel
       .find({

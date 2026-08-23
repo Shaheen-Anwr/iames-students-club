@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { Check, Copy, RefreshCw, AlertCircle, Paperclip, FileStack } from 'lucide-react';
+import { Check, Copy, RefreshCw, AlertCircle, AlertTriangle, Paperclip, FileStack } from 'lucide-react';
 import { cn, timeAgo } from '@/lib/utils';
 import type { AiMessage } from '@/lib/types';
 import { AiAvatar } from './AiAvatar';
@@ -26,6 +26,7 @@ export function AiMessageBubble({
   onRetry?: () => void;
 }) {
   const isUser = message.role === 'user';
+  const isStub = !isUser && !!message.stub;
   const [displayText, setDisplayText] = useState(live ? '' : message.text);
   const [revealing, setRevealing] = useState(!!live);
   const [copied, setCopied] = useState(false);
@@ -101,12 +102,20 @@ export function AiMessageBubble({
               ملف مرفق
             </a>
           ))}
+        {isStub && (
+          <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="h-3 w-3" />
+            المساعد الذكي غير مُفعّل بعد على الخادم
+          </span>
+        )}
         <div
           className={cn(
             'relative animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
             isUser
               ? cn('rounded-bl-md bg-gradient-accent text-white shadow-soft', failed && 'opacity-60 ring-2 ring-danger/60')
-              : 'rounded-br-md border border-s-2 border-border border-s-accent/50 bg-surface-2/60 text-foreground backdrop-blur-sm',
+              : isStub
+                ? 'rounded-br-md border border-amber-500/30 border-s-2 border-s-amber-500/60 bg-amber-500/10 text-foreground backdrop-blur-sm'
+                : 'rounded-br-md border border-s-2 border-border border-s-accent/50 bg-surface-2/60 text-foreground backdrop-blur-sm',
           )}
         >
           {isUser ? (

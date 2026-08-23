@@ -34,7 +34,7 @@ export interface AiMessageAttachmentInput {
 // Events streamed to the controller (and from there, over SSE, to the frontend) as one AI turn is
 // produced -- see AiController.sendMessage and lib/api.ts's streamAiMessage on the frontend.
 export type AiStreamEvent =
-  | { type: 'delta'; text: string }
+  | { type: 'delta'; text: string; stub?: boolean }
   | { type: 'tool_call'; name: string; args: unknown }
   | { type: 'tool_result'; name: string; summary: string }
   | { type: 'done'; message: AiMessageDocument }
@@ -176,6 +176,7 @@ export class AiConversationsService {
     const tools = this.aiToolsService.getToolDefinitions();
     const toolCtx: ToolExecutionContext = { ownerId, ownerDepartment };
     let replyText = '';
+    let usedStub = false;
     const actions: string[] = [];
 
     for (let round = 0; round < MAX_TOOL_ROUNDS; round++) {
@@ -188,7 +189,8 @@ export class AiConversationsService {
         if (chunk.type === 'text') {
           roundText += chunk.delta;
           replyText += chunk.delta;
-          yield { type: 'delta', text: chunk.delta };
+          if (chunk.stub) usedStub = true;
+          yield { type: 'delta', text: chunk.delta, stub: chunk.stub };
         } else {
           toolCalls = chunk.calls;
         }
@@ -231,6 +233,7 @@ export class AiConversationsService {
       text: replyText,
       sources,
       actions,
+      stub: usedStub,
     }).save();
     await conversation.save();
 

@@ -58,7 +58,14 @@ export default function UserProfilePage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-2xl space-y-4 px-4 py-6">
-        <ProfileHeader user={profile} isOwn={false} tab={tab} onTabChange={setTab} />
+        <ProfileHeader
+          user={profile}
+          isOwn={isOwn}
+          onPhotoUploaded={isOwn ? (photoUrl) => setProfile((p) => (p ? { ...p, photoUrl } : p)) : undefined}
+          onCoverPhotoUploaded={isOwn ? (coverPhotoUrl) => setProfile((p) => (p ? { ...p, coverPhotoUrl } : p)) : undefined}
+          tab={tab}
+          onTabChange={setTab}
+        />
         {!isOwn && (
           <Button onClick={handleMessage} loading={messaging} size="lg" className="w-full">
             <MessageCircle className="h-4 w-4" />

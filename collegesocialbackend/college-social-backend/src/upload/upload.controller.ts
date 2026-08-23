@@ -1,6 +1,7 @@
 import {
   BadRequestException,
   Controller,
+  Delete,
   Post,
   UploadedFile,
   UploadedFiles,
@@ -44,6 +45,20 @@ export class UploadController {
     const url = await this.s3Service.upload(file.buffer, 'cover-photos', file.mimetype, file.originalname);
     await this.usersService.updateCoverPhoto(user.userId, url);
     return { url, size: file.size, mimeType: file.mimetype };
+  }
+
+  // DELETE /api/upload/photo -> clears the caller's profile photo
+  @Delete('photo')
+  async removePhoto(@CurrentUser() user: AuthenticatedUser) {
+    await this.usersService.removePhoto(user.userId);
+    return { success: true };
+  }
+
+  // DELETE /api/upload/cover-photo -> clears the caller's profile cover photo
+  @Delete('cover-photo')
+  async removeCoverPhoto(@CurrentUser() user: AuthenticatedUser) {
+    await this.usersService.removeCoverPhoto(user.userId);
+    return { success: true };
   }
 
   // POST /api/upload/post-images -> up to 10 photos for an image feed post (field name "files")

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, BookOpen, ClipboardList, FileText, Paperclip, Send, Sparkles, X } from 'lucide-react';
+import { AlertTriangle, ArrowDown, BookOpen, ClipboardList, FileText, Paperclip, Send, Sparkles, X } from 'lucide-react';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError, streamAiMessage, type AiMessageAttachment } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
@@ -59,6 +59,7 @@ export function AiChatPanel({
   const [sending, setSending] = useState(false);
   const [streamingText, setStreamingText] = useState('');
   const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
+  const [streamingStub, setStreamingStub] = useState(false);
   const [failedId, setFailedId] = useState<string | null>(null);
   const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -135,6 +136,7 @@ export function AiChatPanel({
     setFailedId(null);
     setStreamingText('');
     setStreamingStatus(null);
+    setStreamingStub(false);
 
     // Backend streams the assistant's reply live (the user message is persisted server-side too,
     // so a future refetch shows both) -- echo it optimistically here for instant feedback.
@@ -168,6 +170,7 @@ export function AiChatPanel({
         (event) => {
           if (event.type === 'delta') {
             setStreamingText((prev) => prev + event.text);
+            if (event.stub) setStreamingStub(true);
           } else if (event.type === 'tool_call') {
             setStreamingStatus(`🔧 ${toolStatusLabel(event.name)}`);
           } else if (event.type === 'tool_result') {
@@ -176,6 +179,7 @@ export function AiChatPanel({
             setMessages((prev) => [...prev, event.message]);
             setStreamingText('');
             setStreamingStatus(null);
+            setStreamingStub(false);
           } else if (event.type === 'error') {
             throw new ApiError(0, event.message);
           }
@@ -191,6 +195,7 @@ export function AiChatPanel({
       setFailedId(optimisticId);
       setStreamingText('');
       setStreamingStatus(null);
+      setStreamingStub(false);
     } finally {
       setSending(false);
     }
@@ -258,9 +263,27 @@ export function AiChatPanel({
             </div>
             {streamingText ? (
               <div className="flex max-w-[80%] flex-col gap-1 items-start">
-                <div className="relative rounded-2xl rounded-br-md border border-s-2 border-border border-s-accent/50 bg-surface-2/60 px-4 py-2.5 text-[15px] leading-relaxed text-foreground backdrop-blur-sm">
+                {streamingStub && (
+                  <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+                    <AlertTriangle className="h-3 w-3" />
+                    المساعد الذكي غير مُفعّل بعد على الخادم
+                  </span>
+                )}
+                <div
+                  className={cn(
+                    'relative rounded-2xl rounded-br-md border px-4 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm',
+                    streamingStub
+                      ? 'border-amber-500/30 border-s-2 border-s-amber-500/60 bg-amber-500/10 text-foreground'
+                      : 'border-border border-s-2 border-s-accent/50 bg-surface-2/60 text-foreground',
+                  )}
+                >
                   <AiMarkdown text={streamingText} />
-                  <span className="ms-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse bg-accent align-middle" />
+                  <span
+                    className={cn(
+                      'ms-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse align-middle',
+                      streamingStub ? 'bg-amber-500' : 'bg-accent',
+                    )}
+                  />
                 </div>
                 {streamingStatus && (
                   <span className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground">

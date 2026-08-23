@@ -691,5 +691,8 @@ export interface AiMessage {
   attachmentType?: 'image' | 'document' | null;
   // Set on a 'user' message when the student shared an existing feed post into the chat.
   sharedPostId?: string | null;
+  // True when this 'assistant' reply is the stub fallback (AI not configured, or the request
+  // failed) rather than a genuine model answer -- render as a setup/outage notice, not an answer.
+  stub?: boolean;
   createdAt: string;
 }

@@ -18,8 +18,8 @@ export function ProfileHeader({
 }: {
   user: User;
   isOwn: boolean;
-  onPhotoUploaded?: (url: string) => void;
-  onCoverPhotoUploaded?: (url: string) => void;
+  onPhotoUploaded?: (url: string | null) => void;
+  onCoverPhotoUploaded?: (url: string | null) => void;
   tab: ProfileTab;
   onTabChange: (tab: ProfileTab) => void;
 }) {

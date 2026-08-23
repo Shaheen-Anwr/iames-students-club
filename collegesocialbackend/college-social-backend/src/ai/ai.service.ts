@@ -10,7 +10,9 @@ export interface AiToolCall {
   argsJson: string;
 }
 
-export type AiStreamChunk = { type: 'text'; delta: string } | { type: 'tool_calls'; calls: AiToolCall[] };
+export type AiStreamChunk =
+  | { type: 'text'; delta: string; stub?: boolean }
+  | { type: 'tool_calls'; calls: AiToolCall[] };
 
 export const SYSTEM_PROMPT =
   'أنت مساعد ذكي متكامل لطلاب الأكاديمية، يمكنك الإجابة عن الأسئلة وأيضًا تنفيذ إجراءات فعلية على المنصة نيابة عن الطالب عند الحاجة: ' +
@@ -58,7 +60,7 @@ export class AiService {
     modelOverride?: string,
   ): AsyncGenerator<AiStreamChunk> {
     if (!this.client) {
-      yield { type: 'text', delta: this.stubResponse(messages) };
+      yield { type: 'text', delta: this.stubResponse(messages), stub: true };
       return;
     }
 
@@ -100,7 +102,7 @@ export class AiService {
       }
     } catch (err) {
       this.logger.warn(`AI request failed: ${(err as Error).message}`);
-      yield { type: 'text', delta: this.stubResponse(messages) };
+      yield { type: 'text', delta: this.stubResponse(messages), stub: true };
     }
   }
 
