@@ -37,7 +37,7 @@ export default function AuthLayout({ children }: { children: React.ReactNode }) 
         <p className="relative text-xs text-white/50">مخصصة لطلاب وأساتذة IEAMS Students Community فقط.</p>
       </div>
 
-      <div className="flex items-start justify-center bg-background px-6 py-8 sm:items-center sm:py-12">
+      <div className="flex h-dvh items-start justify-center overflow-y-auto bg-background px-6 py-8 sm:items-center sm:py-12">
         <div className="w-full max-w-sm">{children}</div>
       </div>
     </div>
