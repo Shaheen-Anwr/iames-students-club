@@ -53,7 +53,7 @@ export class Post {
   @Prop({ type: String, required: true, enum: PostAttachmentType, default: PostAttachmentType.NONE })
   attachmentType: PostAttachmentType;
 
-  // S3 URL, e.g. "https://<bucket>.s3.<region>.amazonaws.com/lectures/<file>.pdf"
+  // Cloudinary secure_url, e.g. "https://res.cloudinary.com/<cloud>/raw/upload/.../lectures/<file>.pdf"
   @Prop({ type: String, required: false, default: null })
   attachmentUrl: string | null;
 

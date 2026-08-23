@@ -36,7 +36,7 @@ export class AiService {
     const baseUrl = this.config.get<string>('ai.baseUrl')!;
     this.model = this.config.get<string>('ai.model')!;
 
-    // Same lazy/conditional construction as S3Service: never let a missing key crash Nest's DI
+    // Same lazy/conditional construction as StorageService: never let a missing key crash Nest's DI
     // at boot. Defaults to Groq's free, OpenAI-compatible API -- get a free key (no card needed)
     // at https://console.groq.com/keys and set AI_API_KEY. Any OpenAI-compatible provider works
     // by also overriding AI_BASE_URL/AI_MODEL, no code changes needed.

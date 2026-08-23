@@ -12,7 +12,7 @@ import { LectureSearchService } from './lecture-search.service';
 import { LectureIndexService } from './lecture-index.service';
 import { FeedContextService } from './feed-context.service';
 import { ScheduleContextService } from './schedule-context.service';
-import { S3Service } from '../upload/s3.service';
+import { StorageService } from '../upload/storage.service';
 import { Department } from '../common/enums/department.enum';
 import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
 
@@ -61,7 +61,7 @@ export class AiConversationsService {
     private readonly lectureIndexService: LectureIndexService,
     private readonly feedContextService: FeedContextService,
     private readonly scheduleContextService: ScheduleContextService,
-    private readonly s3Service: S3Service,
+    private readonly storageService: StorageService,
     config: ConfigService,
   ) {
     this.visionModel = config.get<string>('ai.visionModel') ?? '';
@@ -267,7 +267,7 @@ export class AiConversationsService {
         messages.push({ role: 'system', content: 'أرفق الطالب صورة، لكن ميزة تحليل الصور غير مُفعّلة على هذا الخادم بعد -- أخبره بذلك بإيجاز.' });
         return;
       }
-      const buffer = await this.s3Service.getObject(attachment.url);
+      const buffer = await this.storageService.getObject(attachment.url);
       if (!buffer) {
         messages.push({ role: 'system', content: 'أرفق الطالب صورة لكن تعذّر جلبها -- أخبره بذلك بإيجاز.' });
         return;

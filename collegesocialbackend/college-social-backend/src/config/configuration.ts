@@ -5,7 +5,7 @@ export default () => ({
   // CORS is handled by src/common/cors-origin.ts (pattern-matches any *.vercel.app alias for
   // this project), not read from config -- see main.ts/chat.gateway.ts.
   mongodbUri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017/college-social',
-  // Where local (non-S3) uploads live and get served from. On Render this points at the mounted
+  // Where local (non-Cloudinary) uploads live and get served from. On Render this points at the mounted
   // persistent disk (see render.yaml) so files survive redeploys/restarts.
   uploadsDir: process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'),
   jwt: {

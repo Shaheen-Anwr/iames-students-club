@@ -34,7 +34,7 @@ export class User {
   @Prop({ type: Date, default: null })
   emailVerificationExpiresAt: Date | null;
 
-  // S3 URL. Null until the user uploads one.
+  // Cloudinary URL. Null until the user uploads one.
   @Prop({ type: String, required: false, default: null })
   photoUrl: string | null;
 

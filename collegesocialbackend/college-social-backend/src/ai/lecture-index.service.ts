@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { PDFParse } from 'pdf-parse';
 import { LectureChunk, LectureChunkDocument } from './schemas/lecture-chunk.schema';
-import { S3Service } from '../upload/s3.service';
+import { StorageService } from '../upload/storage.service';
 import { Department } from '../common/enums/department.enum';
 
 const CHUNK_SIZE = 1000;
@@ -35,15 +35,15 @@ export class LectureIndexService {
 
   constructor(
     @InjectModel(LectureChunk.name) private chunkModel: Model<LectureChunkDocument>,
-    private readonly s3Service: S3Service,
+    private readonly storageService: StorageService,
   ) {}
 
   // Fetches a previously-uploaded PDF's bytes and extracts its text. Returns null if the bytes
-  // can't be fetched (S3 not configured, URL mismatch) -- never throws for that case, since
+  // can't be fetched (Cloudinary not configured, URL mismatch) -- never throws for that case, since
   // callers (indexing here, and the AI assistant's document-attachment path) treat a missing file
   // as "nothing to extract", not an error. A genuine parse failure still throws, same as before.
   async extractPdfText(url: string): Promise<string | null> {
-    const buffer = await this.s3Service.getObject(url);
+    const buffer = await this.storageService.getObject(url);
     if (!buffer) return null;
 
     const parser = new PDFParse({ data: buffer });
@@ -68,7 +68,7 @@ export class LectureIndexService {
     try {
       const extractedText = await this.extractPdfText(input.attachmentUrl);
       if (extractedText === null) {
-        this.logger.warn(`Could not fetch lecture bytes for ${input.sourceType} ${input.sourceId} -- S3 not configured or URL mismatch`);
+        this.logger.warn(`Could not fetch lecture bytes for ${input.sourceType} ${input.sourceId} -- Cloudinary not configured or URL mismatch`);
         return;
       }
 

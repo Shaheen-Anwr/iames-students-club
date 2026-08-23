@@ -14,17 +14,17 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { UsersService } from '../users/users.service';
 import { buildMulterOptions } from './multer.config';
-import { S3Service } from './s3.service';
+import { StorageService } from './storage.service';
 
 // All endpoints require a valid JWT and expect multipart/form-data with a single field named "file".
-// Files are buffered in memory (see multer.config.ts) and uploaded to S3 here, where DI works
-// normally. The response always includes `url`, the S3 URL to hand back to the frontend / store on a Post.
+// Files are buffered in memory (see multer.config.ts) and uploaded to cloud storage here, where DI works
+// normally. The response always includes `url`, the storage URL to hand back to the frontend / store on a Post.
 @UseGuards(JwtAuthGuard)
 @Controller('upload')
 export class UploadController {
   constructor(
     private readonly usersService: UsersService,
-    private readonly s3Service: S3Service,
+    private readonly storageService: StorageService,
   ) {}
 
   // POST /api/upload/photo -> uploads + immediately sets the caller's profile photo
@@ -32,7 +32,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('photos')))
   async uploadPhoto(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthenticatedUser) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
-    const url = await this.s3Service.upload(file.buffer, 'photos', file.mimetype, file.originalname);
+    const url = await this.storageService.upload(file.buffer, 'photos', file.mimetype, file.originalname);
     await this.usersService.updatePhoto(user.userId, url);
     return { url, size: file.size, mimeType: file.mimetype };
   }
@@ -42,7 +42,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('cover-photos')))
   async uploadCoverPhoto(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthenticatedUser) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
-    const url = await this.s3Service.upload(file.buffer, 'cover-photos', file.mimetype, file.originalname);
+    const url = await this.storageService.upload(file.buffer, 'cover-photos', file.mimetype, file.originalname);
     await this.usersService.updateCoverPhoto(user.userId, url);
     return { url, size: file.size, mimeType: file.mimetype };
   }
@@ -68,7 +68,7 @@ export class UploadController {
     if (!files?.length) throw new BadRequestException('لم يتم رفع أي صور');
     const uploaded = await Promise.all(
       files.map(async (file) => ({
-        url: await this.s3Service.upload(file.buffer, 'post-images', file.mimetype, file.originalname),
+        url: await this.storageService.upload(file.buffer, 'post-images', file.mimetype, file.originalname),
         size: file.size,
         mimeType: file.mimetype,
       })),
@@ -81,7 +81,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('lectures')))
   async uploadLecture(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
-    const url = await this.s3Service.upload(file.buffer, 'lectures', file.mimetype, file.originalname);
+    const url = await this.storageService.upload(file.buffer, 'lectures', file.mimetype, file.originalname);
     return { url, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
   }
 
@@ -90,7 +90,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('videos')))
   async uploadVideo(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
-    const url = await this.s3Service.upload(file.buffer, 'videos', file.mimetype, file.originalname);
+    const url = await this.storageService.upload(file.buffer, 'videos', file.mimetype, file.originalname);
     return { url, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
   }
 
@@ -99,7 +99,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('files')))
   async uploadFile(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
-    const url = await this.s3Service.upload(file.buffer, 'files', file.mimetype, file.originalname);
+    const url = await this.storageService.upload(file.buffer, 'files', file.mimetype, file.originalname);
     return { url, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
   }
 
@@ -108,7 +108,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('audio')))
   async uploadAudio(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
-    const url = await this.s3Service.upload(file.buffer, 'audio', file.mimetype, file.originalname);
+    const url = await this.storageService.upload(file.buffer, 'audio', file.mimetype, file.originalname);
     return { url, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
   }
 
@@ -117,7 +117,7 @@ export class UploadController {
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('chat-backgrounds')))
   async uploadChatBackground(@UploadedFile() file: Express.Multer.File) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
-    const url = await this.s3Service.upload(file.buffer, 'chat-backgrounds', file.mimetype, file.originalname);
+    const url = await this.storageService.upload(file.buffer, 'chat-backgrounds', file.mimetype, file.originalname);
     return { url, size: file.size, mimeType: file.mimetype };
   }
 }

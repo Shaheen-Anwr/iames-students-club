@@ -21,7 +21,7 @@ const ALLOWED_MIME_BY_CATEGORY: Record<UploadCategory, RegExp> = {
 const MAX_FILE_SIZE_MB = parseInt(process.env.MAX_FILE_SIZE_MB ?? '200', 10);
 
 // Builds a Multer options object that buffers the file in memory (rather than writing to local
-// disk) so the controller can hand the buffer to S3Service after DI has resolved -- see
+// disk) so the controller can hand the buffer to StorageService after DI has resolved -- see
 // upload.controller.ts and s3.service.ts.
 export function buildMulterOptions(category: UploadCategory, maxFileSizeMb = MAX_FILE_SIZE_MB) {
   return {
