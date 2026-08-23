@@ -29,6 +29,23 @@ export class QuizzesController {
     return this.quizzesService.findAll(Number(page) || 1, Number(limit) || 20, courseCode, user.userId);
   }
 
+  // POST /api/quizzes/group/:groupId -- group-owner only, enforced via GroupsService.assertOwner().
+  @Post('group/:groupId')
+  async createGroupQuiz(@Param('groupId') groupId: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: CreateQuizDto) {
+    return this.quizzesService.createForGroup(groupId, user.userId, dto);
+  }
+
+  // GET /api/quizzes/group/:groupId -- any group member.
+  @Get('group/:groupId')
+  async findAllForGroup(
+    @Param('groupId') groupId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.quizzesService.findAllForGroup(groupId, user.userId, Number(page) || 1, Number(limit) || 20);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.quizzesService.findOne(id, user.userId);

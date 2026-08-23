@@ -42,9 +42,12 @@ export function Dropdown({ trigger, items, align = 'end', placement = 'bottom', 
       if (!rect) return;
       const rtl = document.documentElement.dir === 'rtl';
       const anchorLeft = (align === 'end') === rtl;
-      const next: CSSProperties = { position: 'fixed', width: MENU_WIDTH };
-      if (anchorLeft) next.left = rect.left;
-      else next.right = window.innerWidth - rect.right;
+      // Always resolve to a `left` offset (rather than `left` for one branch and `right` for the
+      // other) so it can be clamped into the viewport below — a menu whose trigger sits close to
+      // an edge would otherwise render partway off-screen with no way to shift it back in.
+      let left = anchorLeft ? rect.left : rect.right - MENU_WIDTH;
+      left = Math.min(Math.max(left, GAP), window.innerWidth - MENU_WIDTH - GAP);
+      const next: CSSProperties = { position: 'fixed', width: MENU_WIDTH, left };
       if (placement === 'top') next.bottom = window.innerHeight - rect.top + GAP;
       else next.top = rect.bottom + GAP;
       setStyle(next);

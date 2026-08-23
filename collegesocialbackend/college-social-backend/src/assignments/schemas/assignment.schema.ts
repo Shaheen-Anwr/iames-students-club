@@ -47,6 +47,13 @@ export class Assignment {
   // for professor-created assignments, which stay visible to everyone as before.
   @Prop({ type: Boolean, default: false })
   isPersonal: boolean;
+
+  // Set only for assignments created inside a study group (by its owner) -- null for every
+  // pre-existing global/personal assignment. Visibility for these is gated by group membership
+  // instead of isPersonal, see AssignmentsService.visibilityFilter().
+  @Prop({ type: Types.ObjectId, ref: 'StudyGroup', default: null, index: true })
+  group: Types.ObjectId | null;
 }
 
 export const AssignmentSchema = SchemaFactory.createForClass(Assignment);
+AssignmentSchema.index({ group: 1, dueDate: 1 });

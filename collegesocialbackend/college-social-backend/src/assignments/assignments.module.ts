@@ -5,6 +5,7 @@ import { AssignmentsService } from './assignments.service';
 import { AssignmentsController } from './assignments.controller';
 import { GamificationModule } from '../gamification/gamification.module';
 import { AiModule } from '../ai/ai.module';
+import { GroupsModule } from '../groups/groups.module';
 
 @Module({
   imports: [
@@ -13,6 +14,8 @@ import { AiModule } from '../ai/ai.module';
     // AiModule now also imports AssignmentsModule (for the AI assistant's list/complete-assignment
     // tools) -- forwardRef on both sides breaks the resulting module-level cycle.
     forwardRef(() => AiModule),
+    // One-directional: GroupsModule never imports AssignmentsModule back, so no forwardRef needed.
+    GroupsModule,
   ],
   controllers: [AssignmentsController],
   providers: [AssignmentsService],

@@ -54,6 +54,12 @@ export class Quiz {
   // Assignment.completedBy's embedded-array approach.
   @Prop({ type: [QuizAttemptSchema], default: [] })
   attempts: QuizAttempt[];
+
+  // Set only for quizzes created inside a study group (by its owner) -- null for every
+  // pre-existing global quiz. Visibility for these is gated by group membership.
+  @Prop({ type: Types.ObjectId, ref: 'StudyGroup', default: null, index: true })
+  group: Types.ObjectId | null;
 }
 
 export const QuizSchema = SchemaFactory.createForClass(Quiz);
+QuizSchema.index({ group: 1, createdAt: -1 });

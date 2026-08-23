@@ -7,6 +7,7 @@ import { SubmitQuizAttemptDto } from './dto/submit-quiz-attempt.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { POINTS } from '../gamification/badges';
 import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
+import { GroupsService } from '../groups/groups.service';
 
 export interface QuizStats {
   totalQuizzes: number;
@@ -20,6 +21,7 @@ export class QuizzesService {
   constructor(
     @InjectModel(Quiz.name) private quizModel: Model<QuizDocument>,
     private readonly gamificationService: GamificationService,
+    private readonly groupsService: GroupsService,
   ) {}
 
   async create(creatorId: string, dto: CreateQuizDto): Promise<QuizDocument> {
@@ -41,8 +43,9 @@ export class QuizzesService {
   }
 
   // GET /api/quizzes -- global feed, not owner/department-scoped, matching AssignmentsService.findAll.
+  // group-scoped quizzes are excluded unconditionally, same as AssignmentsService.visibilityFilter.
   async findAll(page = 1, limit = 20, courseCode: string | undefined, viewerId: string) {
-    const filter: Record<string, unknown> = {};
+    const filter: Record<string, unknown> = { group: null };
     if (courseCode) filter.courseCode = courseCode;
     const quizzes = await this.quizModel
       .find(filter)
@@ -54,14 +57,49 @@ export class QuizzesService {
     return quizzes.map((quiz) => this.toSummary(quiz, viewerId));
   }
 
+  async createForGroup(groupId: string, creatorId: string, dto: CreateQuizDto): Promise<QuizDocument> {
+    await this.groupsService.assertOwner(groupId, creatorId);
+    dto.questions.forEach((q, i) => {
+      if (q.correctIndex >= q.options.length) {
+        throw new BadRequestException(`الإجابة الصحيحة للسؤال ${i + 1} غير صالحة`);
+      }
+    });
+
+    const quiz = new this.quizModel({
+      createdBy: new Types.ObjectId(creatorId),
+      title: dto.title,
+      description: dto.description ?? '',
+      courseCode: dto.courseCode ?? null,
+      questions: dto.questions,
+      group: new Types.ObjectId(groupId),
+    });
+    await quiz.save();
+    return quiz.populate('createdBy', 'name role photoUrl');
+  }
+
+  async findAllForGroup(groupId: string, requesterId: string, page = 1, limit = 20) {
+    await this.groupsService.assertMember(groupId, requesterId);
+    const quizzes = await this.quizModel
+      .find({ group: new Types.ObjectId(groupId) })
+      .sort({ createdAt: -1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('createdBy', 'name role photoUrl')
+      .exec();
+    return quizzes.map((quiz) => this.toSummary(quiz, requesterId));
+  }
+
   async findOne(id: string, viewerId: string) {
-    const quiz = await this.findRaw(id);
+    const quiz = await this.findRaw(id, viewerId);
     return this.toDetail(quiz, viewerId);
   }
 
   async submitAttempt(id: string, userId: string, dto: SubmitQuizAttemptDto) {
     const quiz = await this.quizModel.findById(id).exec();
     if (!quiz) throw new NotFoundException('الاختبار غير موجود');
+    // findRaw()'s membership gate doesn't cover this path -- submitAttempt fetches the quiz
+    // directly rather than going through findOne/findRaw, so it needs its own check.
+    if (quiz.group) await this.groupsService.assertMember(quiz.group.toString(), userId);
 
     const uid = new Types.ObjectId(userId);
     if (quiz.attempts.some((a) => a.user.equals(uid))) {
@@ -87,7 +125,7 @@ export class QuizzesService {
   }
 
   async remove(id: string, requesterId: string): Promise<void> {
-    const quiz = await this.findRaw(id);
+    const quiz = await this.findRaw(id, requesterId);
     if (!quiz.createdBy || quiz.createdBy._id.toString() !== requesterId) {
       throw new ForbiddenException('يمكنك حذف الاختبارات التي أنشأتها فقط');
     }
@@ -175,9 +213,10 @@ export class QuizzesService {
     return fillDailyCounts(rows, days);
   }
 
-  private async findRaw(id: string): Promise<QuizDocument> {
+  private async findRaw(id: string, viewerId: string): Promise<QuizDocument> {
     const quiz = await this.quizModel.findById(id).populate('createdBy', 'name role photoUrl').exec();
     if (!quiz) throw new NotFoundException('الاختبار غير موجود');
+    if (quiz.group) await this.groupsService.assertMember(quiz.group.toString(), viewerId);
     return quiz;
   }
 

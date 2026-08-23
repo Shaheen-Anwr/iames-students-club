@@ -7,6 +7,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { AssignmentsService } from './assignments.service';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
+import { CreateGroupAssignmentDto } from './dto/create-group-assignment.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('assignments')
@@ -31,6 +32,28 @@ export class AssignmentsController {
     @Query('upcoming') upcoming?: string,
   ) {
     return this.assignmentsService.findAll(Number(page) || 1, Number(limit) || 20, courseCode, upcoming === 'true', user.userId);
+  }
+
+  // POST /api/assignments/group/:groupId -- group-owner only, enforced inside the service via
+  // GroupsService.assertOwner() (no @Roles guard here, unlike the global create route above).
+  @Post('group/:groupId')
+  async createGroupAssignment(
+    @Param('groupId') groupId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: CreateGroupAssignmentDto,
+  ) {
+    return this.assignmentsService.createForGroup(groupId, user.userId, dto);
+  }
+
+  // GET /api/assignments/group/:groupId -- any group member.
+  @Get('group/:groupId')
+  async findAllForGroup(
+    @Param('groupId') groupId: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.assignmentsService.findAllForGroup(groupId, user.userId, Number(page) || 1, Number(limit) || 20);
   }
 
   @Get(':id')

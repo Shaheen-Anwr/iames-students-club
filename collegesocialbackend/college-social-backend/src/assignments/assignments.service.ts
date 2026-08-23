@@ -3,10 +3,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Assignment, AssignmentDocument } from './schemas/assignment.schema';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
+import { CreateGroupAssignmentDto } from './dto/create-group-assignment.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { POINTS } from '../gamification/badges';
 import { LectureIndexService } from '../ai/lecture-index.service';
 import { Role } from '../common/enums/role.enum';
+import { GroupsService } from '../groups/groups.service';
 
 export interface AssignmentStats {
   totalAssignments: number;
@@ -21,13 +23,19 @@ export class AssignmentsService {
     @InjectModel(Assignment.name) private assignmentModel: Model<AssignmentDocument>,
     private readonly gamificationService: GamificationService,
     private readonly lectureIndexService: LectureIndexService,
+    private readonly groupsService: GroupsService,
   ) {}
 
   // Assignments a student creates are personal (visible only to them); professor-created ones
-  // stay global, matching the pre-existing behavior.
+  // stay global, matching the pre-existing behavior. Group-scoped assignments are excluded
+  // unconditionally -- they're only reachable through findAllForGroup()/findDueInRange() callers
+  // that explicitly want them, gated by group membership, never through the global list/calendar.
   private visibilityFilter(requesterId?: string): Record<string, unknown> {
-    if (!requesterId) return { isPersonal: { $ne: true } };
-    return { $or: [{ isPersonal: { $ne: true } }, { createdBy: new Types.ObjectId(requesterId) }] };
+    if (!requesterId) return { isPersonal: { $ne: true }, group: null };
+    return {
+      group: null,
+      $or: [{ isPersonal: { $ne: true } }, { createdBy: new Types.ObjectId(requesterId) }],
+    };
   }
 
   async create(creatorId: string, creatorRole: Role, dto: CreateAssignmentDto): Promise<AssignmentDocument> {
@@ -88,7 +96,44 @@ export class AssignmentsService {
     if (!assignment || (assignment.isPersonal && assignment.createdBy._id.toString() !== requesterId)) {
       throw new NotFoundException('الواجب غير موجود');
     }
+    // Group-scoped assignments are gated on membership -- toggleComplete()/remove() both call
+    // findOne() internally, so this single check protects those paths too.
+    if (assignment.group) {
+      await this.groupsService.assertMember(assignment.group.toString(), requesterId ?? '');
+    }
     return assignment;
+  }
+
+  async createForGroup(groupId: string, creatorId: string, dto: CreateGroupAssignmentDto): Promise<AssignmentDocument> {
+    await this.groupsService.assertOwner(groupId, creatorId);
+    const assignment = new this.assignmentModel({
+      createdBy: new Types.ObjectId(creatorId),
+      title: dto.title,
+      description: dto.description ?? '',
+      courseCode: dto.courseCode ?? '',
+      dueDate: new Date(dto.dueDate),
+      attachmentType: dto.attachmentType ?? 'none',
+      attachmentUrl: dto.attachmentUrl ?? null,
+      attachmentOriginalName: dto.attachmentOriginalName ?? null,
+      isPersonal: false,
+      group: new Types.ObjectId(groupId),
+    });
+    await assignment.save();
+    // Deliberately skip lectureIndexService.indexIfLecture() here -- unlike global assignments,
+    // a group's attachment content shouldn't become AI-searchable platform-wide (department: null
+    // would otherwise expose a private group's material to every user via the AI assistant).
+    return assignment;
+  }
+
+  async findAllForGroup(groupId: string, requesterId: string, page = 1, limit = 20): Promise<AssignmentDocument[]> {
+    await this.groupsService.assertMember(groupId, requesterId);
+    return this.assignmentModel
+      .find({ group: new Types.ObjectId(groupId) })
+      .sort({ dueDate: 1 })
+      .skip((page - 1) * limit)
+      .limit(limit)
+      .populate('createdBy', 'name role photoUrl')
+      .exec();
   }
 
   async toggleComplete(id: string, userId: string): Promise<AssignmentDocument> {
