@@ -150,7 +150,11 @@ export function MessageBubble({
     );
   }
 
-  const menuItems: MessageMenuItem[] = [
+  /*
+   * Desktop menu:
+   * Keep ALL actions here, including Reply and Copy.
+   */
+  const desktopMenuItems: MessageMenuItem[] = [
     {
       key: 'reply',
       label: 'رد',
@@ -186,13 +190,14 @@ export function MessageBubble({
         if (message.text) {
           navigator.clipboard.writeText(message.text);
         }
+
         setMobileActionsOpen(false);
       },
     },
   ];
 
   if (isOwn && message.text) {
-    menuItems.push({
+    desktopMenuItems.push({
       key: 'edit',
       label: 'تعديل',
       icon: <Pencil className="h-4 w-4" />,
@@ -204,7 +209,7 @@ export function MessageBubble({
   }
 
   if (isOwn) {
-    menuItems.push({
+    desktopMenuItems.push({
       key: 'delete-everyone',
       label: 'حذف لدى الجميع',
       icon: <Trash2 className="h-4 w-4" />,
@@ -216,7 +221,71 @@ export function MessageBubble({
     });
   }
 
-  menuItems.push({
+  desktopMenuItems.push({
+    key: 'delete-me',
+    label: 'حذف لديّ',
+    icon: <Trash2 className="h-4 w-4" />,
+    danger: true,
+    onClick: () => {
+      setMobileActionsOpen(false);
+      onDelete(message, false);
+    },
+  });
+
+  /*
+   * Mobile bottom-sheet menu:
+   *
+   * IMPORTANT:
+   * Reply and Copy are intentionally NOT here because they already
+   * exist in the three quick-action buttons at the top of the sheet.
+   */
+  const mobileMenuItems: MessageMenuItem[] = [
+    {
+      key: 'forward',
+      label: 'إعادة توجيه',
+      icon: <Forward className="h-4 w-4" />,
+      onClick: () => {
+        setMobileActionsOpen(false);
+        onForward(message);
+      },
+    },
+    {
+      key: 'star',
+      label: isStarred ? 'إلغاء التمييز' : 'تمييز بنجمة',
+      icon: <Star className="h-4 w-4" />,
+      onClick: () => {
+        setMobileActionsOpen(false);
+        onToggleStar(message);
+      },
+    },
+  ];
+
+  if (isOwn && message.text) {
+    mobileMenuItems.push({
+      key: 'edit',
+      label: 'تعديل',
+      icon: <Pencil className="h-4 w-4" />,
+      onClick: () => {
+        setMobileActionsOpen(false);
+        onEdit(message);
+      },
+    });
+  }
+
+  if (isOwn) {
+    mobileMenuItems.push({
+      key: 'delete-everyone',
+      label: 'حذف لدى الجميع',
+      icon: <Trash2 className="h-4 w-4" />,
+      danger: true,
+      onClick: () => {
+        setMobileActionsOpen(false);
+        onDelete(message, true);
+      },
+    });
+  }
+
+  mobileMenuItems.push({
     key: 'delete-me',
     label: 'حذف لديّ',
     icon: <Trash2 className="h-4 w-4" />,
@@ -263,7 +332,7 @@ export function MessageBubble({
             isOwn ? 'items-end' : 'items-start',
           )}
         >
-          {/* DESKTOP TOOLBAR ONLY */}
+          {/* DESKTOP ACTION TOOLBAR */}
           <div
             className={cn(
               'pointer-events-none absolute top-0 z-30 hidden -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity md:flex',
@@ -305,15 +374,14 @@ export function MessageBubble({
               <MessageMenu
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
-                items={menuItems}
+                items={desktopMenuItems}
                 align={isOwn ? 'end' : 'start'}
                 anchorRef={menuButtonRef}
               />
             </div>
           </div>
 
-          {/* MOBILE MESSAGE
-              The message itself is a DIV, not a BUTTON. */}
+          {/* Message */}
           <div
             className="w-full min-w-0 cursor-pointer"
             onClick={handleMessageClick}
@@ -509,7 +577,7 @@ export function MessageBubble({
             </span>
           </div>
 
-          {/* Desktop / normal reaction picker */}
+          {/* Reaction picker */}
           <div
             className="relative"
             onClick={(event) => event.stopPropagation()}
@@ -528,10 +596,7 @@ export function MessageBubble({
         </div>
       </div>
 
-      {/* ============================================================
-          MOBILE ACTION SHEET
-          Completely outside the message/scrolling DOM hierarchy.
-          ============================================================ */}
+      {/* MOBILE ACTION SHEET */}
       {mobileActionsOpen && (
         <div
           className="fixed inset-0 z-[9999] md:hidden"
@@ -555,7 +620,7 @@ export function MessageBubble({
             {/* Handle */}
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
 
-            {/* Close */}
+            {/* Header */}
             <div className="mb-2 flex items-center justify-between px-1">
               <p className="text-sm font-semibold text-foreground">
                 إجراءات الرسالة
@@ -571,7 +636,8 @@ export function MessageBubble({
               </button>
             </div>
 
-            {/* Quick actions */}
+            {/* Top quick actions:
+                KEEP THESE EXACTLY AS THEY ARE. */}
             <div className="mb-3 grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -612,15 +678,14 @@ export function MessageBubble({
               </button>
             </div>
 
-            {/* Full actions */}
+            {/* Remaining actions:
+                Reply and Copy intentionally removed here. */}
             <div className="space-y-1">
-              {menuItems.map((item) => (
+              {mobileMenuItems.map((item) => (
                 <button
                   key={item.key}
                   type="button"
-                  onClick={() => {
-                    item.onClick();
-                  }}
+                  onClick={item.onClick}
                   className={cn(
                     'flex min-h-11 w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-start text-sm',
                     'transition-colors hover:bg-surface-2 active:bg-surface-2',
