@@ -31,7 +31,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <TopNavbar />
       <VerifyEmailBanner />
       <SetDepartmentBanner />
-      <main className="flex min-h-0 flex-1 flex-col overflow-hidden pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+      <main className="flex min-h-0 flex-1 flex-col  overflow-y-auto overflow-x-hidden scrollbar-none pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
         {children}
       </main>
       <MobileNav />

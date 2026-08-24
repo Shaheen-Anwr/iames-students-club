@@ -17,7 +17,7 @@ const fontLatin = IBM_Plex_Sans({
 
 export const metadata: Metadata = {
   title: 'IEAMS Students Club',
-  description: 'الشبكة الاجتماعية لـ IEAMS Students Community — المحاضرات والملفات والدردشة في مكان واحد.',
+  description: 'الشبكة الاجتماعية لـ IAEMS Students Community — المحاضرات والملفات والدردشة في مكان واحد.',
   manifest: '/manifest.json',
   icons: {
     icon: [
