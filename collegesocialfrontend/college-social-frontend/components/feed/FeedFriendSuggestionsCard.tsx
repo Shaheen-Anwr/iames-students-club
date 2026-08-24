@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { Users } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
@@ -68,7 +68,13 @@ export function useFriendSuggestions() {
     });
   }
 
-  return { suggestions: suggestions.filter((s) => !dismissed.has(s._id)), loading, dismiss };
+  // Memoized so the returned array keeps a stable reference across re-renders that don't actually
+  // change the data -- callers (FriendsPage) depend on it in a useEffect, and a fresh array
+  // identity every render (plain .filter() with no memo) would re-fire that effect every render,
+  // which sets state, which re-renders, which... an infinite loop that pegs the tab's JS thread.
+  const filtered = useMemo(() => suggestions.filter((s) => !dismissed.has(s._id)), [suggestions, dismissed]);
+
+  return { suggestions: filtered, loading, dismiss };
 }
 
 function SuggestionRowSkeleton() {
