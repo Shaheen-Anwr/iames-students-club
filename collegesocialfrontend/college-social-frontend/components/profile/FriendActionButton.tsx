@@ -13,9 +13,12 @@ interface FriendActionButtonProps {
   targetUser: Pick<User, '_id' | 'name'>;
   size?: 'sm' | 'lg';
   className?: string;
+  // 'icon' renders a compact circular icon-only button (no label) -- for tight spaces like the
+  // mobile suggestions carousel, where a full-width text button doesn't fit a ~110px card.
+  variant?: 'default' | 'icon';
 }
 
-export function FriendActionButton({ targetUser, size = 'sm', className }: FriendActionButtonProps) {
+export function FriendActionButton({ targetUser, size = 'sm', className, variant = 'default' }: FriendActionButtonProps) {
   const { user, updateLocalUser } = useAuth();
   const { showToast } = useToast();
   const [busy, setBusy] = useState(false);
@@ -53,6 +56,62 @@ export function FriendActionButton({ targetUser, size = 'sm', className }: Frien
   function unfriend() {
     if (!confirm(`هل تريد إلغاء صداقة ${targetUser.name}؟`)) return;
     run(() => api.delete<User>(`/users/${targetUser._id}/friend`));
+  }
+
+  if (variant === 'icon') {
+    const iconButtonClass = cn(
+      'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform active:scale-90 disabled:pointer-events-none disabled:opacity-60',
+      className,
+    );
+    if (requestReceived) {
+      return (
+        <div className="flex gap-1.5">
+          <button
+            type="button"
+            onClick={accept}
+            disabled={busy}
+            title="قبول"
+            className={cn(iconButtonClass, 'bg-gradient-accent text-white shadow-soft')}
+          >
+            <Check className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={cancelOrDecline}
+            disabled={busy}
+            title="رفض"
+            className={cn(iconButtonClass, 'border border-border bg-surface text-muted-foreground')}
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+      );
+    }
+    if (isFriend) {
+      return (
+        <button type="button" onClick={unfriend} disabled={busy} title="أصدقاء" className={cn(iconButtonClass, 'border border-border bg-surface text-accent')}>
+          <UserCheck className="h-4 w-4" />
+        </button>
+      );
+    }
+    if (requestSent) {
+      return (
+        <button
+          type="button"
+          onClick={cancelOrDecline}
+          disabled={busy}
+          title="تم الإرسال -- اضغط للإلغاء"
+          className={cn(iconButtonClass, 'border border-border bg-surface text-muted-foreground')}
+        >
+          <Check className="h-4 w-4" />
+        </button>
+      );
+    }
+    return (
+      <button type="button" onClick={sendRequest} disabled={busy} title="إضافة صديق" className={cn(iconButtonClass, 'bg-gradient-accent text-white shadow-soft hover:shadow-glow')}>
+        <UserPlus className="h-4 w-4" />
+      </button>
+    );
   }
 
   if (requestReceived) {

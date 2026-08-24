@@ -92,4 +92,14 @@
       display: none;
     }
   }
+
+  /* Fully hidden scrollbar, unlike .scrollbar-thin above -- for horizontal chip/card strips
+     (e.g. the mobile friend-suggestions carousel) where even a thin bar reads as a stray line
+     under the cards rather than a scroll affordance; swipe alone communicates it there. */
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
 }
