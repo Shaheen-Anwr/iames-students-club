@@ -1,12 +1,25 @@
 'use client';
 
-import { useState } from 'react';
-import { Check, CheckCheck, Copy, FileText, Forward, Pencil, Reply, SmilePlus, Star, Trash2 } from 'lucide-react';
+import { useRef, useState } from 'react';
+import {
+  Check,
+  CheckCheck,
+  Copy,
+  FileText,
+  Forward,
+  Pencil,
+  Reply,
+  SmilePlus,
+  Star,
+  Trash2,
+} from 'lucide-react';
+
 import { Avatar } from '@/components/ui/Avatar';
 import { TaggedText } from '@/components/shared/TaggedText';
 import { assetUrl, cn, formatBytes, timeAgo } from '@/lib/utils';
 import { extractFirstUrl, tickStatus } from '@/lib/chat-helpers';
 import type { Conversation, Message } from '@/lib/types';
+
 import { QuickReactionBar } from './EmojiPicker';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { MessageMenu, type MessageMenuItem } from './MessageMenu';
@@ -27,9 +40,23 @@ interface MessageBubbleProps {
   onJumpToReply: (messageId: string) => void;
 }
 
-function ReadTicks({ status }: { status: 'sent' | 'delivered' | 'read' }) {
-  if (status === 'sent') return <Check className="h-3.5 w-3.5 text-white/70" />;
-  return <CheckCheck className={cn('h-3.5 w-3.5', status === 'read' ? 'text-sky-300' : 'text-white/70')} />;
+function ReadTicks({
+  status,
+}: {
+  status: 'sent' | 'delivered' | 'read';
+}) {
+  if (status === 'sent') {
+    return <Check className="h-3.5 w-3.5 text-white/70" />;
+  }
+
+  return (
+    <CheckCheck
+      className={cn(
+        'h-3.5 w-3.5',
+        status === 'read' ? 'text-sky-300' : 'text-white/70',
+      )}
+    />
+  );
 }
 
 export function MessageBubble({
@@ -49,28 +76,50 @@ export function MessageBubble({
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
 
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
+
   const attachments = message.attachments ?? [];
   const isStarred = message.starredBy?.includes(currentUserId);
   const status = tickStatus(message, conversation, currentUserId);
   const previewUrl = extractFirstUrl(message.text);
 
-  const reactionGroups = (message.reactions ?? []).reduce<Record<string, number>>((acc, r) => {
-    acc[r.emoji] = (acc[r.emoji] ?? 0) + 1;
-    return acc;
-  }, {});
+  const reactionGroups = (message.reactions ?? []).reduce<Record<string, number>>(
+    (acc, r) => {
+      acc[r.emoji] = (acc[r.emoji] ?? 0) + 1;
+      return acc;
+    },
+    {},
+  );
+
   const myReactionEmoji = (message.reactions ?? []).find(
-    (r) => (typeof r.user === 'string' ? r.user : r.user._id) === currentUserId,
+    (r) =>
+      (typeof r.user === 'string' ? r.user : r.user._id) === currentUserId,
   )?.emoji;
 
   if (message.deletedForEveryone) {
     return (
-      <div className={cn('flex items-end gap-2.5', isOwn && 'flex-row-reverse')}>
+      <div
+        className={cn(
+          'flex items-end gap-2.5',
+          isOwn && 'flex-row-reverse',
+        )}
+      >
         <div className="w-8 shrink-0">
           {!isOwn && showAvatar && (
-            <Avatar src={assetUrl(message.sender?.photoUrl)} name={message.sender?.name ?? 'مستخدم محذوف'} size="sm" />
+            <Avatar
+              src={assetUrl(message.sender?.photoUrl)}
+              name={message.sender?.name ?? 'مستخدم محذوف'}
+              size="sm"
+            />
           )}
         </div>
-        <div className={cn('flex max-w-[75%] flex-col', isOwn ? 'items-end' : 'items-start')}>
+
+        <div
+          className={cn(
+            'flex max-w-[75%] flex-col',
+            isOwn ? 'items-end' : 'items-start',
+          )}
+        >
           <div className="rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
             {isOwn ? 'قمت بحذف هذه الرسالة' : 'تم حذف هذه الرسالة'}
           </div>
@@ -80,8 +129,18 @@ export function MessageBubble({
   }
 
   const menuItems: MessageMenuItem[] = [
-    { key: 'reply', label: 'رد', icon: <Reply className="h-4 w-4" />, onClick: () => onReply(message) },
-    { key: 'forward', label: 'إعادة توجيه', icon: <Forward className="h-4 w-4" />, onClick: () => onForward(message) },
+    {
+      key: 'reply',
+      label: 'رد',
+      icon: <Reply className="h-4 w-4" />,
+      onClick: () => onReply(message),
+    },
+    {
+      key: 'forward',
+      label: 'إعادة توجيه',
+      icon: <Forward className="h-4 w-4" />,
+      onClick: () => onForward(message),
+    },
     {
       key: 'star',
       label: isStarred ? 'إلغاء التمييز' : 'تمييز بنجمة',
@@ -92,12 +151,23 @@ export function MessageBubble({
       key: 'copy',
       label: 'نسخ النص',
       icon: <Copy className="h-4 w-4" />,
-      onClick: () => message.text && navigator.clipboard.writeText(message.text),
+      onClick: () => {
+        if (message.text) {
+          navigator.clipboard.writeText(message.text);
+        }
+      },
     },
   ];
+
   if (isOwn && message.text) {
-    menuItems.push({ key: 'edit', label: 'تعديل', icon: <Pencil className="h-4 w-4" />, onClick: () => onEdit(message) });
+    menuItems.push({
+      key: 'edit',
+      label: 'تعديل',
+      icon: <Pencil className="h-4 w-4" />,
+      onClick: () => onEdit(message),
+    });
   }
+
   if (isOwn) {
     menuItems.push({
       key: 'delete-everyone',
@@ -107,6 +177,7 @@ export function MessageBubble({
       onClick: () => onDelete(message, true),
     });
   }
+
   menuItems.push({
     key: 'delete-me',
     label: 'حذف لديّ',
@@ -116,42 +187,92 @@ export function MessageBubble({
   });
 
   return (
-    <div className={cn('group flex items-end gap-2.5', isOwn && 'flex-row-reverse')}>
+    <div
+      className={cn(
+        'group flex items-end gap-2.5',
+        isOwn && 'flex-row-reverse',
+      )}
+    >
+      {/* Avatar */}
       <div className="w-8 shrink-0">
         {!isOwn && showAvatar && (
-          <Avatar src={assetUrl(message.sender?.photoUrl)} name={message.sender?.name ?? 'مستخدم محذوف'} size="sm" />
+          <Avatar
+            src={assetUrl(message.sender?.photoUrl)}
+            name={message.sender?.name ?? 'مستخدم محذوف'}
+            size="sm"
+          />
         )}
       </div>
-      <div className={cn('relative flex max-w-[75%] flex-col gap-1', isOwn ? 'items-end' : 'items-start')}>
-        {/* Hover toolbar */}
+
+      {/* IMPORTANT:
+          w-fit makes this wrapper match the actual message width.
+          The action toolbar is therefore positioned relative to the bubble,
+          not a wider 75%-width container.
+      */}
+      <div
+        className={cn(
+          'relative flex w-fit max-w-[75%] flex-col gap-1',
+          isOwn ? 'items-end' : 'items-start',
+        )}
+      >
+        {/* ACTION TOOLBAR */}
         <div
           className={cn(
-            'pointer-events-none absolute top-0 z-20 flex -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity group-hover:pointer-events-auto group-hover:opacity-100',
-            isOwn ? 'end-full me-1' : 'start-full ms-1',
+            'absolute z-20 flex items-center gap-0.5 whitespace-nowrap',
+            'opacity-0 transition-opacity',
+            'pointer-events-none group-hover:pointer-events-auto group-hover:opacity-100',
+
+            // Mobile:
+            // centered directly above the actual message bubble.
+            'bottom-full start-1/2 mb-1 -translate-x-1/2',
+
+            // Desktop:
+            // keep toolbar beside the message.
+            'md:bottom-auto md:top-0 md:mb-0 md:-translate-y-1/2 md:translate-x-0',
+            isOwn
+              ? 'md:end-full md:me-1'
+              : 'md:start-full md:ms-1',
           )}
         >
           <button
+            type="button"
             onClick={() => setReactionBarOpen((v) => !v)}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-soft hover:text-accent"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-soft hover:text-accent"
           >
             <SmilePlus className="h-3.5 w-3.5" />
           </button>
+
           <button
+            type="button"
             onClick={() => onReply(message)}
-            className="flex h-7 w-7 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-soft hover:text-accent"
+            className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-soft hover:text-accent"
           >
             <Reply className="h-3.5 w-3.5" />
           </button>
-          <div className="relative">
+
+          <div className="relative shrink-0">
             <button
+              ref={menuButtonRef}
+              type="button"
+              aria-haspopup="menu"
+              aria-expanded={menuOpen}
               onClick={() => setMenuOpen((v) => !v)}
-              className="flex h-7 w-7 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-soft hover:text-accent"
+              className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-surface text-muted-foreground shadow-soft hover:text-accent"
             >
               ⋮
             </button>
-            <MessageMenu open={menuOpen} onClose={() => setMenuOpen(false)} items={menuItems} align={isOwn ? 'end' : 'start'} />
+
+            <MessageMenu
+              open={menuOpen}
+              onClose={() => setMenuOpen(false)}
+              items={menuItems}
+              align={isOwn ? 'end' : 'start'}
+              anchorRef={menuButtonRef}
+            />
           </div>
         </div>
+
+        {/* Reaction bar */}
         <div className="relative">
           <QuickReactionBar
             open={reactionBarOpen}
@@ -165,29 +286,47 @@ export function MessageBubble({
           />
         </div>
 
-        {message.forwarded && <p className="px-1 text-[11px] italic text-muted-foreground">إعادة توجيه</p>}
+        {message.forwarded && (
+          <p className="px-1 text-[11px] italic text-muted-foreground">
+            إعادة توجيه
+          </p>
+        )}
 
         {message.replyTo && (
           <button
+            type="button"
             onClick={() => onJumpToReply(message.replyTo!._id)}
             className={cn(
               'w-full max-w-full rounded-xl border-s-4 border-accent bg-surface-2/60 px-3 py-1.5 text-start text-xs',
               isOwn && 'bg-white/15 text-white',
             )}
           >
-            <p className={cn('font-medium', isOwn ? 'text-white' : 'text-accent')}>
+            <p
+              className={cn(
+                'font-medium',
+                isOwn ? 'text-white' : 'text-accent',
+              )}
+            >
               {message.replyTo.sender?.name ?? 'مستخدم محذوف'}
             </p>
-            <p className={cn('truncate', isOwn ? 'text-white/80' : 'text-muted-foreground')}>
+
+            <p
+              className={cn(
+                'truncate',
+                isOwn ? 'text-white/80' : 'text-muted-foreground',
+              )}
+            >
               {message.replyTo.deletedForEveryone
                 ? 'تم حذف هذه الرسالة'
-                : message.replyTo.text || (message.replyTo.attachments?.length ? 'مرفق' : '')}
+                : message.replyTo.text ||
+                  (message.replyTo.attachments?.length ? 'مرفق' : '')}
             </p>
           </button>
         )}
 
         {attachments.map((attachment, i) => {
           const url = assetUrl(attachment.url) ?? '';
+
           if (attachment.type === 'image') {
             return (
               // eslint-disable-next-line @next/next/no-img-element
@@ -199,14 +338,32 @@ export function MessageBubble({
               />
             );
           }
+
           if (attachment.type === 'video') {
             return (
-              <video key={i} src={url} controls className="animate-bubble-in max-h-64 w-auto rounded-2xl" />
+              <video
+                key={i}
+                src={url}
+                controls
+                className="animate-bubble-in max-h-64 w-auto rounded-2xl"
+              />
             );
           }
-          if (attachment.type === 'voice' || attachment.type === 'audio') {
-            return <VoiceMessagePlayer key={i} src={url} isOwn={isOwn} duration={attachment.duration} />;
+
+          if (
+            attachment.type === 'voice' ||
+            attachment.type === 'audio'
+          ) {
+            return (
+              <VoiceMessagePlayer
+                key={i}
+                src={url}
+                isOwn={isOwn}
+                duration={attachment.duration}
+              />
+            );
           }
+
           return (
             <a
               key={i}
@@ -215,14 +372,27 @@ export function MessageBubble({
               rel="noopener noreferrer"
               className={cn(
                 'flex items-center gap-2.5 rounded-2xl px-4 py-3 text-[15px] transition-colors',
-                isOwn ? 'bg-gradient-accent text-white' : 'bg-surface-2/70 text-foreground hover:bg-surface-2',
+                isOwn
+                  ? 'bg-gradient-accent text-white'
+                  : 'bg-surface-2/70 text-foreground hover:bg-surface-2',
               )}
             >
               <FileText className="h-5 w-5 shrink-0" />
+
               <span className="min-w-0">
-                <span className="block truncate">{attachment.name ?? 'مرفق'}</span>
+                <span className="block truncate">
+                  {attachment.name ?? 'مرفق'}
+                </span>
+
                 {attachment.size != null && (
-                  <span className={cn('block text-xs', isOwn ? 'text-white/80' : 'text-muted-foreground')}>
+                  <span
+                    className={cn(
+                      'block text-xs',
+                      isOwn
+                        ? 'text-white/80'
+                        : 'text-muted-foreground',
+                    )}
+                  >
                     {formatBytes(attachment.size)}
                   </span>
                 )}
@@ -235,36 +405,52 @@ export function MessageBubble({
           <div
             className={cn(
               'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
-              isOwn ? 'rounded-bl-md bg-gradient-accent text-white shadow-soft' : 'rounded-br-md bg-surface-2/70 text-foreground',
+              isOwn
+                ? 'rounded-bl-md bg-gradient-accent text-white shadow-soft'
+                : 'rounded-br-md bg-surface-2/70 text-foreground',
             )}
           >
             <TaggedText text={message.text} />
           </div>
         )}
 
-        {previewUrl && !attachments.length && <LinkPreviewCard url={previewUrl} isOwn={isOwn} />}
+        {previewUrl && !attachments.length && (
+          <LinkPreviewCard url={previewUrl} isOwn={isOwn} />
+        )}
 
         {Object.keys(reactionGroups).length > 0 && (
           <div className="flex flex-wrap gap-1">
             {Object.entries(reactionGroups).map(([emoji, count]) => (
               <button
                 key={emoji}
+                type="button"
                 onClick={() => onReact(message, emoji)}
                 className={cn(
                   'flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-xs shadow-soft transition-transform hover:scale-105',
-                  myReactionEmoji === emoji ? 'border-accent bg-accent/10' : 'border-border bg-surface',
+                  myReactionEmoji === emoji
+                    ? 'border-accent bg-accent/10'
+                    : 'border-border bg-surface',
                 )}
               >
                 <span>{emoji}</span>
-                {count > 1 && <span className="text-muted-foreground">{count}</span>}
+
+                {count > 1 && (
+                  <span className="text-muted-foreground">
+                    {count}
+                  </span>
+                )}
               </button>
             ))}
           </div>
         )}
 
         <span className="flex items-center gap-1 px-1 text-xs text-muted-foreground">
-          {message.edited && <span className="italic">مُعدَّلة ·</span>}
+          {message.edited && (
+            <span className="italic">مُعدَّلة ·</span>
+          )}
+
           {timeAgo(message.createdAt)}
+
           {isOwn && <ReadTicks status={status} />}
         </span>
       </div>
