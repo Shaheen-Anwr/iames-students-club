@@ -35,10 +35,10 @@ export function MessageMenu({ open, onClose, items, align = 'end' }: MessageMenu
   return (
     <div
       ref={ref}
-      className={cn(
-        'absolute top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-card animate-slide-up',
-        align === 'end' ? 'end-0' : 'start-0',
-      )}
+    className={cn(
+  'absolute top-full z-30 mt-1 w-44 max-w-[calc(100vw-1rem)] overflow-hidden rounded-xl border border-border bg-surface py-1 shadow-card animate-slide-up',
+  align === 'end' ? 'end-0' : 'start-0',
+)}
     >
       {items.map((item) => (
         <button
