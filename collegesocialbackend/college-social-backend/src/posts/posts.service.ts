@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Post, PostAttachmentType, PostDocument, PostScope, ReactionType } from './schemas/post.schema';
 import { Comment, CommentDocument } from './schemas/comment.schema';
+import { LectureFolder, LectureFolderDocument } from './schemas/lecture-folder.schema';
 import { CreatePostDto } from './dto/create-post.dto';
 import { SharePostDto } from './dto/share-post.dto';
 import { GamificationService } from '../gamification/gamification.service';
@@ -46,6 +47,7 @@ export class PostsService {
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
+    @InjectModel(LectureFolder.name) private lectureFolderModel: Model<LectureFolderDocument>,
     private readonly gamificationService: GamificationService,
     private readonly notificationsService: NotificationsService,
     private readonly lectureIndexService: LectureIndexService,
@@ -589,6 +591,79 @@ export class PostsService {
       { $project: { _id: 0, courseCode: '$_id', attachmentCount: 1, latestAt: 1 } },
       { $sort: { latestAt: -1 } },
     ]);
+  }
+
+  // Folders for the PDF/video lecture library (components/lectures/LectureFoldersGrid): every
+  // explicitly-created LectureFolder, plus a synthetic entry for any courseCode that already has
+  // lectures of this type but no folder doc yet (free-typed courseCode from before folders existed,
+  // or from the courseCode field on the upload form) -- so nothing already uploaded disappears.
+  async listLectureFolders(
+    attachmentType: 'lecture' | 'video',
+  ): Promise<{ id: string | null; name: string; lectureCount: number; latestAt: Date; createdAt: Date }[]> {
+    const [folders, counts] = await Promise.all([
+      this.lectureFolderModel
+        .find({ attachmentType })
+        .sort({ createdAt: -1 })
+        .lean<{ _id: Types.ObjectId; name: string; createdAt: Date }[]>()
+        .exec(),
+      this.postModel.aggregate<{ _id: string; count: number; latestAt: Date }>([
+        { $match: { attachmentType, courseCode: { $ne: null } } },
+        { $group: { _id: '$courseCode', count: { $sum: 1 }, latestAt: { $max: '$createdAt' } } },
+      ]),
+    ]);
+
+    const countByName = new Map(counts.map((c) => [c._id, c]));
+    const result: { id: string | null; name: string; lectureCount: number; latestAt: Date; createdAt: Date }[] = folders.map((f) => {
+      const stats = countByName.get(f.name);
+      countByName.delete(f.name);
+      return {
+        id: f._id.toString(),
+        name: f.name,
+        lectureCount: stats?.count ?? 0,
+        latestAt: stats?.latestAt ?? f.createdAt,
+        createdAt: f.createdAt,
+      };
+    });
+    for (const c of countByName.values()) {
+      result.push({ id: null, name: c._id, lectureCount: c.count, latestAt: c.latestAt, createdAt: c.latestAt });
+    }
+    result.sort((a, b) => new Date(b.latestAt).getTime() - new Date(a.latestAt).getTime());
+    return result;
+  }
+
+  async createLectureFolder(
+    userId: string,
+    userRole: Role,
+    name: string,
+    attachmentType: 'lecture' | 'video',
+  ): Promise<LectureFolderDocument> {
+    if (userRole === Role.STUDENT) {
+      throw new ForbiddenException('إنشاء المجلدات متاح للمشرفين وأعضاء هيئة التدريس فقط');
+    }
+    const trimmed = name.trim();
+    if (!trimmed) throw new BadRequestException('اسم المجلد مطلوب');
+
+    const existing = await this.lectureFolderModel
+      .findOne({ attachmentType, name: trimmed })
+      .collation({ locale: 'en', strength: 2 })
+      .exec();
+    if (existing) throw new BadRequestException('يوجد مجلد بهذا الاسم بالفعل');
+
+    const folder = new this.lectureFolderModel({
+      name: trimmed,
+      attachmentType,
+      createdBy: new Types.ObjectId(userId),
+    });
+    return folder.save();
+  }
+
+  async deleteLectureFolder(id: string, requesterId: string): Promise<void> {
+    const folder = await this.lectureFolderModel.findById(id).exec();
+    if (!folder) throw new NotFoundException('المجلد غير موجود');
+    if (folder.createdBy.toString() !== requesterId) {
+      throw new ForbiddenException('يمكنك حذف المجلدات التي أنشأتها فقط');
+    }
+    await folder.deleteOne();
   }
 
   // --- Admin-only operations (guarded at the controller level) ---

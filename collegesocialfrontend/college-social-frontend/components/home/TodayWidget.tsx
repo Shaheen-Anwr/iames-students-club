@@ -1,10 +1,16 @@
+'use client';
+
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { CalendarClock, CheckCircle2, Clock3, MapPin } from 'lucide-react';
+import { CalendarClock, CheckCircle2, Circle, Clock3, MapPin } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
-import { cn } from '@/lib/utils';
+import { api, ApiError } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/lib/toast-context';
+import { cn, timeAgo } from '@/lib/utils';
 import type { DueItem, ScheduleEntry, Urgency } from '@/lib/types';
 
 const URGENCY_BADGE: Record<Exclude<Urgency, 'completed' | 'normal'>, { label: string; variant: 'danger' | 'warning' }> = {
@@ -19,15 +25,73 @@ const URGENCY_BORDER: Record<Urgency, string> = {
   completed: 'border-s-4 border-s-success',
 };
 
+function itemKey(item: DueItem) {
+  return `${item.type}-${item.id}`;
+}
+
 export function TodayWidget({ schedule, dueToday }: { schedule: ScheduleEntry[]; dueToday: DueItem[] }) {
+  const { user } = useAuth();
+  const { showToast } = useToast();
+  const isTeachingStaff = user?.role === 'professor' || user?.role === 'admin';
+
+  const [items, setItems] = useState(dueToday);
+  const [doneKeys, setDoneKeys] = useState<Set<string>>(new Set());
+  const [pendingKeys, setPendingKeys] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    setItems(dueToday);
+    setDoneKeys(new Set());
+    setPendingKeys(new Set());
+  }, [dueToday]);
+
+  async function handleComplete(item: DueItem) {
+    const key = itemKey(item);
+    if (doneKeys.has(key) || pendingKeys.has(key)) return;
+
+    setPendingKeys((prev) => new Set(prev).add(key));
+    setDoneKeys((prev) => new Set(prev).add(key));
+
+    try {
+      if (item.type === 'planner') {
+        await api.post(`/planner/${item.id}/toggle`);
+      } else {
+        await api.post(`/assignments/${item.id}/complete`);
+      }
+      showToast('أحسنت! تم إنجاز المهمة', 'success');
+      setTimeout(() => {
+        setItems((prev) => prev.filter((i) => itemKey(i) !== key));
+      }, 400);
+    } catch (err) {
+      setDoneKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+      showToast(err instanceof ApiError ? err.message : 'تعذّر تحديث المهمة', 'error');
+    } finally {
+      setPendingKeys((prev) => {
+        const next = new Set(prev);
+        next.delete(key);
+        return next;
+      });
+    }
+  }
+
+  const isEmpty = schedule.length === 0 && items.length === 0;
+
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <CalendarClock className="h-4 w-4 text-accent" />
-        <h2 className="text-sm font-semibold text-foreground">اليوم</h2>
+      <div className="mb-3 flex items-center justify-between gap-2">
+        <div className="flex items-center gap-2">
+          <CalendarClock className="h-4 w-4 text-accent" />
+          <h2 className="text-sm font-semibold text-foreground">اليوم</h2>
+        </div>
+        {items.length > 0 && (
+          <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">{items.length} يحتاج انتباهك</span>
+        )}
       </div>
 
-      {schedule.length === 0 && dueToday.length === 0 ? (
+      {isEmpty ? (
         <div className="flex flex-col items-center gap-2 py-8 text-center">
           <CheckCircle2 className="h-8 w-8 text-success" />
           <p className="text-sm text-muted-foreground">لا حصص ولا مواعيد نهائية قريبة. يوم هادئ!</p>
@@ -59,27 +123,51 @@ export function TodayWidget({ schedule, dueToday }: { schedule: ScheduleEntry[];
             </div>
           )}
 
-          {dueToday.length > 0 && (
+          {items.length > 0 && (
             <div className="space-y-2">
               <p className="text-xs font-medium text-muted-foreground">يستحق الانتباه</p>
-              {dueToday.map((item) => {
+              {items.map((item) => {
                 const badge = item.urgency === 'overdue' || item.urgency === 'urgent' ? URGENCY_BADGE[item.urgency] : null;
                 const href = item.type === 'assignment' ? '/study/assignments' : '/study/planner';
+                const key = itemKey(item);
+                const done = doneKeys.has(key);
+                const canToggle = item.type === 'planner' || !isTeachingStaff;
+
                 return (
-                  <Link
-                    key={`${item.type}-${item.id}`}
-                    href={href}
-                    className={cn('flex items-center justify-between gap-3 rounded-xl bg-surface-2/60 px-3 py-2.5 transition-colors hover:bg-surface-2', URGENCY_BORDER[item.urgency])}
+                  <div
+                    key={key}
+                    className={cn(
+                      'flex items-center gap-3 rounded-xl bg-surface-2/60 px-3 py-2.5 transition-all duration-300',
+                      URGENCY_BORDER[item.urgency],
+                      done && 'opacity-50',
+                    )}
                   >
-                    <div className="min-w-0 flex-1">
-                      <p className="truncate text-sm font-medium text-foreground">{item.title}</p>
+                    {canToggle ? (
+                      <button
+                        type="button"
+                        onClick={() => handleComplete(item)}
+                        disabled={done}
+                        aria-label="وضع علامة كمُنجزة"
+                        className="shrink-0 text-muted-foreground transition-transform hover:scale-110 hover:text-accent active:scale-90 disabled:pointer-events-none"
+                      >
+                        {done ? <CheckCircle2 className="h-5 w-5 text-success" /> : <Circle className="h-5 w-5" />}
+                      </button>
+                    ) : (
+                      <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-warning/10 text-warning">
+                        <Clock3 className="h-4 w-4" />
+                      </div>
+                    )}
+                    <Link href={href} className="min-w-0 flex-1 hover:opacity-80">
+                      <p className={cn('truncate text-sm font-medium text-foreground', done && 'line-through')}>{item.title}</p>
                       <p className="text-xs text-muted-foreground">
                         {item.courseCode && `${item.courseCode} · `}
+                        {timeAgo(item.dueDate)}
+                        <span className="mx-1">·</span>
                         {format(new Date(item.dueDate), 'EEEE، d MMMM', { locale: ar })}
                       </p>
-                    </div>
-                    {badge && <Badge variant={badge.variant}>{badge.label}</Badge>}
-                  </Link>
+                    </Link>
+                    {badge && !done && <Badge variant={badge.variant}>{badge.label}</Badge>}
+                  </div>
                 );
               })}
             </div>

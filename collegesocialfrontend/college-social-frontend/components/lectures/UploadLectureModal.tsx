@@ -24,6 +24,7 @@ export function UploadLectureModal({
   attachmentType,
   accept,
   title,
+  lockedCourseCode,
 }: {
   open: boolean;
   onClose: () => void;
@@ -31,13 +32,16 @@ export function UploadLectureModal({
   attachmentType: Extract<PostAttachmentType, 'lecture' | 'video'>;
   accept: string;
   title: string;
+  // When set, this upload happens from inside a folder -- the course code is fixed to the folder's
+  // name and the field is hidden instead of freely editable.
+  lockedCourseCode?: string;
 }) {
   const { user } = useAuth();
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const [caption, setCaption] = useState('');
-  const [courseCode, setCourseCode] = useState('');
+  const [courseCode, setCourseCode] = useState(lockedCourseCode ?? '');
   const [department, setDepartment] = useState<Department | ''>(user?.department ?? '');
   const [academicYear, setAcademicYear] = useState<AcademicYear | ''>('');
   const [specialization, setSpecialization] = useState<Specialization | ''>('');
@@ -49,7 +53,7 @@ export function UploadLectureModal({
 
   function reset() {
     setCaption('');
-    setCourseCode('');
+    setCourseCode(lockedCourseCode ?? '');
     setDepartment(user?.department ?? '');
     setAcademicYear('');
     setSpecialization('');
@@ -130,7 +134,13 @@ export function UploadLectureModal({
         )}
 
         <Input placeholder="عنوان (اختياري)" value={caption} onChange={(e) => setCaption(e.target.value)} />
-        <Input placeholder="رمز المقرر (اختياري)، مثل CS101" value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
+        {lockedCourseCode ? (
+          <div className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted-foreground">
+            المجلد: <span className="font-medium text-foreground">{lockedCourseCode}</span>
+          </div>
+        ) : (
+          <Input placeholder="رمز المقرر (اختياري)، مثل CS101" value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
+        )}
 
         <div className="grid grid-cols-2 gap-3">
           <select value={department} onChange={(e) => handleDepartmentChange(e.target.value as Department | '')} className={SELECT_CLASS}>

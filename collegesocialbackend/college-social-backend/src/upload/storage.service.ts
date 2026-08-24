@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
 import { mkdir, readFile, writeFile } from 'fs/promises';
@@ -62,17 +62,26 @@ export class StorageService {
     // must be passed explicitly or the delivered file loses it (e.g. a lecture PDF served with no
     // ".pdf" in the URL). 'image'/'video' detect format from the actual bytes, so leave those alone.
     const ext = extname(originalName).replace('.', '').toLowerCase();
-    const result = await new Promise<UploadApiResponse>((resolve, reject) => {
-      const stream = cloudinary.uploader.upload_stream(
-        {
-          resource_type: resourceType,
-          folder: category,
-          ...(resourceType === 'raw' && ext ? { format: ext } : {}),
-        },
-        (error, uploadResult) => (error || !uploadResult ? reject(error) : resolve(uploadResult)),
-      );
-      stream.end(buffer);
-    });
+    let result: UploadApiResponse;
+    try {
+      result = await new Promise<UploadApiResponse>((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            resource_type: resourceType,
+            folder: category,
+            ...(resourceType === 'raw' && ext ? { format: ext } : {}),
+          },
+          (error, uploadResult) => (error || !uploadResult ? reject(error) : resolve(uploadResult)),
+        );
+        stream.end(buffer);
+      });
+    } catch (error) {
+      // Cloudinary rejects e.g. a corrupted/truncated file or an unsupported codec -- without this,
+      // that rejection was an unhandled promise rejection, surfacing to the client as a bare,
+      // unhelpful 500 ("حدث خطأ في الخادم") instead of telling them what actually went wrong.
+      this.logger.error(`Cloudinary upload failed for category "${category}": ${(error as Error)?.message ?? error}`);
+      throw new BadRequestException('تعذّر رفع الملف، تأكد من أن الملف غير تالف وحاول مرة أخرى');
+    }
     return result.secure_url;
   }
 

@@ -1,14 +1,13 @@
-import { LecturesBrowser } from '@/components/lectures/LecturesBrowser';
+import { LectureFoldersGrid } from '@/components/lectures/LectureFoldersGrid';
 
 export default function PdfLecturesPage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-      <LecturesBrowser
+      <LectureFoldersGrid
         attachmentType="lecture"
-        uploadAccept=".pdf"
+        basePath="/lectures/pdf"
         title="محاضرات PDF"
-        uploadLabel="رفع محاضرة"
-        emptyLabel="لا توجد محاضرات بعد. كن أول من يرفع محاضرة."
+        emptyLabel="لا توجد مجلدات بعد. أنشئ مجلدًا لمادة دراسية لتبدأ."
       />
     </div>
   );

@@ -3,9 +3,10 @@ import { ScheduleService } from '../schedule/schedule.service';
 import { AssignmentsService } from '../assignments/assignments.service';
 import { PlannerService } from '../planner/planner.service';
 import { AnnouncementsService } from '../announcements/announcements.service';
+import { CalendarEventsService } from '../calendar-events/calendar-events.service';
 import { Department } from '../common/enums/department.enum';
 
-export type CalendarEventType = 'class' | 'assignment' | 'task' | 'announcement';
+export type CalendarEventType = 'class' | 'assignment' | 'task' | 'announcement' | 'event' | 'reminder';
 
 export interface CalendarEvent {
   date: string; // ISO date, e.g. "2026-08-21"
@@ -18,12 +19,16 @@ export interface CalendarEvent {
   // assignment/task/announcement
   id?: string;
   courseCode?: string;
+  // event/reminder only -- 'startTime' above doubles as their optional/required time-of-day, no
+  // separate field needed.
+  notes?: string | null;
 }
 
 // Aggregates from each feature module's own data at query time rather than owning a separate
-// "calendar event" collection -- ScheduleEntry (recurring weekly slots), Assignment (one-off due
-// dates), PlannerTask (personal to-dos), and Announcement (dated department/platform notices)
-// each stay the source of truth for their own data.
+// "calendar event" collection for most of these -- ScheduleEntry (recurring weekly slots),
+// Assignment (one-off due dates), PlannerTask (personal to-dos), and Announcement (dated
+// department/platform notices) each stay the source of truth for their own data. CalendarEvent
+// (event/reminder) is the one type this calendar actually owns itself.
 @Injectable()
 export class CalendarService {
   constructor(
@@ -31,17 +36,19 @@ export class CalendarService {
     private readonly assignmentsService: AssignmentsService,
     private readonly plannerService: PlannerService,
     private readonly announcementsService: AnnouncementsService,
+    private readonly calendarEventsService: CalendarEventsService,
   ) {}
 
   async getEvents(userId: string, department: Department | null, month: number, year: number): Promise<CalendarEvent[]> {
     const monthStart = new Date(Date.UTC(year, month - 1, 1));
     const monthEnd = new Date(Date.UTC(year, month, 1));
 
-    const [scheduleEntries, assignments, tasks, announcements] = await Promise.all([
+    const [scheduleEntries, assignments, tasks, announcements, calendarEvents] = await Promise.all([
       this.scheduleService.findForUser(userId),
       this.assignmentsService.findDueInRange(monthStart, monthEnd, userId),
       this.plannerService.findDueInRange(userId, monthStart, monthEnd),
       this.announcementsService.findEventsInRange(monthStart, monthEnd, department),
+      this.calendarEventsService.findInRange(userId, monthStart, monthEnd),
     ]);
 
     const events: CalendarEvent[] = [];
@@ -90,6 +97,17 @@ export class CalendarService {
         type: 'announcement',
         title: announcement.title,
         id: announcement.id,
+      });
+    }
+
+    for (const calendarEvent of calendarEvents) {
+      events.push({
+        date: calendarEvent.date.toISOString().slice(0, 10),
+        type: calendarEvent.kind,
+        title: calendarEvent.title,
+        id: calendarEvent.id,
+        startTime: calendarEvent.time ?? undefined,
+        notes: calendarEvent.notes,
       });
     }
 

@@ -15,20 +15,42 @@ import {
   subMonths,
 } from 'date-fns';
 import { ar } from 'date-fns/locale';
-import { CalendarClock, ChevronLeft, ChevronRight, ClipboardList, GraduationCap, ListTodo, MapPin, Megaphone } from 'lucide-react';
+import {
+  Bell,
+  CalendarClock,
+  CalendarPlus,
+  ChevronLeft,
+  ChevronRight,
+  ClipboardList,
+  GraduationCap,
+  ListTodo,
+  MapPin,
+  Megaphone,
+  Plus,
+  Trash2,
+} from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
+import { useToast } from '@/lib/toast-context';
 import { cn } from '@/lib/utils';
 import type { CalendarEvent, CalendarEventType } from '@/lib/types';
+import { AddCalendarItemModal } from './AddCalendarItemModal';
 
 const WEEKDAY_LABELS = ['سبت', 'أحد', 'اثنين', 'ثلاثاء', 'أربعاء', 'خميس', 'جمعة'];
+
+// Only these two kinds are ever deletable from here -- everything else (class/assignment/task/
+// announcement) is owned by another feature (schedule/assignments/planner/announcements) and
+// managed from there instead.
+const DELETABLE_TYPES: CalendarEventType[] = ['event', 'reminder'];
 
 const EVENT_DOT_COLOR: Record<CalendarEventType, string> = {
   class: 'bg-accent',
   assignment: 'bg-warning',
   task: 'bg-success',
   announcement: 'bg-danger',
+  event: 'bg-accent-2',
+  reminder: 'bg-warning',
 };
 
 const EVENT_ICON: Record<CalendarEventType, typeof GraduationCap> = {
@@ -36,6 +58,8 @@ const EVENT_ICON: Record<CalendarEventType, typeof GraduationCap> = {
   assignment: ClipboardList,
   task: ListTodo,
   announcement: Megaphone,
+  event: CalendarPlus,
+  reminder: Bell,
 };
 
 const EVENT_ICON_COLOR: Record<CalendarEventType, string> = {
@@ -43,21 +67,43 @@ const EVENT_ICON_COLOR: Record<CalendarEventType, string> = {
   assignment: 'text-warning',
   task: 'text-success',
   announcement: 'text-danger',
+  event: 'text-accent-2',
+  reminder: 'text-warning',
 };
 
 export function CalendarView() {
+  const { showToast } = useToast();
   const [cursor, setCursor] = useState(() => new Date());
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [selectedDate, setSelectedDate] = useState<Date>(() => new Date());
+  const [addOpen, setAddOpen] = useState(false);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  function refresh() {
     setLoading(true);
-    api
+    return api
       .get<CalendarEvent[]>(`/calendar?month=${cursor.getMonth() + 1}&year=${cursor.getFullYear()}`)
       .then(setEvents)
       .finally(() => setLoading(false));
+  }
+
+  useEffect(() => {
+    refresh();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cursor]);
+
+  async function handleDelete(id: string) {
+    setDeletingId(id);
+    try {
+      await api.delete(`/calendar-events/${id}`);
+      await refresh();
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر الحذف.', 'error');
+    } finally {
+      setDeletingId(null);
+    }
+  }
 
   const days = useMemo(() => {
     const start = startOfWeek(startOfMonth(cursor), { weekStartsOn: 6 });
@@ -156,7 +202,15 @@ export function CalendarView() {
           </div>
 
           <Card className="p-5">
-            <h3 className="mb-3.5 text-sm font-semibold text-foreground">{format(selectedDate, 'EEEE، d MMMM', { locale: ar })}</h3>
+            <div className="mb-3.5 flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-foreground">{format(selectedDate, 'EEEE، d MMMM', { locale: ar })}</h3>
+              <button
+                onClick={() => setAddOpen(true)}
+                className="flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent transition-colors hover:bg-accent/20"
+              >
+                <Plus className="h-3.5 w-3.5" /> إضافة
+              </button>
+            </div>
             {selectedEvents.length === 0 ? (
               <div className="flex flex-col items-center gap-2 py-6 text-center">
                 <CalendarClock className="h-6 w-6 text-muted-foreground" />
@@ -166,6 +220,7 @@ export function CalendarView() {
               <div className="space-y-3">
                 {selectedEvents.map((event, idx) => {
                   const Icon = EVENT_ICON[event.type];
+                  const deletable = DELETABLE_TYPES.includes(event.type) && event.id;
                   return (
                   <div key={idx} className="flex items-start gap-3">
                     <div className={cn('flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-surface-2/70', EVENT_ICON_COLOR[event.type])}>
@@ -183,16 +238,33 @@ export function CalendarView() {
                             </span>
                           )}
                         </p>
+                      ) : event.type === 'event' || event.type === 'reminder' ? (
+                        <>
+                          {event.startTime && <p className="mt-0.5 text-xs text-muted-foreground">{event.startTime}</p>}
+                          {event.notes && <p className="mt-0.5 text-xs text-muted-foreground">{event.notes}</p>}
+                        </>
                       ) : (
                         event.courseCode && <p className="mt-0.5 text-xs text-muted-foreground">{event.courseCode}</p>
                       )}
                     </div>
+                    {deletable && (
+                      <button
+                        onClick={() => handleDelete(event.id!)}
+                        disabled={deletingId === event.id}
+                        title="حذف"
+                        className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground/70 transition-colors hover:bg-danger/10 hover:text-danger disabled:opacity-50"
+                      >
+                        <Trash2 className="h-3.5 w-3.5" />
+                      </button>
+                    )}
                   </div>
                   );
                 })}
               </div>
             )}
           </Card>
+
+          <AddCalendarItemModal open={addOpen} onClose={() => setAddOpen(false)} date={selectedDate} onCreated={refresh} />
         </>
       )}
     </div>

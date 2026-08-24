@@ -44,10 +44,10 @@ export function Logo({ size = 'md', withText = true, variant = 'light', classNam
       {withText && (
         <div className="leading-tight">
           <p className={cn('text-lg font-extrabold tracking-tight', variant === 'light' ? 'text-white' : 'text-foreground')}>
-            IEAMS Students Club
+            IAEMS Students Club
           </p>
           <p className={cn('text-[11px] font-medium', variant === 'light' ? 'text-white/70' : 'text-muted-foreground')}>
-            IEAMS Students Community
+            IAEMS Students Community
           </p>
         </div>
       )}

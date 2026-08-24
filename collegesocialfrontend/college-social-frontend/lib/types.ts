@@ -137,6 +137,14 @@ export interface CourseSummary {
   latestAt: string;
 }
 
+export interface LectureFolder {
+  id: string | null;
+  name: string;
+  lectureCount: number;
+  latestAt: string;
+  createdAt: string;
+}
+
 export interface PaginatedPosts {
   data: Post[];
   total: number;
@@ -406,7 +414,7 @@ export interface QuizAttemptResult {
   correctIndexes: number[];
 }
 
-export type CalendarEventType = 'class' | 'assignment' | 'task' | 'announcement';
+export type CalendarEventType = 'class' | 'assignment' | 'task' | 'announcement' | 'event' | 'reminder';
 
 export interface CalendarEvent {
   date: string;
@@ -417,6 +425,8 @@ export interface CalendarEvent {
   location?: string | null;
   id?: string;
   courseCode?: string;
+  // event/reminder only
+  notes?: string | null;
 }
 
 export interface PlannerTask {

@@ -14,6 +14,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
+import { CreateLectureFolderDto } from './dto/create-lecture-folder.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { SharePostDto } from './dto/share-post.dto';
 import { SetReactionDto } from './dto/set-reaction.dto';
@@ -106,6 +107,26 @@ export class PostsController {
       Number(page) || 1,
       Number(limit) || 20,
     );
+  }
+
+  // GET /api/posts/lectures/folders?type=lecture|video -> folders for the lecture/video library,
+  // for LectureFoldersGrid. NOTE: must stay above @Get(':id') or it gets swallowed as an id lookup.
+  @Get('lectures/folders')
+  async listLectureFolders(@Query('type') type: 'lecture' | 'video') {
+    return this.postsService.listLectureFolders(type);
+  }
+
+  // POST /api/posts/lectures/folders  { name, type } -- admin/professor only, see PostsService.
+  @HttpPost('lectures/folders')
+  async createLectureFolder(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateLectureFolderDto) {
+    return this.postsService.createLectureFolder(user.userId, user.role, dto.name, dto.type);
+  }
+
+  // DELETE /api/posts/lectures/folders/:id -- only the folder's own creator may delete it.
+  @Delete('lectures/folders/:id')
+  async deleteLectureFolder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    await this.postsService.deleteLectureFolder(id, user.userId);
+    return { success: true };
   }
 
   @Get(':id')

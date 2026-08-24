@@ -1,14 +1,13 @@
-import { LecturesBrowser } from '@/components/lectures/LecturesBrowser';
+import { LectureFoldersGrid } from '@/components/lectures/LectureFoldersGrid';
 
 export default function VideoLecturesPage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
-      <LecturesBrowser
+      <LectureFoldersGrid
         attachmentType="video"
-        uploadAccept="video/*"
+        basePath="/lectures/video"
         title="محاضرات فيديو"
-        uploadLabel="رفع فيديو"
-        emptyLabel="لا توجد فيديوهات بعد. كن أول من يرفع فيديو."
+        emptyLabel="لا توجد مجلدات بعد. أنشئ مجلدًا لمادة دراسية لتبدأ."
       />
     </div>
   );

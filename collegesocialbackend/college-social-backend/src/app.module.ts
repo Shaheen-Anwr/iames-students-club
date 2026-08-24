@@ -4,6 +4,10 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ServeStaticModule } from '@nestjs/serve-static';
 import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+// Aliased -- this app already has its own ScheduleModule (./schedule/schedule.module, class
+// timetables) that the bare name would collide with. This one just enables @Cron() decorators
+// anywhere in the app (used by CalendarEventsService's reminder-push cron).
+import { ScheduleModule as CronScheduleModule } from '@nestjs/schedule';
 import { join } from 'path';
 import configuration from './config/configuration';
 import { AuthModule } from './auth/auth.module';
@@ -20,6 +24,7 @@ import { RealtimeModule } from './realtime/realtime.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { QaModule } from './qa/qa.module';
 import { CalendarModule } from './calendar/calendar.module';
+import { CalendarEventsModule } from './calendar-events/calendar-events.module';
 import { PlannerModule } from './planner/planner.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { SearchModule } from './search/search.module';
@@ -47,6 +52,7 @@ import { AppController } from './app.controller';
       throttlers: [{ ttl: 60000, limit: 20 }],
       errorMessage: 'محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل',
     }),
+    CronScheduleModule.forRoot(),
     // Serves /uploads/** as static files, e.g. http://localhost:3001/uploads/photos/xyz.jpg
     // ServeStaticModule.forRoot() runs at module-load time, before DI, so this reads UPLOADS_DIR
     // straight from process.env (same default as configuration.ts's uploadsDir) rather than via
@@ -69,6 +75,7 @@ import { AppController } from './app.controller';
     NotificationsModule,
     QaModule,
     CalendarModule,
+    CalendarEventsModule,
     PlannerModule,
     AnnouncementsModule,
     SearchModule,

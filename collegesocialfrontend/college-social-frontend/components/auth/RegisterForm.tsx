@@ -107,7 +107,7 @@ export function RegisterForm() {
           <Logo size="sm" variant="dark" />
         </div>
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">أنشئ حسابك</h1>
-        <p className="text-sm text-muted-foreground">حصريًا لطلاب وأساتذة IEAMS.</p>
+        <p className="text-sm text-muted-foreground">حصريًا لطلاب وأساتذة IAEMS.</p>
       </div>
 
       <form onSubmit={handleSubmit} className="space-y-4">
