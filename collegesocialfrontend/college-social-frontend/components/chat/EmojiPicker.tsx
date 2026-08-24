@@ -2,8 +2,6 @@
 
 import { useEffect, useRef } from 'react';
 
-// A flat, dependency-free emoji set (no external picker library) -- covers the categories people
-// actually reach for in chat, grouped loosely the way WhatsApp's picker does.
 const EMOJI_GROUPS: { label: string; emojis: string[] }[] = [
   {
     label: 'وجوه',
@@ -26,19 +24,26 @@ interface EmojiPickerProps {
   onClose: () => void;
   onSelect: (emoji: string) => void;
   anchorClassName?: string;
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function EmojiPicker({ open, onClose, onSelect, anchorClassName }: EmojiPickerProps) {
+export function EmojiPicker({ open, onClose, onSelect, anchorClassName, triggerRef }: EmojiPickerProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+
     const onClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || triggerRef?.current?.contains(target)) {
+        return;
+      }
+      onClose();
     };
+
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [open, onClose]);
+  }, [open, onClose, triggerRef]);
 
   if (!open) return null;
 
@@ -76,19 +81,26 @@ interface QuickReactionBarProps {
   onSelect: (emoji: string) => void;
   onOpenFullPicker: () => void;
   align?: 'start' | 'end';
+  triggerRef?: React.RefObject<HTMLElement | null>;
 }
 
-export function QuickReactionBar({ open, onClose, onSelect, onOpenFullPicker, align = 'end' }: QuickReactionBarProps) {
+export function QuickReactionBar({ open, onClose, onSelect, onOpenFullPicker, align = 'end', triggerRef }: QuickReactionBarProps) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (!open) return;
+
     const onClickOutside = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) onClose();
+      const target = e.target as Node;
+      if (ref.current?.contains(target) || triggerRef?.current?.contains(target)) {
+        return;
+      }
+      onClose();
     };
+
     document.addEventListener('mousedown', onClickOutside);
     return () => document.removeEventListener('mousedown', onClickOutside);
-  }, [open, onClose]);
+  }, [open, onClose, triggerRef]);
 
   if (!open) return null;
 
@@ -117,4 +129,3 @@ export function QuickReactionBar({ open, onClose, onSelect, onOpenFullPicker, al
     </div>
   );
 }
-

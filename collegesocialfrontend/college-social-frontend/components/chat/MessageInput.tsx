@@ -40,6 +40,8 @@ export function MessageInput({
 }: MessageInputProps) {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const emojiButtonRef = useRef<HTMLButtonElement>(null); // Added ref for the emoji button
+
   const [text, setText] = useState(editingMessage?.text ?? '');
   useEffect(() => {
     setText(editingMessage?.text ?? '');
@@ -152,7 +154,6 @@ export function MessageInput({
     const recorder = mediaRecorderRef.current;
     if (!recorder) return;
     if (!send) {
-      // Discard: detach the handler before stopping so onstop doesn't fire the upload/send flow.
       recorder.onstop = () => streamRef.current?.getTracks().forEach((t) => t.stop());
       recordedChunksRef.current = [];
     }
@@ -224,6 +225,8 @@ export function MessageInput({
         <div className="flex items-end gap-2">
           <div className="relative">
             <button
+              ref={emojiButtonRef}
+              type="button"
               onClick={() => setEmojiOpen((v) => !v)}
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-accent active:scale-95"
             >
@@ -233,6 +236,7 @@ export function MessageInput({
               open={emojiOpen}
               onClose={() => setEmojiOpen(false)}
               onSelect={(emoji) => setText((t) => t + emoji)}
+              triggerRef={emojiButtonRef}
               anchorClassName="absolute bottom-full start-0 z-30 mb-2 w-72 rounded-2xl border border-border bg-surface p-3 shadow-card animate-slide-up"
             />
           </div>
@@ -294,4 +298,3 @@ export function MessageInput({
     </div>
   );
 }
-
