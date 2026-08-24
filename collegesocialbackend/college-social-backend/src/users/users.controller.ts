@@ -24,6 +24,14 @@ export class UsersController {
     return this.usersService.update(user.userId, dto);
   }
 
+  // GET /api/users/me/friend-requests -- own pending requests only, not exposed for an arbitrary
+  // id (see UsersService.listFriendRequests). "me/..." here doesn't collide with @Get(':id') below
+  // (different segment count), so no ordering concern like leaderboard/suggestions have.
+  @Get('me/friend-requests')
+  async myFriendRequests(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.listFriendRequests(user.userId);
+  }
+
   @Get('search')
   async search(@Query('q') q: string) {
     return this.usersService.search(q ?? '');
@@ -74,5 +82,13 @@ export class UsersController {
   @Delete(':id/friend')
   async unfriend(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.usersService.unfriend(user.userId, id);
+  }
+
+  // GET /api/users/:id/friends -- public friends list for any user (own profile or someone
+  // else's "Friends" tab); who's pending is private (see myFriendRequests above) but who's
+  // already-friends isn't, same as this app already treats blockedUsers/etc.
+  @Get(':id/friends')
+  async userFriends(@Param('id') id: string) {
+    return this.usersService.listFriends(id);
   }
 }

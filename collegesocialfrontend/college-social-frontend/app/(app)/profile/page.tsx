@@ -7,6 +7,7 @@ import { EditProfileForm } from '@/components/profile/EditProfileForm';
 import { ChangePasswordForm } from '@/components/profile/ChangePasswordForm';
 import { PersonalEmailForm } from '@/components/profile/PersonalEmailForm';
 import { PushNotificationsToggle } from '@/components/profile/PushNotificationsToggle';
+import { ProfileFriendsTab } from '@/components/profile/ProfileFriendsTab';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Spinner } from '@/components/ui/Spinner';
 import type { ProfileTab } from '@/components/profile/ProfileTabs';
@@ -43,6 +44,7 @@ export default function ProfilePage() {
             <ChangePasswordForm />
           </div>
         )}
+        {tab === 'friends' && <ProfileFriendsTab profileId={user._id} isOwn />}
       </div>
     </div>
   );

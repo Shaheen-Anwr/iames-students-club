@@ -66,7 +66,7 @@ export function ProfileHeader({
         <StreakPointsPill user={user} size="lg" className="mt-4 max-w-md" />
 
         <div className="mt-4">
-          <ProfileTabs active={tab} onChange={onTabChange} />
+          <ProfileTabs active={tab} onChange={onTabChange} friendsCount={user.friends?.length} />
         </div>
       </div>
     </div>

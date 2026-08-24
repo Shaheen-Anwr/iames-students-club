@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { AboutCard } from '@/components/profile/AboutCard';
 import { FriendActionButton } from '@/components/profile/FriendActionButton';
+import { ProfileFriendsTab } from '@/components/profile/ProfileFriendsTab';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -76,7 +77,9 @@ export default function UserProfilePage() {
             <FriendActionButton targetUser={profile} size="lg" className="flex-1" />
           </div>
         )}
-        {tab === 'posts' ? <UserPostsFeed userId={profile._id} /> : <AboutCard user={profile} />}
+        {tab === 'posts' && <UserPostsFeed userId={profile._id} />}
+        {tab === 'about' && <AboutCard user={profile} />}
+        {tab === 'friends' && <ProfileFriendsTab profileId={profile._id} isOwn={isOwn} />}
       </div>
     </div>
   );

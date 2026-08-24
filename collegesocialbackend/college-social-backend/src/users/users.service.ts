@@ -164,6 +164,28 @@ export class UsersService {
     return this.findById(userId);
   }
 
+  // Populated friends list for `id` -- works for any user, not just the caller (both the /friends
+  // page, for the caller's own id, and a profile's "Friends" tab, for whichever profile is open,
+  // call this the same way). findById() only exposes raw ObjectIds; the populate is what turns
+  // those into renderable name/avatar/department.
+  async listFriends(id: string): Promise<UserDocument[]> {
+    const me = await this.userModel.findById(id).populate<{ friends: UserDocument[] }>({ path: 'friends', select: '-passwordHash' }).exec();
+    if (!me) throw new NotFoundException('المستخدم غير موجود');
+    return me.friends;
+  }
+
+  // Own pending requests only (received + sent), populated the same way -- unlike listFriends,
+  // deliberately not exposed for an arbitrary id: who's pending is not public information.
+  async listFriendRequests(userId: string): Promise<{ received: UserDocument[]; sent: UserDocument[] }> {
+    const me = await this.userModel
+      .findById(userId)
+      .populate<{ friendRequestsReceived: UserDocument[] }>({ path: 'friendRequestsReceived', select: '-passwordHash' })
+      .populate<{ friendRequestsSent: UserDocument[] }>({ path: 'friendRequestsSent', select: '-passwordHash' })
+      .exec();
+    if (!me) throw new NotFoundException('المستخدم غير موجود');
+    return { received: me.friendRequestsReceived, sent: me.friendRequestsSent };
+  }
+
   // "People you may know" -- excludes self, existing friends, pending requests either direction,
   // and anyone blocked either direction. Prefers same department (most relevant in a college app),
   // then fills any remaining slots from the rest of the eligible pool.
