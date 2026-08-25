@@ -22,36 +22,59 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
   const [loading, setLoading] = useState(true);
   const [courseCode, setCourseCode] = useState('');
   const [upcomingOnly, setUpcomingOnly] = useState(false);
-  // Opens the create-assignment modal automatically when a professor lands here fresh off
-  // registration (RegisterForm.tsx redirects them to /study/assignments?new=1), so posting
-  // their first assignment is the very next step instead of a page they have to find.
   const [modalOpen, setModalOpen] = useState(() => canCreate && searchParams.get('new') === '1');
 
   useEffect(() => {
+    let isMounted = true;
     setLoading(true);
-    if (groupId) {
-      api
-        .get<Assignment[]>(`/assignments/group/${groupId}?limit=50`)
-        .then(setAssignments)
-        .finally(() => setLoading(false));
-      return;
-    }
+
     const params = new URLSearchParams({ limit: '50' });
     if (courseCode.trim()) params.set('courseCode', courseCode.trim());
     if (upcomingOnly) params.set('upcoming', 'true');
+
+    const endpoint = groupId ? `/assignments/group/${groupId}?limit=50` : `/assignments?${params.toString()}`;
+
     api
-      .get<Assignment[]>(`/assignments?${params.toString()}`)
-      .then(setAssignments)
-      .finally(() => setLoading(false));
+      .get<Assignment[] | { data: Assignment[] }>(endpoint)
+      .then((res) => {
+        if (!isMounted) return;
+        const data = Array.isArray(res) ? res : (res as { data: Assignment[] })?.data ?? [];
+        setAssignments(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error('Failed to fetch assignments:', err);
+        if (isMounted) setAssignments([]);
+      })
+      .finally(() => {
+        if (isMounted) setLoading(false);
+      });
+
+    return () => {
+      isMounted = false;
+    };
   }, [groupId, courseCode, upcomingOnly]);
 
-  function handleCreated(assignment: Assignment) {
-    setAssignments((prev) => [assignment, ...prev].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()));
+  function handleCreated(rawAssignment: Assignment | { data: Assignment }) {
+    const assignment = (rawAssignment as { data?: Assignment })?.data ?? (rawAssignment as Assignment);
+    if (!assignment || typeof assignment !== 'object' || !assignment._id) return;
+
+    setAssignments((prev) => {
+      const currentList = Array.isArray(prev) ? prev : [];
+      const updated = [assignment, ...currentList.filter((a) => a?._id !== assignment._id)];
+
+      return updated.sort((a, b) => {
+        const timeA = a?.dueDate ? new Date(a.dueDate).getTime() : 0;
+        const timeB = b?.dueDate ? new Date(b.dueDate).getTime() : 0;
+        return (isNaN(timeA) ? 0 : timeA) - (isNaN(timeB) ? 0 : timeB);
+      });
+    });
   }
 
   function handleDeleted(id: string) {
-    setAssignments((prev) => prev.filter((a) => a._id !== id));
+    setAssignments((prev) => (Array.isArray(prev) ? prev.filter((a) => a?._id !== id) : []));
   }
+
+  const safeAssignments = Array.isArray(assignments) ? assignments : [];
 
   return (
     <div className="space-y-4">
@@ -90,7 +113,7 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
-      ) : assignments.length === 0 ? (
+      ) : safeAssignments.length === 0 ? (
         <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
             <ClipboardList className="h-7 w-7" />
@@ -110,7 +133,7 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
         </div>
       ) : (
         <div className="space-y-4">
-          {assignments.map((assignment) => (
+          {safeAssignments.map((assignment) => (
             <AssignmentCard key={assignment._id} assignment={assignment} onDeleted={handleDeleted} />
           ))}
         </div>

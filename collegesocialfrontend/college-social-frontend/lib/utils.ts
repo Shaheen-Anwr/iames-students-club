@@ -7,14 +7,19 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
-export function timeAgo(date: string | Date) {
-  return formatDistanceToNowStrict(new Date(date), { addSuffix: true, locale: ar });
+export function timeAgo(date?: string | Date | null) {
+  if (!date) return '';
+  const d = new Date(date);
+  if (isNaN(d.getTime())) return '';
+  return formatDistanceToNowStrict(d, { addSuffix: true, locale: ar });
 }
 
-export function initials(name: string) {
+export function initials(name?: string | null): string {
+  if (!name || typeof name !== 'string') return '';
   return name
     .trim()
     .split(/\s+/)
+    .filter(Boolean)
     .slice(0, 2)
     .map((part) => part[0]?.toUpperCase() ?? '')
     .join('');

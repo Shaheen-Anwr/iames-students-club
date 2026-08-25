@@ -8,7 +8,7 @@ import { Textarea } from '@/components/ui/Textarea';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { formatBytes } from '@/lib/utils';
-import type { Assignment, PostAttachmentType, UploadResult } from '@/lib/types';
+import type { Assignment, PostAttachmentType } from '@/lib/types';
 
 const ATTACHMENT_OPTIONS: { type: Exclude<PostAttachmentType, 'none'>; label: string; icon: typeof FileText; accept: string }[] = [
   { type: 'lecture', label: 'ملف الواجب', icon: FileText, accept: '.pdf,.ppt,.pptx,.doc,.docx,.txt' },
@@ -31,7 +31,8 @@ export function CreateAssignmentForm({
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [courseCode, setCourseCode] = useState('');
-  const [dueDate, setDueDate] = useState('');
+  const [date, setDate] = useState('');
+  const [time, setTime] = useState('23:59');
   const [pendingType, setPendingType] = useState<Exclude<PostAttachmentType, 'none'> | null>(null);
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
@@ -54,57 +55,101 @@ export function CreateAssignmentForm({
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!title.trim() || !dueDate || (!groupId && !courseCode.trim())) {
+
+    if (!title.trim() || !date || (!groupId && !courseCode.trim())) {
       showToast(groupId ? 'العنوان وتاريخ التسليم مطلوبان.' : 'العنوان ورمز المقرر وتاريخ التسليم مطلوبة.', 'error');
       return;
     }
 
+    const finalTime = time.trim() || '23:59';
+    const parsedDate = new Date(`${date}T${finalTime}`);
+
+    if (isNaN(parsedDate.getTime())) {
+      showToast('يرجى تحديد تاريخ ووقت التسليم بشكل صحيح.', 'error');
+      return;
+    }
+
     setSubmitting(true);
+
     try {
       let attachmentUrl: string | undefined;
       let attachmentOriginalName: string | undefined;
 
+      // 1. File Upload Processing
       if (file && pendingType) {
-        const uploaded = await api.upload<UploadResult>(`/upload/${pendingType}`, file);
-        attachmentUrl = uploaded.url;
+        const uploadEndpoint = `/upload/${pendingType}`;
+        const rawUploaded = await api.upload<any>(uploadEndpoint, file);
+
+        const data = rawUploaded?.data ?? rawUploaded;
+        attachmentUrl = data?.url || data?.secure_url || data?.fileUrl || data?.path || data?.location || data?.link;
         attachmentOriginalName = file.name;
+
+        if (!attachmentUrl) {
+          throw new Error('فشل رفع الملف: لم يتم استلام رابط الملف من السيرفر.');
+        }
       }
 
-      const assignment = await api.post<Assignment>(groupId ? `/assignments/group/${groupId}` : '/assignments', {
+      // 2. Assignment Request Payload Generation
+      const payload: Record<string, any> = {
         title: title.trim(),
-        description: description.trim() || undefined,
-        courseCode: courseCode.trim() || undefined,
-        dueDate: new Date(dueDate).toISOString(),
-        attachmentType: file && pendingType ? pendingType : 'none',
-        attachmentUrl,
-        attachmentOriginalName,
-      });
+        dueDate: parsedDate.toISOString(),
+        attachmentType: file && pendingType && attachmentUrl ? pendingType : 'none',
+      };
 
-      onCreated(assignment);
-      showToast('تم إنشاء الواجب.');
-      onClose();
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر إنشاء الواجب.', 'error');
+      if (description.trim()) payload.description = description.trim();
+      if (courseCode.trim()) payload.courseCode = courseCode.trim();
+      if (attachmentUrl) payload.attachmentUrl = attachmentUrl;
+      if (attachmentOriginalName) payload.attachmentOriginalName = attachmentOriginalName;
+
+      const endpoint = groupId ? `/assignments/group/${groupId}` : '/assignments';
+      const rawResult = await api.post<Assignment | { data: Assignment }>(endpoint, payload);
+
+      const createdAssignment = (rawResult as { data?: Assignment })?.data ?? (rawResult as Assignment);
+
+      if (createdAssignment && createdAssignment._id) {
+        onCreated(createdAssignment);
+        showToast('تم إنشاء الواجب.');
+        onClose();
+      } else {
+        throw new Error('تعذّر الحصول على بيانات الواجب المُنشأ.');
+      }
+    } catch (err: any) {
+      console.error('Assignment Submission Error:', err);
+
+      let message = 'تعذّر إنشاء الواجب.';
+
+      if (err instanceof ApiError && err.message) {
+        message = Array.isArray(err.message) ? err.message.join(' | ') : String(err.message);
+      } else if (err?.response?.data?.message) {
+        const msg = err.response.data.message;
+        message = Array.isArray(msg) ? msg.join(' | ') : String(msg);
+      } else if (typeof err?.message === 'string') {
+        message = err.message;
+      }
+
+      showToast(message, 'error');
     } finally {
       setSubmitting(false);
     }
   }
 
   return (
-    <form onSubmit={handleSubmit} className="space-y-4">
+    <form onSubmit={handleSubmit} noValidate className="space-y-4">
       <Input label="عنوان الواجب" value={title} onChange={(e) => setTitle(e.target.value)} placeholder="مثال: تسليم مشروع الفصل" required />
 
       <Textarea rows={3} placeholder="تفاصيل الواجب (اختياري)" value={description} onChange={(e) => setDescription(e.target.value)} />
 
+      <Input
+        label={groupId ? 'رمز المقرر (اختياري)' : 'رمز المقرر'}
+        value={courseCode}
+        onChange={(e) => setCourseCode(e.target.value)}
+        placeholder="مثال: CS101"
+        required={!groupId}
+      />
+
       <div className="grid grid-cols-2 gap-3">
-        <Input
-          label={groupId ? 'رمز المقرر (اختياري)' : 'رمز المقرر'}
-          value={courseCode}
-          onChange={(e) => setCourseCode(e.target.value)}
-          placeholder="مثال: CS101"
-          required={!groupId}
-        />
-        <Input label="تاريخ ووقت التسليم" type="datetime-local" value={dueDate} onChange={(e) => setDueDate(e.target.value)} required />
+        <Input label="تاريخ التسليم" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />
+        <Input label="وقت التسليم" type="time" value={time} onChange={(e) => setTime(e.target.value)} />
       </div>
 
       {file && (
