@@ -70,22 +70,48 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
       setResults([]);
       return;
     }
+    let isMounted = true;
     const handle = setTimeout(async () => {
-      const users = await api.get<User[]>(`/users/search?q=${encodeURIComponent(query.trim())}`);
-      setResults(users.filter((u) => !conversation.participants.some((p) => p?._id === u._id)));
+      try {
+        const rawUsers = await api.get<User[] | { data: User[] }>(`/users/search?q=${encodeURIComponent(query.trim())}`);
+        const users = Array.isArray(rawUsers) ? rawUsers : (rawUsers as { data: User[] })?.data ?? [];
+        if (isMounted) {
+          const participantIds = new Set((conversation.participants || []).map((p) => p?._id).filter(Boolean));
+          setResults((Array.isArray(users) ? users : []).filter((u) => u && u._id && !participantIds.has(u._id)));
+        }
+      } catch (err) {
+        if (isMounted) setResults([]);
+      }
     }, 300);
-    return () => clearTimeout(handle);
+
+    return () => {
+      isMounted = false;
+      clearTimeout(handle);
+    };
   }, [query, conversation.participants]);
 
   if (!user) return null;
 
   async function run(action: () => Promise<unknown>) {
+    if (busy) return;
     setBusy(true);
     try {
       await action();
       onChanged();
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر تنفيذ الإجراء.', 'error');
+    } catch (err: any) {
+      console.error('Chat Action Error:', err);
+      let message = 'تعذّر تنفيذ الإجراء.';
+
+      if (err instanceof ApiError && err.message) {
+        message = Array.isArray(err.message) ? err.message.join(' | ') : String(err.message);
+      } else if (err?.response?.data?.message) {
+        const msg = err.response.data.message;
+        message = Array.isArray(msg) ? msg.join(' | ') : String(msg);
+      } else if (typeof err?.message === 'string') {
+        message = err.message;
+      }
+
+      showToast(message, 'error');
     } finally {
       setBusy(false);
     }
@@ -93,15 +119,25 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
 
   async function saveInfo() {
     await run(() =>
-      api.patch(`/chat/conversations/${conversation._id}`, { name: nameDraft.trim(), groupDescription: descDraft.trim() }),
+      api.patch(`/chat/conversations/${conversation._id}`, {
+        name: nameDraft.trim(),
+        groupDescription: descDraft.trim(),
+      }),
     );
     setEditingInfo(false);
   }
 
   async function uploadIcon(file: File) {
     await run(async () => {
-      const uploaded = await api.upload<{ url: string }>('/upload/file', file);
-      await api.patch(`/chat/conversations/${conversation._id}`, { groupIcon: uploaded.url });
+      const rawUploaded = await api.upload<any>('/upload/file', file);
+      const data = rawUploaded?.data ?? rawUploaded;
+      const iconUrl = data?.url || data?.secure_url || data?.fileUrl || data?.path || data?.location;
+
+      if (!iconUrl) {
+        throw new Error('فشل رفع الصورة: لم يتم استلام رابط من السيرفر.');
+      }
+
+      await api.patch(`/chat/conversations/${conversation._id}`, { groupIcon: iconUrl });
     });
   }
 
@@ -147,24 +183,30 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
     const targetId = others[0]._id;
     if (!blocked && !confirm('لن يتمكن هذا المستخدم من مراسلتك بعد الحظر. هل تريد المتابعة؟')) return;
     await run(async () => {
-      const updated = blocked
-        ? await api.delete<User>(`/users/${targetId}/block`)
-        : await api.post<User>(`/users/${targetId}/block`);
-      updateLocalUser(updated);
+      const rawUpdated = blocked
+        ? await api.delete<User | { data: User }>(`/users/${targetId}/block`)
+        : await api.post<User | { data: User }>(`/users/${targetId}/block`);
+      const updatedUser = (rawUpdated as { data?: User })?.data ?? (rawUpdated as User);
+      if (updatedUser) updateLocalUser(updatedUser);
     });
   }
 
   async function setDisappearing(seconds: number) {
-    await run(() => api.patch(`/chat/conversations/${conversation._id}`, { disappearingSeconds: seconds }));
+    await run(() =>
+      api.patch(`/chat/conversations/${conversation._id}`, {
+        disappearingSeconds: Number(seconds),
+      }),
+    );
   }
 
-  const others = otherParticipants(conversation, user._id);
-  const title = conversation.isGroup ? conversation.name ?? 'محادثة جماعية' : others[0]?.name ?? 'مستخدم غير معروف';
-  const avatarUrl = conversation.isGroup ? conversation.groupIcon : others[0]?.photoUrl;
+  const others = otherParticipants(conversation, user._id) || [];
+  const targetUser = others[0];
+  const title = conversation.isGroup ? conversation.name ?? 'محادثة جماعية' : targetUser?.name ?? 'مستخدم غير معروف';
+  const avatarUrl = conversation.isGroup ? conversation.groupIcon : targetUser?.photoUrl;
   const pinned = isPinned(conversation, user._id);
   const archived = isArchived(conversation, user._id);
   const muted = isMuted(conversation, user._id);
-  const blocked = !conversation.isGroup && !!others[0] && !!user.blockedUsers?.includes(others[0]._id);
+  const blocked = !conversation.isGroup && !!targetUser && Array.isArray(user.blockedUsers) && user.blockedUsers.includes(targetUser._id);
 
   return (
     <Modal open={open} onClose={onClose} title={conversation.isGroup ? 'معلومات المجموعة' : 'معلومات جهة الاتصال'} className="max-w-lg">
@@ -205,8 +247,8 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
                 <p className="mt-1 text-sm text-muted-foreground">{conversation.groupDescription || 'لا يوجد وصف'}</p>
               ) : (
                 <>
-                  <p className="text-xs text-muted-foreground">{others[0] ? `الرقم الجامعي ${others[0].collegeId}` : ''}</p>
-                  <p className="mt-1 text-xs text-accent">{presenceLabel(others[0])}</p>
+                  <p className="text-xs text-muted-foreground">{targetUser ? `الرقم الجامعي ${targetUser.collegeId ?? ''}` : ''}</p>
+                  <p className="mt-1 text-xs text-accent">{presenceLabel(targetUser)}</p>
                 </>
               )}
               {conversation.isGroup && isAdmin && (
@@ -224,12 +266,14 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
         {/* Quick actions */}
         <div className="grid grid-cols-3 gap-2 text-center">
           <button
+            disabled={busy}
             onClick={() => run(() => api.post(`/chat/conversations/${conversation._id}/pin`))}
-            className={cn('flex flex-col items-center gap-1.5 rounded-xl2 p-3 text-xs', pinned ? 'bg-accent/10 text-accent' : 'bg-surface-2/70 text-foreground')}
+            className={cn('flex flex-col items-center gap-1.5 rounded-xl2 p-3 text-xs disabled:opacity-50', pinned ? 'bg-accent/10 text-accent' : 'bg-surface-2/70 text-foreground')}
           >
             <Pin className="h-4 w-4" /> {pinned ? 'إلغاء التثبيت' : 'تثبيت'}
           </button>
           <button
+            disabled={busy}
             onClick={() =>
               run(() =>
                 muted
@@ -237,41 +281,44 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
                   : api.post(`/chat/conversations/${conversation._id}/mute`, {}),
               )
             }
-            className={cn('flex flex-col items-center gap-1.5 rounded-xl2 p-3 text-xs', muted ? 'bg-accent/10 text-accent' : 'bg-surface-2/70 text-foreground')}
+            className={cn('flex flex-col items-center gap-1.5 rounded-xl2 p-3 text-xs disabled:opacity-50', muted ? 'bg-accent/10 text-accent' : 'bg-surface-2/70 text-foreground')}
           >
             <BellOff className="h-4 w-4" /> {muted ? 'إلغاء الكتم' : 'كتم'}
           </button>
           <button
+            disabled={busy}
             onClick={() => run(() => api.post(`/chat/conversations/${conversation._id}/archive`))}
-            className={cn('flex flex-col items-center gap-1.5 rounded-xl2 p-3 text-xs', archived ? 'bg-accent/10 text-accent' : 'bg-surface-2/70 text-foreground')}
+            className={cn('flex flex-col items-center gap-1.5 rounded-xl2 p-3 text-xs disabled:opacity-50', archived ? 'bg-accent/10 text-accent' : 'bg-surface-2/70 text-foreground')}
           >
             <Archive className="h-4 w-4" /> {archived ? 'إلغاء الأرشفة' : 'أرشفة'}
           </button>
         </div>
 
-        {/* Disappearing messages */}
-        <div>
-          <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
-            <Timer className="h-4 w-4" /> الرسائل المؤقتة
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {DISAPPEARING_OPTIONS.map((opt) => (
-              <button
-                key={opt.seconds}
-                onClick={() => setDisappearing(opt.seconds)}
-                disabled={conversation.isGroup && !isAdmin}
-                className={cn(
-                  'rounded-full border px-3 py-1.5 text-xs transition-colors disabled:opacity-50',
-                  (conversation.disappearingSeconds ?? 0) === opt.seconds
-                    ? 'border-accent bg-accent/10 text-accent'
-                    : 'border-border text-muted-foreground hover:bg-surface-2',
-                )}
-              >
-                {opt.label}
-              </button>
-            ))}
+        {/* Disappearing messages - Rendered only for groups */}
+        {conversation.isGroup && (
+          <div>
+            <p className="mb-2 flex items-center gap-1.5 text-sm font-medium text-foreground">
+              <Timer className="h-4 w-4" /> الرسائل المؤقتة
+            </p>
+            <div className="flex flex-wrap gap-2">
+              {DISAPPEARING_OPTIONS.map((opt) => (
+                <button
+                  key={opt.seconds}
+                  onClick={() => setDisappearing(opt.seconds)}
+                  disabled={busy || !isAdmin}
+                  className={cn(
+                    'rounded-full border px-3 py-1.5 text-xs transition-colors disabled:opacity-50',
+                    (conversation.disappearingSeconds ?? 0) === opt.seconds
+                      ? 'border-accent bg-accent/10 text-accent'
+                      : 'border-border text-muted-foreground hover:bg-surface-2',
+                  )}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Shared media */}
         <button
@@ -285,7 +332,7 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
         {conversation.isGroup && (
           <div>
             <div className="mb-2 flex items-center justify-between">
-              <p className="text-sm font-medium text-foreground">الأعضاء ({conversation.participants.length})</p>
+              <p className="text-sm font-medium text-foreground">الأعضاء ({conversation.participants?.length ?? 0})</p>
               {isAdmin && (
                 <button onClick={() => setAddingMember((v) => !v)} className="flex items-center gap-1 text-xs font-medium text-accent">
                   <UserPlus className="h-3.5 w-3.5" /> إضافة
@@ -321,7 +368,7 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
             )}
 
             <div className="space-y-1">
-              {conversation.participants.map((p) => {
+              {(conversation.participants || []).map((p) => {
                 if (!p) return null;
                 const memberIsAdmin = conversation.admins?.includes(p._id);
                 const isCreator = conversation.createdBy === p._id;
@@ -362,16 +409,18 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
         {/* Danger zone */}
         <div className="space-y-1 border-t border-border pt-3">
           <button
+            disabled={busy}
             onClick={clearChat}
-            className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-foreground hover:bg-surface-2"
+            className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-foreground hover:bg-surface-2 disabled:opacity-50"
           >
             <Trash2 className="h-4 w-4" /> مسح الرسائل
           </button>
           {!conversation.isGroup && (
             <button
+              disabled={busy}
               onClick={toggleBlock}
               className={cn(
-                'flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm hover:bg-surface-2',
+                'flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm hover:bg-surface-2 disabled:opacity-50',
                 blocked ? 'text-accent' : 'text-foreground',
               )}
             >
@@ -379,15 +428,17 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
             </button>
           )}
           <button
+            disabled={busy}
             onClick={deleteConversation}
-            className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-danger hover:bg-danger/10"
+            className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-danger hover:bg-danger/10 disabled:opacity-50"
           >
             <Trash2 className="h-4 w-4" /> حذف المحادثة
           </button>
           {conversation.isGroup && (
             <button
+              disabled={busy}
               onClick={leaveGroup}
-              className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-danger hover:bg-danger/10"
+              className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-danger hover:bg-danger/10 disabled:opacity-50"
             >
               <LogOut className="h-4 w-4" /> مغادرة المجموعة
             </button>
