@@ -39,17 +39,13 @@ interface MessageBubbleProps {
   onForward: (message: Message) => void;
   onToggleStar: (message: Message) => void;
   onJumpToReply: (messageId: string) => void;
+  onImageClick?: (url: string, name: string, message: Message) => void;
 }
 
-function ReadTicks({
-  status,
-}: {
-  status: 'sent' | 'delivered' | 'read';
-}) {
+function ReadTicks({ status }: { status: 'sent' | 'delivered' | 'read' }) {
   if (status === 'sent') {
     return <Check className="h-3.5 w-3.5 text-white/70" />;
   }
-
   return (
     <CheckCheck
       className={cn(
@@ -73,12 +69,15 @@ export function MessageBubble({
   onForward,
   onToggleStar,
   onJumpToReply,
+  onImageClick,
 }: MessageBubbleProps) {
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
 
   const menuButtonRef = useRef<HTMLButtonElement>(null);
+  const longPressTimer = useRef<NodeJS.Timeout | null>(null);
+  const isLongPress = useRef(false);
 
   const attachments = message.attachments ?? [];
   const isStarred = message.starredBy?.includes(currentUserId);
@@ -120,12 +119,7 @@ export function MessageBubble({
 
   if (message.deletedForEveryone) {
     return (
-      <div
-        className={cn(
-          'flex items-end gap-2.5',
-          isOwn && 'flex-row-reverse',
-        )}
-      >
+      <div className={cn('flex items-end gap-2.5', isOwn && 'flex-row-reverse')}>
         <div className="w-8 shrink-0">
           {!isOwn && showAvatar && (
             <Avatar
@@ -135,7 +129,6 @@ export function MessageBubble({
             />
           )}
         </div>
-
         <div
           className={cn(
             'flex max-w-[75%] flex-col',
@@ -150,10 +143,7 @@ export function MessageBubble({
     );
   }
 
-  /*
-   * Desktop menu:
-   * Keep ALL actions here, including Reply and Copy.
-   */
+  // --- Menu items (unchanged) ---
   const desktopMenuItems: MessageMenuItem[] = [
     {
       key: 'reply',
@@ -190,7 +180,6 @@ export function MessageBubble({
         if (message.text) {
           navigator.clipboard.writeText(message.text);
         }
-
         setMobileActionsOpen(false);
       },
     },
@@ -232,13 +221,6 @@ export function MessageBubble({
     },
   });
 
-  /*
-   * Mobile bottom-sheet menu:
-   *
-   * IMPORTANT:
-   * Reply and Copy are intentionally NOT here because they already
-   * exist in the three quick-action buttons at the top of the sheet.
-   */
   const mobileMenuItems: MessageMenuItem[] = [
     {
       key: 'forward',
@@ -306,15 +288,33 @@ export function MessageBubble({
     setMobileActionsOpen(true);
   }
 
+  // ---------- Long‑press handlers for images ----------
+  const handleTouchStart = (e: React.TouchEvent) => {
+    isLongPress.current = false;
+    longPressTimer.current = setTimeout(() => {
+      isLongPress.current = true;
+      setMobileActionsOpen(true);
+    }, 500);
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchMove = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  // ---------- Render ----------
   return (
     <>
-      <div
-        className={cn(
-          'group flex items-end gap-2.5',
-          isOwn && 'flex-row-reverse',
-        )}
-      >
-        {/* Avatar */}
+      <div className={cn('group flex items-end gap-2.5', isOwn && 'flex-row-reverse')}>
         <div className="w-8 shrink-0">
           {!isOwn && showAvatar && (
             <Avatar
@@ -325,14 +325,13 @@ export function MessageBubble({
           )}
         </div>
 
-        {/* Message column */}
         <div
           className={cn(
             'relative flex min-w-0 max-w-[75%] flex-col gap-1',
             isOwn ? 'items-end' : 'items-start',
           )}
         >
-          {/* DESKTOP ACTION TOOLBAR */}
+          {/* Desktop toolbar */}
           <div
             className={cn(
               'pointer-events-none absolute top-0 z-30 hidden -translate-y-1/2 items-center gap-0.5 opacity-0 transition-opacity md:flex',
@@ -348,7 +347,6 @@ export function MessageBubble({
             >
               <SmilePlus className="h-3.5 w-3.5" />
             </button>
-
             <button
               type="button"
               onClick={() => onReply(message)}
@@ -357,7 +355,6 @@ export function MessageBubble({
             >
               <Reply className="h-3.5 w-3.5" />
             </button>
-
             <div className="relative">
               <button
                 ref={menuButtonRef}
@@ -370,7 +367,6 @@ export function MessageBubble({
               >
                 ⋮
               </button>
-
               <MessageMenu
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
@@ -381,7 +377,7 @@ export function MessageBubble({
             </div>
           </div>
 
-          {/* Message */}
+          {/* Message content */}
           <div
             className="w-full min-w-0 cursor-pointer"
             onClick={handleMessageClick}
@@ -395,9 +391,7 @@ export function MessageBubble({
             }}
           >
             {message.forwarded && (
-              <p className="px-1 text-[11px] italic text-muted-foreground">
-                إعادة توجيه
-              </p>
+              <p className="px-1 text-[11px] italic text-muted-foreground">إعادة توجيه</p>
             )}
 
             {message.replyTo && (
@@ -412,21 +406,10 @@ export function MessageBubble({
                   isOwn && 'bg-white/15 text-white',
                 )}
               >
-                <p
-                  className={cn(
-                    'font-medium',
-                    isOwn ? 'text-white' : 'text-accent',
-                  )}
-                >
+                <p className={cn('font-medium', isOwn ? 'text-white' : 'text-accent')}>
                   {message.replyTo.sender?.name ?? 'مستخدم محذوف'}
                 </p>
-
-                <p
-                  className={cn(
-                    'truncate',
-                    isOwn ? 'text-white/80' : 'text-muted-foreground',
-                  )}
-                >
+                <p className={cn('truncate', isOwn ? 'text-white/80' : 'text-muted-foreground')}>
                   {message.replyTo.deletedForEveryone
                     ? 'تم حذف هذه الرسالة'
                     : message.replyTo.text ||
@@ -440,14 +423,29 @@ export function MessageBubble({
 
               if (attachment.type === 'image') {
                 return (
-                  // eslint-disable-next-line @next/next/no-img-element
-                  <img
+                  <button
                     key={i}
-                    src={url}
-                    alt={attachment.name ?? 'صورة'}
-                    onClick={(event) => event.stopPropagation()}
-                    className="animate-bubble-in max-h-64 max-w-full rounded-2xl object-cover"
-                  />
+                    type="button"
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      // Only open lightbox if it was NOT a long-press
+                      if (!isLongPress.current && onImageClick) {
+                        onImageClick(url, attachment.name ?? 'صورة', message);
+                      }
+                      isLongPress.current = false;
+                    }}
+                    onTouchStart={handleTouchStart}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchMove}
+                    className="block w-full cursor-pointer"
+                  >
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={url}
+                      alt={attachment.name ?? 'صورة'}
+                      className="animate-bubble-in max-h-64 max-w-full rounded-2xl object-cover"
+                    />
+                  </button>
                 );
               }
 
@@ -463,15 +461,9 @@ export function MessageBubble({
                 );
               }
 
-              if (
-                attachment.type === 'voice' ||
-                attachment.type === 'audio'
-              ) {
+              if (attachment.type === 'voice' || attachment.type === 'audio') {
                 return (
-                  <div
-                    key={i}
-                    onClick={(event) => event.stopPropagation()}
-                  >
+                  <div key={i} onClick={(event) => event.stopPropagation()}>
                     <VoiceMessagePlayer
                       src={url}
                       isOwn={isOwn}
@@ -496,19 +488,13 @@ export function MessageBubble({
                   )}
                 >
                   <FileText className="h-5 w-5 shrink-0" />
-
                   <span className="min-w-0">
-                    <span className="block truncate">
-                      {attachment.name ?? 'مرفق'}
-                    </span>
-
+                    <span className="block truncate">{attachment.name ?? 'مرفق'}</span>
                     {attachment.size != null && (
                       <span
                         className={cn(
                           'block text-xs',
-                          isOwn
-                            ? 'text-white/80'
-                            : 'text-muted-foreground',
+                          isOwn ? 'text-white/80' : 'text-muted-foreground',
                         )}
                       >
                         {formatBytes(attachment.size)}
@@ -556,32 +542,21 @@ export function MessageBubble({
                     )}
                   >
                     <span>{emoji}</span>
-                    {count > 1 && (
-                      <span className="text-muted-foreground">
-                        {count}
-                      </span>
-                    )}
+                    {count > 1 && <span className="text-muted-foreground">{count}</span>}
                   </button>
                 ))}
               </div>
             )}
 
             <span className="mt-1 flex items-center gap-1 px-1 text-xs text-muted-foreground">
-              {message.edited && (
-                <span className="italic">مُعدَّلة ·</span>
-              )}
-
+              {message.edited && <span className="italic">مُعدَّلة ·</span>}
               {timeAgo(message.createdAt)}
-
               {isOwn && <ReadTicks status={status} />}
             </span>
           </div>
 
           {/* Reaction picker */}
-          <div
-            className="relative"
-            onClick={(event) => event.stopPropagation()}
-          >
+          <div className="relative" onClick={(event) => event.stopPropagation()}>
             <QuickReactionBar
               open={reactionBarOpen}
               onClose={() => setReactionBarOpen(false)}
@@ -604,28 +579,19 @@ export function MessageBubble({
           aria-modal="true"
           aria-label="إجراءات الرسالة"
         >
-          {/* Backdrop */}
           <button
             type="button"
             aria-label="إغلاق"
             onClick={closeMobileActions}
             className="absolute inset-0 h-full w-full bg-black/40"
           />
-
-          {/* Bottom sheet */}
           <div
             className="absolute inset-x-0 bottom-0 w-full rounded-t-2xl border-t border-border bg-surface p-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] shadow-2xl"
             onClick={(event) => event.stopPropagation()}
           >
-            {/* Handle */}
             <div className="mx-auto mb-3 h-1 w-10 rounded-full bg-border" />
-
-            {/* Header */}
             <div className="mb-2 flex items-center justify-between px-1">
-              <p className="text-sm font-semibold text-foreground">
-                إجراءات الرسالة
-              </p>
-
+              <p className="text-sm font-semibold text-foreground">إجراءات الرسالة</p>
               <button
                 type="button"
                 onClick={closeMobileActions}
@@ -635,9 +601,6 @@ export function MessageBubble({
                 <X className="h-4 w-4" />
               </button>
             </div>
-
-            {/* Top quick actions:
-                KEEP THESE EXACTLY AS THEY ARE. */}
             <div className="mb-3 grid grid-cols-3 gap-2">
               <button
                 type="button"
@@ -650,7 +613,6 @@ export function MessageBubble({
                 <SmilePlus className="h-5 w-5" />
                 <span>تفاعل</span>
               </button>
-
               <button
                 type="button"
                 onClick={() => {
@@ -662,7 +624,6 @@ export function MessageBubble({
                 <Reply className="h-5 w-5" />
                 <span>رد</span>
               </button>
-
               <button
                 type="button"
                 onClick={() => {
@@ -677,9 +638,6 @@ export function MessageBubble({
                 <span>نسخ</span>
               </button>
             </div>
-
-            {/* Remaining actions:
-                Reply and Copy intentionally removed here. */}
             <div className="space-y-1">
               {mobileMenuItems.map((item) => (
                 <button
@@ -689,9 +647,7 @@ export function MessageBubble({
                   className={cn(
                     'flex min-h-11 w-full items-center gap-3 rounded-xl px-3.5 py-2.5 text-start text-sm',
                     'transition-colors hover:bg-surface-2 active:bg-surface-2',
-                    item.danger
-                      ? 'text-danger'
-                      : 'text-foreground',
+                    item.danger ? 'text-danger' : 'text-foreground',
                   )}
                 >
                   {item.icon}

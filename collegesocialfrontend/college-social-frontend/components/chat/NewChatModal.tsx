@@ -12,10 +12,12 @@ import { api } from '@/lib/api';
 import { assetUrl } from '@/lib/utils';
 import type { Conversation, User } from '@/lib/types';
 import { useChat } from './ChatProvider';
+import { useAuth } from '@/lib/auth-context';
 
 export function NewChatModal({ open, onClose }: { open: boolean; onClose: () => void }) {
   const router = useRouter();
-  const { addConversation } = useChat();
+  const { user } = useAuth();
+  const { addConversation, conversations } = useChat();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<User[]>([]);
   const [loading, setLoading] = useState(false);
@@ -47,8 +49,23 @@ export function NewChatModal({ open, onClose }: { open: boolean; onClose: () => 
   }, [query]);
 
   async function startConversation(userId: string) {
+    if (!user) return;
     setStarting(userId);
     try {
+      // ✅ Check for existing direct conversation – null-safe
+      const existing = conversations.find(
+        (c) =>
+          !c.isGroup &&
+          c.participants.some((p) => p?._id === userId) &&
+          c.participants.some((p) => p?._id === user._id)
+      );
+      if (existing) {
+        onClose();
+        router.push(`/chat/${existing._id}`);
+        return;
+      }
+
+      // No existing conversation – create new
       const conversation = await api.post<Conversation>('/chat/conversations', { participantIds: [userId] });
       addConversation(conversation);
       onClose();

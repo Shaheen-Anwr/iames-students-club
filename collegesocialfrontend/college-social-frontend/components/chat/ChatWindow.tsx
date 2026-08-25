@@ -2,7 +2,22 @@
 
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { ArrowRight, Image as ImageIcon, MessageCircle, Phone, Search, ShieldOff, Video, X } from 'lucide-react';
+import {
+  ArrowRight,
+  Image as ImageIcon,
+  MessageCircle,
+  Phone,
+  Search,
+  ShieldOff,
+  Video,
+  X,
+  Reply,
+  SmilePlus,
+  Forward,
+  Star,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
@@ -13,7 +28,7 @@ import { useSocket } from '@/lib/socket-context';
 import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/chat-helpers';
 import { assetUrl } from '@/lib/utils';
 import { chatBackgroundStyle, useChatBackground } from '@/lib/chat-background';
-import type { Attachment, Message, User } from '@/lib/types';
+import type { Attachment, Message, User, Conversation } from '@/lib/types';
 import { useChat } from './ChatProvider';
 import { useCall } from './CallProvider';
 import { MessageBubble } from './MessageBubble';
@@ -21,8 +36,203 @@ import { MessageInput } from './MessageInput';
 import { ForwardModal } from './ForwardModal';
 import { GroupInfoPanel } from './GroupInfoPanel';
 import { ChatBackgroundModal } from './ChatBackgroundModal';
+import { QuickReactionBar } from './EmojiPicker';
 
 let typingTimeout: ReturnType<typeof setTimeout> | null = null;
+
+// ========== LIGHTBOX WITH ACTIONS ==========
+function ImagePreviewModal({
+  src,
+  alt,
+  onClose,
+  message,
+  isOwn,
+  onReply,
+  onReact,
+  onForward,
+  onToggleStar,
+  onEdit,
+  onDelete,
+  currentUserId,
+}: {
+  src: string;
+  alt: string;
+  onClose: () => void;
+  message: Message;
+  isOwn: boolean;
+  onReply: (msg: Message) => void;
+  onReact: (msg: Message, emoji: string) => void;
+  onForward: (msg: Message) => void;
+  onToggleStar: (msg: Message) => void;
+  onEdit: (msg: Message) => void;
+  onDelete: (msg: Message, forEveryone: boolean) => void;
+  currentUserId: string;
+}) {
+  const [reactionBarOpen, setReactionBarOpen] = useState(false);
+  const [deleteOptionsOpen, setDeleteOptionsOpen] = useState(false);
+  const isStarred = message.starredBy?.includes(currentUserId);
+
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        onClose();
+        setDeleteOptionsOpen(false);
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [onClose]);
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex flex-col bg-black/90 p-4"
+      onClick={() => {
+        onClose();
+        setDeleteOptionsOpen(false);
+      }}
+      role="dialog"
+      aria-modal="true"
+      aria-label="معاينة الصورة"
+    >
+      {/* Close button */}
+      <button
+        onClick={onClose}
+        className="absolute right-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+        aria-label="إغلاق"
+      >
+        <X className="h-6 w-6" />
+      </button>
+
+      {/* Image */}
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img
+        src={src}
+        alt={alt}
+        className="max-h-[70vh] w-full flex-1 object-contain"
+        onClick={(e) => e.stopPropagation()}
+      />
+
+      {/* Action bar */}
+      <div
+        className="mt-4 flex flex-wrap items-center justify-center gap-2 rounded-2xl bg-surface p-3 shadow-2xl"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Reply */}
+        <button
+          onClick={() => {
+            onReply(message);
+            onClose();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-foreground hover:bg-accent hover:text-white"
+          title="رد"
+        >
+          <Reply className="h-5 w-5" />
+        </button>
+
+        {/* React */}
+        <div className="relative">
+          <button
+            onClick={() => setReactionBarOpen((v) => !v)}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-foreground hover:bg-accent hover:text-white"
+            title="تفاعل"
+          >
+            <SmilePlus className="h-5 w-5" />
+          </button>
+          <QuickReactionBar
+            open={reactionBarOpen}
+            onClose={() => setReactionBarOpen(false)}
+            onSelect={(emoji) => {
+              onReact(message, emoji);
+              setReactionBarOpen(false);
+            }}
+            onOpenFullPicker={() => setReactionBarOpen(false)}
+            align="start"
+          />
+        </div>
+
+        {/* Forward */}
+        <button
+          onClick={() => {
+            onForward(message);
+            onClose();
+          }}
+          className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-foreground hover:bg-accent hover:text-white"
+          title="إعادة توجيه"
+        >
+          <Forward className="h-5 w-5" />
+        </button>
+
+        {/* Star */}
+        <button
+          onClick={() => onToggleStar(message)}
+          className={`flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 hover:bg-accent hover:text-white ${
+            isStarred ? 'text-yellow-400' : 'text-foreground'
+          }`}
+          title={isStarred ? 'إلغاء التمييز' : 'تمييز بنجمة'}
+        >
+          <Star className="h-5 w-5" />
+        </button>
+
+        {/* Edit (only if own and has text) */}
+        {isOwn && message.text && (
+          <button
+            onClick={() => {
+              onEdit(message);
+              onClose();
+            }}
+            className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-foreground hover:bg-accent hover:text-white"
+            title="تعديل"
+          >
+            <Pencil className="h-5 w-5" />
+          </button>
+        )}
+
+        {/* Delete – single button with options */}
+        {isOwn && (
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                setDeleteOptionsOpen((v) => !v);
+              }}
+              className="flex h-10 w-10 items-center justify-center rounded-full bg-surface-2 text-danger hover:bg-danger hover:text-white"
+              title="حذف"
+            >
+              <Trash2 className="h-5 w-5" />
+            </button>
+            {deleteOptionsOpen && (
+              <div
+                className="absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-xl bg-surface p-2 shadow-2xl"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <button
+                  onClick={() => {
+                    onDelete(message, true);
+                    onClose();
+                    setDeleteOptionsOpen(false);
+                  }}
+                  className="block w-full whitespace-nowrap rounded-lg px-4 py-2 text-sm text-danger hover:bg-danger/10"
+                >
+                  حذف لدى الجميع
+                </button>
+                <button
+                  onClick={() => {
+                    onDelete(message, false);
+                    onClose();
+                    setDeleteOptionsOpen(false);
+                  }}
+                  className="block w-full whitespace-nowrap rounded-lg px-4 py-2 text-sm text-foreground hover:bg-surface-2"
+                >
+                  حذف لديّ
+                </button>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
   const { user, updateLocalUser } = useAuth();
@@ -42,33 +252,64 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Message[]>([]);
   const [backgroundModalOpen, setBackgroundModalOpen] = useState(false);
+  const [imagePreview, setImagePreview] = useState<{
+    url: string;
+    name: string;
+    message: Message;
+    isOwn: boolean;
+  } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const { background, setBackground } = useChatBackground(conversationId);
 
+  // ========== ULTRA BRUTE‑FORCE PHOTO CORRECTION ==========
+  const correctSenderPhoto = (msg: Message, conv: Conversation): Message => {
+    if (!msg.sender) return msg;
+    const participant = conv.participants.find((p) => p?._id === msg.sender?._id);
+    if (participant && participant.photoUrl) {
+      msg.sender.photoUrl = participant.photoUrl;
+    }
+    if (user && msg.sender._id === user._id && user.photoUrl) {
+      msg.sender.photoUrl = user.photoUrl;
+    }
+    if (!msg.sender.photoUrl) {
+      msg.sender.photoUrl = '';
+    }
+    return msg;
+  };
+
+  // ========== LOAD MESSAGES ==========
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     api.get<Message[]>(`/chat/conversations/${conversationId}/messages?limit=50`).then((data) => {
       if (cancelled) return;
-      setMessages([...data].reverse());
+      const corrected = data.map((msg) => {
+        if (!conversation) return msg;
+        return correctSenderPhoto(msg, conversation);
+      });
+      setMessages(corrected.reverse());
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, conversation]);
 
+  // ========== SOCKET EVENTS ==========
   useEffect(() => {
-    if (!socket) return;
+    if (!socket || !conversation) return;
     socket.emit('joinConversation', conversationId);
     socket.emit('markRead', conversationId);
     socket.emit('markDelivered', conversationId);
 
     const onNewMessage = (message: Message) => {
       if (message.conversation !== conversationId) return;
-      setMessages((prev) => (prev.some((m) => m._id === message._id) ? prev : [...prev, message]));
-      if (message.sender?._id !== user?._id) {
+      const corrected = correctSenderPhoto(message, conversation);
+      setMessages((prev) =>
+        prev.some((m) => m._id === corrected._id) ? prev : [...prev, corrected]
+      );
+      if (corrected.sender?._id !== user?._id) {
         socket.emit('markRead', conversationId);
         socket.emit('markDelivered', conversationId);
       }
@@ -76,22 +317,25 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
     const onMessageEdited = (message: Message) => {
       if (message.conversation !== conversationId) return;
-      setMessages((prev) => prev.map((m) => (m._id === message._id ? message : m)));
+      const corrected = correctSenderPhoto(message, conversation);
+      setMessages((prev) => prev.map((m) => (m._id === corrected._id ? corrected : m)));
     };
 
-    const onMessageDeleted = (payload: { message: Message; forEveryone: boolean }) => {
+    const onMessageDeleted = (payload: any) => {
+      if (!payload || !payload.message) return;
       if (payload.message.conversation !== conversationId) return;
       if (payload.forEveryone) {
-        setMessages((prev) => prev.map((m) => (m._id === payload.message._id ? payload.message : m)));
+        const corrected = correctSenderPhoto(payload.message, conversation);
+        setMessages((prev) => prev.map((m) => (m._id === corrected._id ? corrected : m)));
       } else {
-        // "Delete for me" -- the message still exists for other participants, just not for us.
         setMessages((prev) => prev.filter((m) => m._id !== payload.message._id));
       }
     };
 
     const onMessageReacted = (message: Message) => {
       if (message.conversation !== conversationId) return;
-      setMessages((prev) => prev.map((m) => (m._id === message._id ? message : m)));
+      const corrected = correctSenderPhoto(message, conversation);
+      setMessages((prev) => prev.map((m) => (m._id === corrected._id ? corrected : m)));
     };
 
     const onMessagesRead = (payload: { conversationId: string; userId: string; messageIds: string[] }) => {
@@ -134,6 +378,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     socket.on('messagesDelivered', onMessagesDelivered);
     socket.on('userTyping', onTyping);
     socket.on('userStopTyping', onStopTyping);
+
     return () => {
       socket.off('newMessage', onNewMessage);
       socket.off('messageEdited', onMessageEdited);
@@ -144,12 +389,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       socket.off('userTyping', onTyping);
       socket.off('userStopTyping', onStopTyping);
     };
-  }, [socket, conversationId, user?._id]);
+  }, [socket, conversationId, user, conversation]);
 
+  // ========== SCROLL TO BOTTOM ==========
   useEffect(() => {
     if (!searchOpen) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages.length, searchOpen]);
 
+  // ========== SEARCH ==========
   useEffect(() => {
     if (!searchQuery.trim()) {
       setSearchResults([]);
@@ -164,6 +411,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     return () => clearTimeout(handle);
   }, [searchQuery, conversationId]);
 
+  // ========== HANDLERS ==========
   function handleSend(text: string, attachments?: Attachment[], replyTo?: string) {
     if (!socket) return;
     socket.emit('sendMessage', { conversationId, text, attachments, replyTo });
@@ -235,8 +483,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const blockedByMe =
     !conversation?.isGroup && !!avatarUser && !!user.blockedUsers?.includes(avatarUser._id);
 
+  // ========== RENDER ==========
   return (
     <div className="flex h-full min-h-0 flex-col">
+      {/* Header */}
       <div className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3.5">
         <Link
           href="/chat"
@@ -292,6 +542,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         </button>
       </div>
 
+      {/* Search */}
       {searchOpen && (
         <div className="border-b border-border bg-surface px-4 py-2.5">
           <div className="flex items-center gap-2">
@@ -336,6 +587,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         </div>
       )}
 
+      {/* Messages */}
       <div
         className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-surface-2 px-4 py-5 scrollbar-thin sm:px-6"
         style={chatBackgroundStyle(background)}
@@ -374,6 +626,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                   onForward={setForwardTarget}
                   onToggleStar={handleToggleStar}
                   onJumpToReply={jumpToReply}
+                  onImageClick={(url, name, msg) => setImagePreview({ url, name, message: msg, isOwn })}
                 />
               </div>
             );
@@ -382,6 +635,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         <div ref={bottomRef} />
       </div>
 
+      {/* Input */}
       {blockedByMe ? (
         <div className="flex items-center justify-center gap-2 border-t border-border bg-surface px-4 py-3.5 text-center text-sm text-muted-foreground">
           <ShieldOff className="h-4 w-4 shrink-0" />
@@ -403,6 +657,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         />
       )}
 
+      {/* Modals */}
       <ForwardModal open={!!forwardTarget} onClose={() => setForwardTarget(null)} onForward={handleForwardConfirm} />
       <ChatBackgroundModal
         open={backgroundModalOpen}
@@ -416,6 +671,24 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           onClose={() => setInfoOpen(false)}
           conversation={conversation}
           onChanged={refresh}
+        />
+      )}
+
+      {/* Image Preview with Actions */}
+      {imagePreview && (
+        <ImagePreviewModal
+          src={imagePreview.url}
+          alt={imagePreview.name}
+          onClose={() => setImagePreview(null)}
+          message={imagePreview.message}
+          isOwn={imagePreview.isOwn}
+          onReply={setReplyingTo}
+          onReact={handleReact}
+          onForward={setForwardTarget}
+          onToggleStar={handleToggleStar}
+          onEdit={setEditingMessage}
+          onDelete={handleDelete}
+          currentUserId={user._id}
         />
       )}
     </div>

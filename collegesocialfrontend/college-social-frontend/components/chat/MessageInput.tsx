@@ -40,7 +40,7 @@ export function MessageInput({
 }: MessageInputProps) {
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-  const emojiButtonRef = useRef<HTMLButtonElement>(null); // Added ref for the emoji button
+  const emojiButtonRef = useRef<HTMLButtonElement>(null);
 
   const [text, setText] = useState(editingMessage?.text ?? '');
   useEffect(() => {
@@ -59,8 +59,22 @@ export function MessageInput({
 
   async function uploadFile(file: File): Promise<Attachment> {
     const { category, type } = categoryForMime(file.type);
+
+    // ✅ FIX: For chat attachments, use '/upload/file' for images and files
+    // so it never updates the user's profile photo. Keep video/audio endpoints as they are safe.
+    let endpoint: string;
+    if (category === 'photos' || category === 'files') {
+      endpoint = '/upload/file';
+    } else if (category === 'videos') {
+      endpoint = '/upload/video';
+    } else if (category === 'audio') {
+      endpoint = '/upload/audio';
+    } else {
+      endpoint = '/upload/file';
+    }
+
     const uploaded = await api.upload<{ url: string; size: number; mimeType: string; originalName?: string }>(
-      `/upload/${category === 'photos' ? 'photo' : category === 'videos' ? 'video' : category === 'audio' ? 'audio' : 'file'}`,
+      endpoint,
       file,
     );
     return { url: uploaded.url, type, name: file.name, size: uploaded.size, mimeType: uploaded.mimeType };
