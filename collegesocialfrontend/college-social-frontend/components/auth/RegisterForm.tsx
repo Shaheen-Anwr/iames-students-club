@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useRef, useState } from 'react';
+import { FormEvent, useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Camera, GraduationCap, BookOpen, Check, X } from 'lucide-react';
@@ -31,6 +31,31 @@ export function RegisterForm() {
   const [photoPreview, setPhotoPreview] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Inject global styles to hide scrollbar, prevent overscroll, and enable smooth scrolling
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.innerHTML = `
+      /* Hide scrollbar for Chrome, Safari and Opera */
+      ::-webkit-scrollbar {
+        display: none;
+      }
+      /* Hide scrollbar for IE, Edge and Firefox */
+      * {
+        scrollbar-width: none; /* Firefox */
+        -ms-overflow-style: none; /* IE and Edge */
+      }
+      /* Prevent overscroll and enable smooth scrolling */
+      html, body {
+        overscroll-behavior: none;
+        scroll-behavior: smooth;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => {
+      document.head.removeChild(style);
+    };
+  }, []);
 
   function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -101,7 +126,7 @@ export function RegisterForm() {
   }
 
   return (
-    <div>
+   <div>
       <div className="mb-6 flex flex-col items-center gap-3 lg:items-start">
         <div className="lg:hidden">
           <Logo size="sm" variant="dark" />
@@ -230,6 +255,10 @@ export function RegisterForm() {
         <Link href="/login" className="font-medium text-accent hover:text-foreground">
           سجّل الدخول
         </Link>
+      </p>
+      <p className="mt-6 text-center text-sm text-muted-foreground lg:text-right">
+        منصة مجتمعية وأكاديمية غير هادفة للربح، صُممت بجهد طلابي لتسهيل الحياة الأكاديمية لطلاب الأكاديمية.
+        يُمنع استخدام المنصة في أي أغراض تجارية أو غير أكاديمية.
       </p>
     </div>
   );
