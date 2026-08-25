@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Sans_Arabic, IBM_Plex_Sans } from 'next/font/google';
 import './globals.css';
 import { Providers } from '@/components/Providers';
-
+import { SpeedInsights } from "@vercel/speed-insights/next"
 const fontArabic = IBM_Plex_Sans_Arabic({
   subsets: ['arabic'],
   weight: ['400', '500', '600', '700'],
@@ -16,7 +16,7 @@ const fontLatin = IBM_Plex_Sans({
 });
 
 export const metadata: Metadata = {
-  title: 'IEAMS Students Club',
+  title: 'IAEMS Students Club',
   description: 'الشبكة الاجتماعية لـ IAEMS Students Community — المحاضرات والملفات والدردشة في مكان واحد.',
   manifest: '/manifest.json',
   icons: {
