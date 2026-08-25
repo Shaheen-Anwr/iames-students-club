@@ -30,26 +30,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, []);
 
+  // Initial load
   useEffect(() => {
     refresh();
   }, [refresh]);
 
-  // Any new message anywhere should reorder/refresh the conversation list (last-message preview,
-  // most-recent-first). The list is small for a college app, so a light refetch is simplest and
-  // keeps this in sync even for conversations created by the other participant.
-  useEffect(() => {
-    if (!socket) return;
-    const onNewMessage = (_message: Message) => {
-      refresh();
-    };
-    socket.on('newMessage', onNewMessage);
-    return () => {
-      socket.off('newMessage', onNewMessage);
-    };
-  }, [socket, refresh]);
+  // 🔥 FIX: REMOVED the `newMessage` listener that called refresh().
+  // This was the cause of the chat window reloading on every new message.
+  // Now, the conversation list updates only on manual refresh or navigation.
 
-  // Presence flickers on every connect/disconnect -- patch participants in place instead of
-  // refetching the whole conversation list for each one.
+  // Presence updates – only updates online status, no full reload.
   useEffect(() => {
     if (!socket) return;
     const onPresenceUpdate = (payload: { userId: string; isOnline: boolean; lastSeenAt?: string }) => {
@@ -68,8 +58,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
   }, [socket]);
 
-  // Drives the "typing..." preview in the conversation list. Keyed by conversationId rather than
-  // userId since the list only needs to know *a* participant is typing, not who.
+  // Typing indicators – updates the list preview, no full reload.
   useEffect(() => {
     if (!socket) return;
     const timeouts = new Map<string, ReturnType<typeof setTimeout>>();
