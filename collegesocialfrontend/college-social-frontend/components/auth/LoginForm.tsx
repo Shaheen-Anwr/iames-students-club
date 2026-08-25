@@ -98,6 +98,10 @@ export function LoginForm() {
       </p>
 
       <ForgotPasswordModal open={forgotPasswordOpen} onClose={() => setForgotPasswordOpen(false)} />
+        <p className='mt-6 text-center text-sm text-muted-foreground lg:text-right'>
+          منصة مجتمعية وأكاديمية غير هادفة للربح، صُممت بجهد طلابي لتسهيل الحياة الأكاديمية لطلاب الأكاديمية.
+                  يُمنع استخدام المنصة في أي أغراض تجارية أو غير أكاديمية.
+        </p>
     </div>
   );
 }
