@@ -61,7 +61,6 @@ export function ProfileHeader({
             </span>
           )}
         </div>
-        <p className="mt-1 text-xs text-muted-foreground">الرقم الجامعي {user.collegeId}</p>
 
         <StreakPointsPill user={user} size="lg" className="mt-4 max-w-md" />
 

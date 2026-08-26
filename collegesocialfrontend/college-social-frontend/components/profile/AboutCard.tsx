@@ -23,7 +23,7 @@ export function AboutCard({ user }: { user: User }) {
         )}
         <div className="flex items-center gap-3">
           <IdCard className="h-4 w-4 shrink-0 text-muted-foreground" />
-          <dd className="text-foreground">الرقم الجامعي: {user.collegeId}</dd>
+
         </div>
         {user.role !== 'admin' && (
           <div className="flex items-center gap-3">
