@@ -119,6 +119,16 @@ export class User {
   @Prop({ type: [String], default: [] })
   badges: string[];
 
+  // Referrals -- see GamificationService.recordReferral / AuthService.applyReferral.
+  // `referredBy` is the account whose invite link this user signed up through (set once at
+  // registration, never changed). `referralCount` is the running number of accounts this user
+  // has invited; at REFERRAL_TARGET it earns the referral_5 badge + a one-time points bonus.
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  referredBy: Types.ObjectId | null;
+
+  @Prop({ default: 0 })
+  referralCount: number;
+
   // Chat presence -- kept on the user doc (not a separate collection) since it's a single
   // small mutable field set, updated on every socket connect/disconnect (see ChatGateway).
   @Prop({ default: false })

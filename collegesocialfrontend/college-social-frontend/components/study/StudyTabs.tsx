@@ -2,16 +2,19 @@
 
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { BookOpen, ClipboardList, CalendarDays, CalendarRange, Bookmark, Trophy, HelpCircle, ListTodo } from 'lucide-react';
+import { BookOpen, ClipboardList, CalendarDays, CalendarRange, Bookmark, Trophy, HelpCircle, ListTodo, Shield, Calculator, CalendarCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const TABS = [
   { href: '/study/courses', label: 'المقررات', icon: BookOpen },
   { href: '/study/assignments', label: 'الواجبات', icon: ClipboardList },
+  { href: '/study/military', label: 'التربية العسكرية', icon: Shield },
   { href: '/study/planner', label: 'المخطط الدراسي', icon: ListTodo },
+  { href: '/study/gpa', label: 'حساب المعدل', icon: Calculator },
   { href: '/study/qa', label: 'الأسئلة والأجوبة', icon: HelpCircle },
   { href: '/study/calendar', label: 'التقويم', icon: CalendarRange },
   { href: '/study/schedule', label: 'الجدول الدراسي', icon: CalendarDays },
+  { href: '/study/attendance', label: 'الحضور', icon: CalendarCheck },
   { href: '/study/saved', label: 'المحفوظات', icon: Bookmark },
   { href: '/study/leaderboard', label: 'المتصدرون', icon: Trophy },
 ];

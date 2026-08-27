@@ -39,16 +39,20 @@ export class AssignmentsService {
   }
 
   async create(creatorId: string, creatorRole: Role, dto: CreateAssignmentDto): Promise<AssignmentDocument> {
+    // التربية العسكرية assignments are always global (visible to every student) and carry a
+    // fixed course label when none is given -- see the isMilitary prop on the schema.
+    const isMilitary = !!dto.isMilitary;
     const assignment = new this.assignmentModel({
       createdBy: new Types.ObjectId(creatorId),
       title: dto.title,
       description: dto.description ?? '',
-      courseCode: dto.courseCode,
+      courseCode: dto.courseCode?.trim() || (isMilitary ? 'التربية العسكرية' : dto.courseCode),
       dueDate: new Date(dto.dueDate),
       attachmentType: dto.attachmentType ?? 'none',
       attachmentUrl: dto.attachmentUrl ?? null,
       attachmentOriginalName: dto.attachmentOriginalName ?? null,
-      isPersonal: creatorRole === Role.STUDENT,
+      isPersonal: !isMilitary && creatorRole === Role.STUDENT,
+      isMilitary,
     });
     await assignment.save();
 
@@ -67,10 +71,20 @@ export class AssignmentsService {
     return assignment;
   }
 
-  async findAll(page = 1, limit = 20, courseCode?: string, upcoming?: boolean, requesterId?: string): Promise<AssignmentDocument[]> {
+  async findAll(
+    page = 1,
+    limit = 20,
+    courseCode?: string,
+    upcoming?: boolean,
+    requesterId?: string,
+    military?: boolean,
+  ): Promise<AssignmentDocument[]> {
     const filter: Record<string, unknown> = this.visibilityFilter(requesterId);
     if (courseCode) filter.courseCode = courseCode;
     if (upcoming) filter.dueDate = { $gte: new Date() };
+    // The military section asks for its own assignments; every other caller gets the normal
+    // list with military ones excluded so they don't leak into the general الواجبات board.
+    filter.isMilitary = military ? true : { $ne: true };
     return this.assignmentModel
       .find(filter)
       .sort({ dueDate: 1 })

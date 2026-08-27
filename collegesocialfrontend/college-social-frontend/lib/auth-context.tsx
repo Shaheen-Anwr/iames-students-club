@@ -38,6 +38,9 @@ interface RegisterInput {
   role: Role;
   department?: Department;
   photo?: File | null;
+  // Invite code from a share link (/register?ref=<collegeId>). Forwarded to the backend, which
+  // credits the referral; an unknown code is silently ignored there.
+  referralCode?: string;
 }
 
 interface AuthContextValue {

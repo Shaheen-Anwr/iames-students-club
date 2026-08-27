@@ -18,6 +18,7 @@ import { ChatModule } from './chat/chat.module';
 import { AdminModule } from './admin/admin.module';
 import { ScheduleModule } from './schedule/schedule.module';
 import { AssignmentsModule } from './assignments/assignments.module';
+import { MilitaryModule } from './military/military.module';
 import { QuizzesModule } from './quizzes/quizzes.module';
 import { GroupsModule } from './groups/groups.module';
 import { RealtimeModule } from './realtime/realtime.module';
@@ -26,6 +27,8 @@ import { QaModule } from './qa/qa.module';
 import { CalendarModule } from './calendar/calendar.module';
 import { CalendarEventsModule } from './calendar-events/calendar-events.module';
 import { PlannerModule } from './planner/planner.module';
+import { GpaModule } from './gpa/gpa.module';
+import { AttendanceModule } from './attendance/attendance.module';
 import { AnnouncementsModule } from './announcements/announcements.module';
 import { SearchModule } from './search/search.module';
 import { AiModule } from './ai/ai.module';
@@ -70,6 +73,7 @@ import { AppController } from './app.controller';
     AdminModule,
     ScheduleModule,
     AssignmentsModule,
+    MilitaryModule,
     QuizzesModule,
     GroupsModule,
     NotificationsModule,
@@ -77,6 +81,8 @@ import { AppController } from './app.controller';
     CalendarModule,
     CalendarEventsModule,
     PlannerModule,
+    GpaModule,
+    AttendanceModule,
     AnnouncementsModule,
     SearchModule,
     AiModule,

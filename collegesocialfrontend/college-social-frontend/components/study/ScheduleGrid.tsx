@@ -13,40 +13,16 @@ import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departmen
 import { ACADEMIC_YEAR_LABELS, getAcademicYearsForDepartment, type AcademicYear } from '@/lib/academic-years';
 import { SPECIALIZATIONS_BY_DEPARTMENT, SPECIALIZATION_LABELS, type Specialization } from '@/lib/specializations';
 import type { ScheduleEntry } from '@/lib/types';
+import { WEEK_DAYS, courseColor } from '@/lib/schedule-week';
 import { ScheduleEntryForm } from './ScheduleEntryForm';
 
 const SELECT_CLASS =
   'h-9 rounded-lg border border-border bg-surface-2 px-2.5 text-xs text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20';
 
-const WEEK_DAYS: { value: ScheduleEntry['dayOfWeek']; label: string; short: string }[] = [
-  { value: 6, label: 'السبت', short: 'سبت' },
-  { value: 0, label: 'الأحد', short: 'أحد' },
-  { value: 1, label: 'الاثنين', short: 'اثنين' },
-  { value: 2, label: 'الثلاثاء', short: 'ثلاثاء' },
-  { value: 3, label: 'الأربعاء', short: 'أربعاء' },
-  { value: 4, label: 'الخميس', short: 'خميس' },
-  { value: 5, label: 'الجمعة', short: 'جمعة' },
-];
-
 const GRID_START_HOUR = 7;
 const GRID_END_HOUR = 21;
 const HOUR_HEIGHT = 52; // px
 const HOURS = Array.from({ length: GRID_END_HOUR - GRID_START_HOUR }, (_, i) => GRID_START_HOUR + i);
-
-const PALETTE = [
-  'bg-blue-100 text-blue-800 border-blue-200 dark:bg-blue-500/20 dark:text-blue-300 dark:border-blue-500/30',
-  'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-500/20 dark:text-emerald-300 dark:border-emerald-500/30',
-  'bg-purple-100 text-purple-800 border-purple-200 dark:bg-purple-500/20 dark:text-purple-300 dark:border-purple-500/30',
-  'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-500/20 dark:text-amber-300 dark:border-amber-500/30',
-  'bg-pink-100 text-pink-800 border-pink-200 dark:bg-pink-500/20 dark:text-pink-300 dark:border-pink-500/30',
-  'bg-teal-100 text-teal-800 border-teal-200 dark:bg-teal-500/20 dark:text-teal-300 dark:border-teal-500/30',
-];
-
-function courseColor(name: string) {
-  let hash = 0;
-  for (let i = 0; i < name.length; i += 1) hash = (hash * 31 + name.charCodeAt(i)) >>> 0;
-  return PALETTE[hash % PALETTE.length];
-}
 
 function toMinutes(time: string) {
   const [h, m] = time.split(':').map(Number);

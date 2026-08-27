@@ -1,16 +1,28 @@
 {
-  "name": "IEAMS Students Club",
-  "short_name": "IEAMS",
-  "description": "الشبكة الاجتماعية لـ IEAMS Students Community",
-  "start_url": "/",
+  "id": "/",
+  "name": "IAEMS Students Club",
+  "short_name": "IAEMS",
+  "description": "الشبكة الاجتماعية لطلاب وأساتذة IAEMS — المحاضرات والملفات والدردشة والجدول في مكان واحد.",
+  "start_url": "/?source=pwa",
+  "scope": "/",
   "display": "standalone",
-  "background_color": "#1d3557",
-  "theme_color": "#1d3557",
+  "display_override": ["standalone", "minimal-ui"],
+  "orientation": "portrait",
+  "background_color": "#0C0D12",
+  "theme_color": "#171A2B",
   "dir": "rtl",
   "lang": "ar",
+  "categories": ["education", "social", "productivity"],
   "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
     { "src": "/icons/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
     { "src": "/icons/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "الرئيسية", "url": "/home" },
+    { "name": "المذاكرة", "url": "/study" },
+    { "name": "المحاضرات", "url": "/lectures" },
+    { "name": "المحادثات", "url": "/chat" }
   ]
 }

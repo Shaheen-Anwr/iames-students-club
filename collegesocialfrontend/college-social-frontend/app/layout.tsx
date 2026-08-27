@@ -15,27 +15,76 @@ const fontLatin = IBM_Plex_Sans({
   variable: '--font-latin',
 });
 
+// Absolute base for OG/canonical URLs. Overridable per-deploy; defaults to the Vercel domain
+// so no dashboard config is needed, matching this repo's zero-manual-setup env convention.
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://iames-students-club.vercel.app';
+
+const DESCRIPTION =
+  'الشبكة الاجتماعية لطلاب وأساتذة IAEMS — المحاضرات والملفات والدردشة والجدول والواجبات في مكان واحد.';
+
+// Favicon (app/icon.svg), apple-touch icon (app/apple-icon.tsx) and the share card
+// (app/opengraph-image.tsx) are wired automatically by Next's file conventions, so they're
+// deliberately absent here.
 export const metadata: Metadata = {
-  title: 'IAEMS Students Club',
-  description: 'الشبكة الاجتماعية لـ IAEMS Students Community — المحاضرات والملفات والدردشة في مكان واحد.',
+  metadataBase: new URL(SITE_URL),
+  applicationName: 'IAEMS Students Club',
+  title: {
+    default: 'IAEMS Students Club — نادي طلاب IAEMS',
+    template: '%s · IAEMS Students Club',
+  },
+  description: DESCRIPTION,
+  keywords: [
+    'IAEMS',
+    'IAEMS Students Club',
+    'IAEMS Students Community',
+    'نادي طلاب',
+    'شبكة اجتماعية جامعية',
+    'محاضرات',
+    'واجبات',
+    'جدول دراسي',
+    'college social network',
+    'campus community',
+  ],
+  authors: [{ name: 'IAEMS Students Club' }],
+  creator: 'IAEMS Students Club',
+  publisher: 'IAEMS Students Club',
+  category: 'education',
   manifest: '/manifest.json',
-  icons: {
-    icon: [
-      { url: '/icons/icon-192.png', sizes: '192x192', type: 'image/png' },
-      { url: '/icons/icon-512.png', sizes: '512x512', type: 'image/png' },
-    ],
-    apple: '/icons/apple-touch-icon.png',
+  alternates: { canonical: '/' },
+  formatDetection: { telephone: false, email: false, address: false },
+  appleWebApp: {
+    capable: true,
+    title: 'IAEMS',
+    statusBarStyle: 'black-translucent',
+  },
+  openGraph: {
+    type: 'website',
+    siteName: 'IAEMS Students Club',
+    title: 'IAEMS Students Club — نادي طلاب IAEMS',
+    description: DESCRIPTION,
+    url: '/',
+    locale: 'ar_AR',
+  },
+  twitter: {
+    card: 'summary_large_image',
+    title: 'IAEMS Students Club',
+    description: DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: { index: true, follow: true, 'max-image-preview': 'large' },
   },
 };
 
 // viewportFit=cover exposes env(safe-area-inset-*) so fixed bars can clear the iOS
 // notch/home-indicator; no maximumScale lock, so pinch-zoom stays available. themeColor
-// matches the brand navy, used for the PWA's manifest/installed-app chrome.
+// matches the app-icon tile, used for the PWA's manifest/installed-app chrome.
 export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
-  themeColor: '#1d3557',
+  themeColor: '#141520',
 };
 
 // Blocking inline script: applies the saved theme class before React hydrates, so there's no

@@ -109,7 +109,10 @@ const config: Config = {
         xl2: '1.25rem',
       },
       backgroundImage: {
-        'gradient-accent': 'linear-gradient(135deg, rgb(var(--accent)), rgb(var(--accent-2)))',
+        // Same-hue indigo sheen for primary buttons -- both stops hold white text at AA.
+        // For the loud indigo->amber blend use `.bg-gradient-warm` / `.text-gradient-accent`.
+        'gradient-accent':
+          'linear-gradient(135deg, rgb(var(--accent-grad-from)), rgb(var(--accent-grad-to)))',
       },
       transitionTimingFunction: {
         standard: 'var(--ease-standard)',

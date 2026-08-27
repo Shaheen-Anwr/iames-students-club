@@ -1,4 +1,4 @@
-import { IsEmail, IsIn, IsString, Matches, MinLength, ValidateIf } from 'class-validator';
+import { IsEmail, IsIn, IsOptional, IsString, Matches, MaxLength, MinLength, ValidateIf } from 'class-validator';
 import { Role, REGISTERABLE_ROLES } from '../../common/enums/role.enum';
 import { Department, SELECTABLE_DEPARTMENTS } from '../../common/enums/department.enum';
 
@@ -36,4 +36,12 @@ export class RegisterDto {
   @ValidateIf((dto: RegisterDto) => dto.role === Role.STUDENT || dto.role === Role.PROFESSOR)
   @IsIn(SELECTABLE_DEPARTMENTS, { message: 'الرجاء اختيار الشعبة' })
   department?: Department;
+
+  // Optional invite code carried in from a share link (/register?ref=<collegeId>). It's the
+  // inviting user's collegeId; AuthService.applyReferral resolves it and credits the referral.
+  // An unknown/self/malformed code is silently ignored -- it never blocks the signup.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  referralCode?: string;
 }

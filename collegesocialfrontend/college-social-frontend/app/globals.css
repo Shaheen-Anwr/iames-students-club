@@ -4,41 +4,48 @@
 
 @layer base {
   :root {
-    /* Light theme -- clean near-white paper, greys tinted a few points toward the accent hue
-       so neutrals and accent feel like one family rather than grey + purple. */
-    --background: 248 249 252;
+    /* Light theme -- clean near-white paper, greys tinted a few points toward the indigo
+       accent hue so neutrals and accent feel like one family rather than grey + indigo. */
+    --background: 247 248 252;
     --surface: 255 255 255;
-    --surface-2: 242 243 248;
+    --surface-2: 241 242 249;
     /* Third surface step -- for controls layered on top of surface-2 (segmented tracks,
        nested cards, table zebra) where surface-2 no longer reads as raised. */
-    --surface-3: 233 235 242;
+    --surface-3: 232 233 244;
     /* Scrim base -- always paired with an alpha (bg-overlay/60). Kept as its own token so
        light/dark can use different bases (near-black in light, pure black in dark). */
-    --overlay: 15 16 24;
-    --border: 224 227 235;
+    --overlay: 13 14 23;
+    --border: 224 227 238;
     /* Hairlines that should barely register (inside cards, list dividers) vs. borders that
        need to hold an edge (inputs, focused wells, popovers). */
-    --border-subtle: 235 237 243;
-    --border-strong: 200 205 216;
-    --foreground: 17 19 27;
-    --muted-foreground: 94 101 118;
+    --border-subtle: 235 237 244;
+    --border-strong: 201 205 220;
+    --foreground: 20 21 33;
+    --muted-foreground: 92 98 119;
 
-    --accent: 124 92 252;
-    --accent-2: 34 211 238;
-    /* Tonal accent ramp (violet). --accent stays the canonical mid-tone; the ramp exists so
+    /* Refined Indigo primary + warm Amber secondary. Indigo carries every interactive
+       surface; amber is the celebratory highlight (streaks, badges, hero gradients). */
+    --accent: 90 80 224;
+    --accent-2: 242 162 12;
+    /* Tonal accent ramp (indigo). --accent stays the canonical mid-tone; the ramp exists so
        primitives can reach for a specific step (soft fills, pressed states, borders) instead
        of guessing with /alpha. Perceptually even; re-anchored + inverted in .dark below. */
-    --accent-50: 245 243 255;
-    --accent-100: 236 232 254;
-    --accent-200: 219 212 253;
-    --accent-300: 197 182 252;
-    --accent-400: 166 141 249;
-    --accent-500: 139 104 246;
-    --accent-600: 124 92 252;
-    --accent-700: 103 58 216;
-    --accent-800: 84 42 176;
-    --accent-900: 69 35 140;
-    --accent-950: 44 21 92;
+    --accent-50: 239 239 254;
+    --accent-100: 227 226 253;
+    --accent-200: 203 201 251;
+    --accent-300: 173 168 247;
+    --accent-400: 139 131 241;
+    --accent-500: 111 100 234;
+    --accent-600: 90 80 224;
+    --accent-700: 74 64 196;
+    --accent-800: 60 52 156;
+    --accent-900: 52 46 126;
+    --accent-950: 33 29 79;
+
+    /* Button/hero gradient stops -- a same-hue indigo sheen (not the inverted numbered ramp,
+       which flips meaning between themes). Both stops hold white text at AA. */
+    --accent-grad-from: 108 92 232;
+    --accent-grad-to: 74 63 196;
 
     --gold: 197 143 15;
     /* Semantic hues + a soft "-surface" tint each, for alert/badge/callout fills that read
@@ -53,12 +60,12 @@
     /* Keyboard-focus ring colour. One token so every :focus-visible in the app matches. */
     --ring: 124 92 252;
 
-    /* Elevation -- layered shadows tuned for a light ground (soft, warm-neutral, no ring).
-       Consumed via Tailwind `shadow-elev-1..4`. */
-    --elev-1: 0 1px 2px rgb(15 17 21 / 0.06), 0 1px 3px rgb(15 17 21 / 0.1);
-    --elev-2: 0 2px 4px rgb(15 17 21 / 0.06), 0 6px 16px -4px rgb(15 17 21 / 0.1);
-    --elev-3: 0 2px 8px rgb(15 17 21 / 0.06), 0 16px 32px -8px rgb(15 17 21 / 0.14);
-    --elev-4: 0 8px 24px -8px rgb(15 17 21 / 0.12), 0 32px 56px -16px rgb(15 17 21 / 0.2);
+    /* Elevation -- layered shadows tuned for a light ground (soft, faint indigo cast so
+       shadows sit in the same hue family as the accent). Consumed via `shadow-elev-1..4`. */
+    --elev-1: 0 1px 2px rgb(20 22 43 / 0.06), 0 1px 3px rgb(20 22 43 / 0.1);
+    --elev-2: 0 2px 4px rgb(20 22 43 / 0.06), 0 6px 16px -4px rgb(20 22 43 / 0.1);
+    --elev-3: 0 2px 8px rgb(20 22 43 / 0.06), 0 16px 32px -8px rgb(20 22 43 / 0.14);
+    --elev-4: 0 8px 24px -8px rgb(20 22 43 / 0.12), 0 32px 56px -16px rgb(20 22 43 / 0.2);
 
     /* Motion primitives. JS (framer-motion) owns spring transforms; these drive CSS
        transitions/animations so both stay in sync. */
@@ -76,36 +83,39 @@
   }
 
   .dark {
-    /* Dark theme -- deep violet-charcoal, never pure black (kills OLED smearing / halation and
+    /* Dark theme -- deep indigo-charcoal, never pure black (kills OLED smearing / halation and
        lets surfaces sit above the ground without going flat grey). bg -> surface -> surface-2
        -> surface-3 step up in even ~8-luminance increments so layering reads without heavy
        borders. */
-    --background: 12 13 18;
-    --surface: 21 23 31;
-    --surface-2: 28 31 42;
-    --surface-3: 38 42 56;
+    --background: 11 12 18;
+    --surface: 20 21 31;
+    --surface-2: 27 29 42;
+    --surface-3: 38 41 57;
     --overlay: 0 0 0;
-    --border: 40 44 58;
-    --border-subtle: 29 32 43;
-    --border-strong: 58 64 84;
-    --foreground: 234 236 243;
-    --muted-foreground: 146 153 172;
+    --border: 42 45 62;
+    --border-subtle: 30 32 45;
+    --border-strong: 59 63 86;
+    --foreground: 234 235 243;
+    --muted-foreground: 144 149 172;
 
-    --accent: 139 124 255;
-    --accent-2: 45 224 245;
-    /* Ramp inverts in dark: 50 = deepest violet-tinted fill, 950 = near-white text tint.
+    --accent: 131 122 255;
+    --accent-2: 247 183 51;
+    /* Ramp inverts in dark: 50 = deepest indigo-tinted fill, 950 = near-white text tint.
        Button `subtle` (bg-accent-100 / text-accent-800) stays legible either way. */
-    --accent-50: 26 24 45;
-    --accent-100: 37 33 68;
-    --accent-200: 52 45 106;
-    --accent-300: 73 61 158;
-    --accent-400: 105 88 218;
-    --accent-500: 128 111 245;
-    --accent-600: 139 124 255;
-    --accent-700: 167 150 255;
-    --accent-800: 197 185 255;
-    --accent-900: 223 216 255;
-    --accent-950: 240 237 255;
+    --accent-50: 25 24 48;
+    --accent-100: 36 34 74;
+    --accent-200: 50 46 112;
+    --accent-300: 68 62 158;
+    --accent-400: 94 86 216;
+    --accent-500: 113 105 240;
+    --accent-600: 131 122 255;
+    --accent-700: 165 158 255;
+    --accent-800: 196 191 255;
+    --accent-900: 222 219 255;
+    --accent-950: 240 238 255;
+
+    --accent-grad-from: 139 124 255;
+    --accent-grad-to: 110 92 240;
 
     --gold: 227 179 65;
     --success: 52 211 153;
@@ -181,9 +191,15 @@
      areas, auth screens, empty states. Sits under content; layer real UI on top. */
   .bg-mesh {
     background-image:
-      radial-gradient(58% 50% at 12% 0%, rgb(var(--accent) / 0.12), transparent 72%),
-      radial-gradient(52% 46% at 100% 8%, rgb(var(--accent-2) / 0.09), transparent 70%),
-      radial-gradient(60% 55% at 88% 100%, rgb(var(--accent) / 0.07), transparent 75%);
+      radial-gradient(58% 50% at 12% 0%, rgb(var(--accent) / 0.14), transparent 72%),
+      radial-gradient(52% 46% at 100% 8%, rgb(var(--accent-2) / 0.08), transparent 70%),
+      radial-gradient(60% 55% at 88% 100%, rgb(var(--accent) / 0.08), transparent 75%);
+  }
+
+  /* Warm celebratory gradient -- indigo folding into amber. For hero panels, streak/badge
+     callouts, and the referral card. Loud on purpose; use sparingly. */
+  .bg-gradient-warm {
+    background-image: linear-gradient(120deg, rgb(var(--accent)), rgb(var(--accent-2)));
   }
 
   /* Gradient headline text -- pair with font-bold/extrabold; falls back to accent colour where

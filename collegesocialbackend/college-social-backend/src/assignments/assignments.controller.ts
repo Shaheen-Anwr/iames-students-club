@@ -22,7 +22,7 @@ export class AssignmentsController {
     return this.assignmentsService.create(user.userId, user.role, dto);
   }
 
-  // GET /api/assignments?page=1&limit=20&courseCode=CS101&upcoming=true
+  // GET /api/assignments?page=1&limit=20&courseCode=CS101&upcoming=true&military=true
   @Get()
   async findAll(
     @CurrentUser() user: AuthenticatedUser,
@@ -30,8 +30,16 @@ export class AssignmentsController {
     @Query('limit') limit?: string,
     @Query('courseCode') courseCode?: string,
     @Query('upcoming') upcoming?: string,
+    @Query('military') military?: string,
   ) {
-    return this.assignmentsService.findAll(Number(page) || 1, Number(limit) || 20, courseCode, upcoming === 'true', user.userId);
+    return this.assignmentsService.findAll(
+      Number(page) || 1,
+      Number(limit) || 20,
+      courseCode,
+      upcoming === 'true',
+      user.userId,
+      military === 'true',
+    );
   }
 
   // POST /api/assignments/group/:groupId -- group-owner only, enforced inside the service via

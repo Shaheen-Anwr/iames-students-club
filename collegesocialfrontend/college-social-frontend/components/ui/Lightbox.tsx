@@ -31,6 +31,16 @@ export function Lightbox({
     };
   }, [index, images.length, onIndexChange, onClose]);
 
+  // Warm the browser cache for the neighbouring photos so next/prev is instant instead of showing
+  // a blank frame while the full-size image downloads.
+  useEffect(() => {
+    if (images.length < 2) return;
+    for (const i of [(index + 1) % images.length, (index - 1 + images.length) % images.length]) {
+      const preload = new Image();
+      preload.src = cldOptimize(images[i], { width: 1600, crop: 'limit' }) ?? images[i];
+    }
+  }, [index, images]);
+
   if (typeof document === 'undefined') return null;
 
   return createPortal(
@@ -73,8 +83,12 @@ export function Lightbox({
       )}
 
       <img
+        key={index}
         src={cldOptimize(images[index], { width: 1600, crop: 'limit' })}
         alt=""
+        decoding="async"
+        // @ts-expect-error -- fetchpriority is a valid HTML attribute React hasn't typed yet
+        fetchpriority="high"
         className="relative z-[5] max-h-[90vh] max-w-full rounded-lg object-contain animate-bubble-in"
         onClick={(e) => e.stopPropagation()}
       />

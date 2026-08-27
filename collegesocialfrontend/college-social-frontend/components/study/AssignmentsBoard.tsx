@@ -14,7 +14,11 @@ import type { Assignment } from '@/lib/types';
 import { AssignmentCard } from './AssignmentCard';
 import { CreateAssignmentForm } from './CreateAssignmentForm';
 
-export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { groupId?: string; canCreate?: boolean } = {}) {
+export function AssignmentsBoard({
+  groupId,
+  military = false,
+  canCreate: canCreateOverride,
+}: { groupId?: string; military?: boolean; canCreate?: boolean } = {}) {
   const { user } = useAuth();
   const searchParams = useSearchParams();
   const canCreate = groupId ? !!canCreateOverride : user?.role === 'admin' || user?.role === 'professor';
@@ -31,6 +35,7 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
     const params = new URLSearchParams({ limit: '50' });
     if (courseCode.trim()) params.set('courseCode', courseCode.trim());
     if (upcomingOnly) params.set('upcoming', 'true');
+    if (military) params.set('military', 'true');
 
     const endpoint = groupId ? `/assignments/group/${groupId}?limit=50` : `/assignments?${params.toString()}`;
 
@@ -52,7 +57,7 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
     return () => {
       isMounted = false;
     };
-  }, [groupId, courseCode, upcomingOnly]);
+  }, [groupId, military, courseCode, upcomingOnly]);
 
   function handleCreated(rawAssignment: Assignment | { data: Assignment }) {
     const assignment = (rawAssignment as { data?: Assignment })?.data ?? (rawAssignment as Assignment);
@@ -79,7 +84,7 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center gap-2">
-        <h1 className="me-auto text-lg font-semibold text-foreground">الواجبات</h1>
+        <h1 className="me-auto text-lg font-semibold text-foreground">{military ? 'واجبات التربية العسكرية' : 'الواجبات'}</h1>
         {canCreate && (
           <Button size="sm" onClick={() => setModalOpen(true)}>
             <Plus className="h-4 w-4" />
@@ -88,7 +93,7 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
         )}
       </div>
 
-      {!groupId && (
+      {!groupId && !military && (
         <div className="flex flex-wrap items-center gap-2">
           <Input
             placeholder="تصفية حسب رمز المقرر"
@@ -140,8 +145,13 @@ export function AssignmentsBoard({ groupId, canCreate: canCreateOverride }: { gr
       )}
 
       {canCreate && (
-        <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="إنشاء واجب">
-          <CreateAssignmentForm groupId={groupId} onCreated={handleCreated} onClose={() => setModalOpen(false)} />
+        <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={military ? 'إنشاء واجب تربية عسكرية' : 'إنشاء واجب'}>
+          <CreateAssignmentForm
+            groupId={groupId}
+            isMilitary={military}
+            onCreated={handleCreated}
+            onClose={() => setModalOpen(false)}
+          />
         </Modal>
       )}
     </div>

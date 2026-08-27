@@ -286,7 +286,11 @@ export function CreatePostBox({
             <div className="flex flex-col gap-1.5">
               <ProgressBar percent={uploadPercent} />
               <span className="text-center text-xs text-muted-foreground">
-                {uploadPercent < 100 ? `جاري الرفع… ${uploadPercent}%` : 'جاري النشر…'}
+                {uploadPercent === 0
+                  ? 'جاري تجهيز الصور…'
+                  : uploadPercent < 100
+                    ? `جاري الرفع… ${uploadPercent}%`
+                    : 'جاري النشر…'}
               </span>
             </div>
           )}

@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
 import { AssignmentAttachmentType } from '../schemas/assignment.schema';
 
 export class CreateAssignmentDto {
@@ -10,9 +10,16 @@ export class CreateAssignmentDto {
   @IsString()
   description?: string;
 
+  // Optional for التربية العسكرية assignments -- the service defaults it. Still required for
+  // every normal assignment.
+  @ValidateIf((o) => !o.isMilitary)
   @IsString()
   @IsNotEmpty({ message: 'رمز المقرر مطلوب' })
   courseCode: string;
+
+  @IsOptional()
+  @IsBoolean()
+  isMilitary?: boolean;
 
   @IsDateString({}, { message: 'تاريخ التسليم غير صالح' })
   dueDate: string;

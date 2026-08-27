@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
-import { BADGES, BadgeId } from './badges';
+import { BADGES, BadgeId, POINTS, REFERRAL_TARGET } from './badges';
 
 export interface GamificationStats {
   totalPointsAwarded: number;
@@ -45,6 +45,22 @@ export class GamificationService {
 
   async awardPoints(userId: string, amount: number): Promise<void> {
     await this.userModel.findByIdAndUpdate(userId, { $inc: { points: amount } }).exec();
+  }
+
+  // Called once per accepted invite (a new account signed up with `referrerId`'s code).
+  // Bumps the running count; the first time it reaches REFERRAL_TARGET the user earns the
+  // referral_5 badge plus a one-time points bonus. Using the post-update count with an
+  // equality check keeps the bonus one-time even if the count keeps climbing past the target.
+  async recordReferral(referrerId: string): Promise<void> {
+    const user = await this.userModel
+      .findByIdAndUpdate(referrerId, { $inc: { referralCount: 1 } }, { new: true })
+      .exec();
+    if (!user) return;
+
+    if (user.referralCount === REFERRAL_TARGET && !user.badges.includes('referral_5')) {
+      await this.awardPoints(referrerId, POINTS.REFERRAL_MILESTONE);
+      await this.maybeAwardBadge(referrerId, 'referral_5');
+    }
   }
 
   async maybeAwardBadge(userId: string, badgeId: BadgeId): Promise<void> {

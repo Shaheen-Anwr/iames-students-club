@@ -48,6 +48,12 @@ export class Assignment {
   @Prop({ type: Boolean, default: false })
   isPersonal: boolean;
 
+  // true for التربية العسكرية (military education) assignments -- admin/professor created, always
+  // global (never isPersonal), surfaced in the /study/military section and filtered via
+  // GET /assignments?military=true. false/unset for every other assignment.
+  @Prop({ type: Boolean, default: false, index: true })
+  isMilitary: boolean;
+
   // Set only for assignments created inside a study group (by its owner) -- null for every
   // pre-existing global/personal assignment. Visibility for these is gated by group membership
   // instead of isPersonal, see AssignmentsService.visibilityFilter().

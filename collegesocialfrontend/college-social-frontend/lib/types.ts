@@ -1,6 +1,7 @@
 import type { Department } from './departments';
 import type { AcademicYear } from './academic-years';
 import type { Specialization } from './specializations';
+import type { GradeLetter } from './gpa';
 
 export type Role = 'student' | 'professor' | 'admin';
 
@@ -25,6 +26,8 @@ export interface User {
   points?: number;
   streakCount?: number;
   badges?: string[];
+  referredBy?: string | null;
+  referralCount?: number;
   isOnline?: boolean;
   lastSeenAt?: string | null;
   blockedUsers?: string[];
@@ -33,7 +36,13 @@ export interface User {
   friendRequestsReceived?: string[];
 }
 
-export type BadgeId = 'first_post' | 'active_streak_7' | 'helpful_10' | 'assignments_5' | 'quizzes_5';
+export type BadgeId =
+  | 'first_post'
+  | 'active_streak_7'
+  | 'helpful_10'
+  | 'assignments_5'
+  | 'quizzes_5'
+  | 'referral_5';
 
 export const BADGE_META: Record<BadgeId, { label: string; description: string; icon: string }> = {
   first_post: { label: 'أول منشور', description: 'شاركت أول منشور لك', icon: '📝' },
@@ -41,7 +50,11 @@ export const BADGE_META: Record<BadgeId, { label: string; description: string; i
   helpful_10: { label: 'متفاعل', description: 'حصل منشورك على 10 تفاعلات', icon: '🤝' },
   assignments_5: { label: 'مجتهد', description: 'أكملت 5 واجبات', icon: '🎯' },
   quizzes_5: { label: 'عبقري الاختبارات', description: 'حللت 5 اختبارات', icon: '🧠' },
+  referral_5: { label: 'سفير المنصة', description: 'دعوت 5 من أصدقائك للانضمام', icon: '📣' },
 };
+
+// Friends a student must invite (who sign up with their link) to earn the referral_5 badge.
+export const REFERRAL_TARGET = 5;
 
 export interface LeaderboardEntry {
   _id: string;
@@ -372,8 +385,85 @@ export interface Assignment {
   completedBy: string[];
   createdAt: string;
   isPersonal?: boolean;
+  // true for التربية العسكرية assignments -- shown in /study/military, hidden from the normal board.
+  isMilitary?: boolean;
   // Set only for assignments created inside a study group -- null/absent for every global one.
   group?: string | null;
+}
+
+// --- التربية العسكرية (military education) ---
+
+export interface MilitaryPeriod {
+  startDate: string;
+  endDate: string;
+  title: string;
+  motivationalQuotes: string[];
+}
+
+export interface MilitaryStatus {
+  period: MilitaryPeriod | null;
+  streak: number;
+  checkedInToday: boolean;
+  totalCheckIns: number;
+  daysTotal: number;
+  daysElapsed: number;
+  daysRemaining: number;
+  isActive: boolean;
+  quote: string | null;
+}
+
+export interface MilitaryScheduleItem {
+  _id: string;
+  date: string;
+  title: string;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+}
+
+export interface MilitaryTodo {
+  _id: string;
+  text: string;
+  done: boolean;
+  order: number;
+}
+
+export interface MilitaryStudentSettings {
+  dailyStartTime: string | null;
+  dailyEndTime: string | null;
+}
+
+export interface MilitaryOverview {
+  period: MilitaryPeriod | null;
+  myStatus: MilitaryStatus;
+  schedule: MilitaryScheduleItem[];
+  settings: MilitaryStudentSettings;
+  todos: MilitaryTodo[];
+}
+
+export interface MilitaryRosterEntry {
+  user: { _id: string; name: string; photoUrl?: string | null; collegeId: string };
+  completed: number;
+  total: number;
+  streak: number;
+  attendedDays: number;
+  lastCheckIn: string | null;
+}
+
+export interface MilitaryRoster {
+  totalAssignments: number;
+  students: MilitaryRosterEntry[];
+  // Size of the admin-uploaded unit name list (0 when none was uploaded and every student shows).
+  rosterCount: number;
+  // Roster names that matched no account, or matched more than one.
+  unmatchedNames: string[];
+}
+
+export interface MilitaryRosterUploadResult {
+  total: number;
+  matched: number;
+  unmatched: number;
+  unmatchedNames: string[];
 }
 
 // Public question shape -- correctIndex is only present once the viewer has attempted the quiz
@@ -729,4 +819,70 @@ export interface AiMessage {
   // failed) rather than a genuine model answer -- render as a setup/outage notice, not an answer.
   stub?: boolean;
   createdAt: string;
+}
+
+// --- GPA calculator (src/gpa) ---
+
+export interface GpaCourse {
+  _id: string;
+  owner: string;
+  name: string;
+  creditHours: number;
+  grade: GradeLetter | null;
+  term: string;
+  countsTowardGpa: boolean;
+  createdAt: string;
+}
+
+export interface GpaTermSummary {
+  term: string;
+  gpa: number;
+  credits: number;
+}
+
+export interface GpaSummary {
+  cumulative: { gpa: number; credits: number; points: number };
+  terms: GpaTermSummary[];
+  gradedCredits: number;
+  totalCredits: number;
+}
+
+export interface GpaResponse {
+  courses: GpaCourse[];
+  summary: GpaSummary;
+}
+
+// --- Attendance tracker (src/attendance) ---
+
+export type AttendanceStatus = 'attended' | 'absent' | 'excused' | 'cancelled';
+
+export interface AttendanceOccurrence {
+  scheduleEntryId: string;
+  date: string; // YYYY-MM-DD
+  dayOfWeek: 0 | 1 | 2 | 3 | 4 | 5 | 6;
+  courseName: string;
+  startTime: string;
+  endTime: string;
+  location: string | null;
+  status: AttendanceStatus | null;
+}
+
+export interface AttendanceWeek {
+  weekStart: string;
+  occurrences: AttendanceOccurrence[];
+}
+
+export interface AttendanceCourseSummary {
+  courseName: string;
+  attended: number;
+  absent: number;
+  excused: number;
+  cancelled: number;
+  counted: number;
+  percent: number;
+}
+
+export interface AttendanceSummary {
+  courses: AttendanceCourseSummary[];
+  overall: AttendanceCourseSummary;
 }

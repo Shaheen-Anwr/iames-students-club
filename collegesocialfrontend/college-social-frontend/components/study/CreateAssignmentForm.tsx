@@ -18,10 +18,14 @@ const ATTACHMENT_OPTIONS: { type: Exclude<PostAttachmentType, 'none'>; label: st
 
 export function CreateAssignmentForm({
   groupId,
+  isMilitary = false,
   onCreated,
   onClose,
 }: {
   groupId?: string;
+  // When true, this is a التربية العسكرية assignment: no course-code field (the backend
+  // labels it), always global to every student.
+  isMilitary?: boolean;
   onCreated: (assignment: Assignment) => void;
   onClose: () => void;
 }) {
@@ -56,8 +60,9 @@ export function CreateAssignmentForm({
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
 
-    if (!title.trim() || !date || (!groupId && !courseCode.trim())) {
-      showToast(groupId ? 'العنوان وتاريخ التسليم مطلوبان.' : 'العنوان ورمز المقرر وتاريخ التسليم مطلوبة.', 'error');
+    const courseCodeRequired = !groupId && !isMilitary;
+    if (!title.trim() || !date || (courseCodeRequired && !courseCode.trim())) {
+      showToast(courseCodeRequired ? 'العنوان ورمز المقرر وتاريخ التسليم مطلوبة.' : 'العنوان وتاريخ التسليم مطلوبان.', 'error');
       return;
     }
 
@@ -98,6 +103,7 @@ export function CreateAssignmentForm({
 
       if (description.trim()) payload.description = description.trim();
       if (courseCode.trim()) payload.courseCode = courseCode.trim();
+      if (isMilitary) payload.isMilitary = true;
       if (attachmentUrl) payload.attachmentUrl = attachmentUrl;
       if (attachmentOriginalName) payload.attachmentOriginalName = attachmentOriginalName;
 
@@ -139,13 +145,15 @@ export function CreateAssignmentForm({
 
       <Textarea rows={3} placeholder="تفاصيل الواجب (اختياري)" value={description} onChange={(e) => setDescription(e.target.value)} />
 
-      <Input
-        label={groupId ? 'رمز المقرر (اختياري)' : 'رمز المقرر'}
-        value={courseCode}
-        onChange={(e) => setCourseCode(e.target.value)}
-        placeholder="مثال: CS101"
-        required={!groupId}
-      />
+      {!isMilitary && (
+        <Input
+          label={groupId ? 'رمز المقرر (اختياري)' : 'رمز المقرر'}
+          value={courseCode}
+          onChange={(e) => setCourseCode(e.target.value)}
+          placeholder="مثال: CS101"
+          required={!groupId}
+        />
+      )}
 
       <div className="grid grid-cols-2 gap-3">
         <Input label="تاريخ التسليم" type="date" value={date} onChange={(e) => setDate(e.target.value)} required />

@@ -2,8 +2,8 @@
 
 import { FormEvent, useRef, useState, useEffect } from 'react';
 import Link from 'next/link';
-import { useRouter } from 'next/navigation';
-import { Camera, GraduationCap, BookOpen, Check, X } from 'lucide-react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Camera, GraduationCap, BookOpen, Check, X, Gift } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { ApiError } from '@/lib/api';
 import { cn } from '@/lib/utils';
@@ -17,7 +17,12 @@ import { Logo } from '@/components/ui/Logo';
 export function RegisterForm() {
   const { register } = useAuth();
   const router = useRouter();
+  const searchParams = useSearchParams();
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Invite code carried in from a share link, e.g. /register?ref=2430525. Read once on mount so
+  // it survives the user editing other fields; passed straight to the backend on submit.
+  const [referralCode] = useState(() => (searchParams.get('ref') ?? '').trim());
 
   const [collegeId, setCollegeId] = useState('');
   const [name, setName] = useState('');
@@ -111,6 +116,7 @@ export function RegisterForm() {
         role,
         department,
         photo,
+        referralCode: referralCode || undefined,
       });
       if (me.role === 'professor') {
         router.push('/study/assignments?new=1');
@@ -134,6 +140,15 @@ export function RegisterForm() {
         <h1 className="text-2xl font-semibold tracking-tight text-foreground">أنشئ حسابك</h1>
         <p className="text-sm text-muted-foreground">حصريًا لطلاب وأساتذة IAEMS.</p>
       </div>
+
+      {referralCode && (
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/10 px-3 py-2 text-sm text-accent">
+          <Gift className="h-4 w-4 shrink-0" />
+          <span>
+            دعاك صديقك للانضمام عبر رمز <bdi dir="ltr" className="font-semibold">{referralCode}</bdi> — أكمل التسجيل ليحصل على نقاطه.
+          </span>
+        </div>
+      )}
 
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="flex justify-center">

@@ -44,8 +44,24 @@ export class AuthService {
     // code -- new accounts just sit unverified until an admin reviews them from the dashboard.
     const user = await this.usersService.create({ ...dto, passwordHash });
     await this.gamificationService.recordActivity(user.id);
+    if (dto.referralCode) await this.applyReferral(user, dto.referralCode);
     const tokens = await this.issueTokens(user.id, user.collegeId, user.role, user.department, meta);
     return { ...tokens, user: this.publicUser(user) };
+  }
+
+  // Best-effort: links the new account to the inviter (by collegeId) and credits the referral.
+  // Any failure here -- unknown code, self-referral, DB hiccup -- is swallowed so it can never
+  // strand a student mid-signup with an account that already exists.
+  private async applyReferral(newUser: UserDocument, code: string): Promise<void> {
+    try {
+      const referrer = await this.usersService.findByCollegeId(code.trim());
+      if (!referrer || referrer.id === newUser.id) return;
+      newUser.referredBy = new Types.ObjectId(referrer.id);
+      await newUser.save();
+      await this.gamificationService.recordReferral(referrer.id);
+    } catch {
+      // ignore -- a bad referral code must not break registration
+    }
   }
 
   async login(dto: LoginDto, meta: RequestMeta) {

@@ -10,9 +10,10 @@ const FEATURES = [
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
     <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-2">
-      <div className="relative hidden flex-col justify-between overflow-hidden bg-[#05070b] p-12 text-white lg:flex">
-        <div className="absolute -right-24 -top-24 h-72 w-72 rounded-full bg-accent/30 blur-3xl" />
-        <div className="absolute -bottom-32 -left-16 h-72 w-72 rounded-full bg-accent-2/20 blur-3xl" />
+      <div className="bg-mesh relative hidden flex-col justify-between overflow-hidden bg-[#0B0C12] p-12 text-white lg:flex">
+        <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-accent/30 blur-3xl" />
+        <div className="absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-accent-2/20 blur-3xl" />
+        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0B0C12] via-transparent to-transparent" />
 
         <div className="relative">
           <Logo size="md" />

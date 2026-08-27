@@ -46,11 +46,15 @@ export function notificationHref(notification: Notification): string {
     case 'friend_request':
     case 'friend_accept':
       return notification.actor ? `/profile/${notification.actor._id}` : '/feed';
+    // Comment-centric: land on the post with its comments already open.
     case 'post_comment':
-    case 'post_reaction':
-    case 'post_share':
     case 'comment_reply':
     case 'comment_reaction':
+      return notification.postId ? `/posts/${notification.postId}?comments=1` : '/feed';
+    // Post-centric: land on the post itself.
+    case 'post_reaction':
+    case 'post_share':
+      return notification.postId ? `/posts/${notification.postId}` : '/feed';
     default:
       return '/feed';
   }

@@ -26,6 +26,7 @@ import { REACTION_COLORS, ReactionIcon } from './reaction-icons';
 import { ReactionPicker } from './ReactionPicker';
 import { ReactionsListModal } from './ReactionsListModal';
 import { ShareModal } from './ShareModal';
+import { SharedPostPreview } from './SharedPostPreview';
 
 // A plain icon action button -- the shared look for the like/comment/share/save row below.
 function ActionIconButton({
@@ -58,11 +59,15 @@ export function PostCard({
   onDeleted,
   onSavedChange,
   onShared,
+  initialCommentsOpen = false,
 }: {
   post: Post;
   onDeleted: (id: string) => void;
   onSavedChange?: (id: string, saved: boolean) => void;
   onShared?: (post: Post) => void;
+  // Open the comments modal as soon as the card mounts -- used by the post permalink page when a
+  // "commented on your post" notification is opened.
+  initialCommentsOpen?: boolean;
 }) {
   const { user } = useAuth();
   const { shareToAi } = useAi();
@@ -75,7 +80,7 @@ export function PostCard({
   const [shareModalOpen, setShareModalOpen] = useState(false);
   const [shareCount, setShareCount] = useState(post.shareCount ?? 0);
   const [commentCount, setCommentCount] = useState(post.commentCount);
-  const [commentsOpen, setCommentsOpen] = useState(false);
+  const [commentsOpen, setCommentsOpen] = useState(initialCommentsOpen);
 
   const [editing, setEditing] = useState(false);
   const [caption, setCaption] = useState(post.caption);
@@ -281,6 +286,8 @@ export function PostCard({
           </p>
         )
       )}
+
+      {post.sharedFrom && <SharedPostPreview post={post.sharedFrom} />}
 
       {post.attachmentType !== 'none' && (
         <div className="mt-4">

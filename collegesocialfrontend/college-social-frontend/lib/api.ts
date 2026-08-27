@@ -1,4 +1,5 @@
 import Cookies from 'js-cookie';
+import { compressImage, compressImages, type CompressImageOptions } from './compress-image';
 
 // Relative by default -- see next.config.js's rewrites(), which proxies /api/* to the real
 // backend so the refresh-token cookie stays same-site instead of a droppable cross-site one.
@@ -299,23 +300,47 @@ function assertWithinSizeLimit(path: string, file: File) {
   }
 }
 
+// Upload endpoints whose payload is a photo meant purely for on-screen display -- these get
+// downscaled + re-encoded to WebP in the browser first (see lib/compress-image.ts), so a 12MP
+// phone photo uploads as ~0.5MB instead of ~8MB, lands well under Cloudinary's free-tier 10MB
+// image cap, and costs almost nothing against the storage quota. The size check runs on the
+// *compressed* file so a huge original that shrinks fine is accepted, while one that somehow
+// can't be re-encoded still gets a clear "too large" error instead of failing at the server.
+const IMAGE_UPLOAD_COMPRESS_OPTS: Record<string, CompressImageOptions> = {
+  // An avatar renders at most ~256px; 1024 is already 2x headroom for a high-DPR screen.
+  photo: { maxEdge: 1024 },
+  'cover-photo': { maxEdge: 2560 },
+  'post-images': { maxEdge: 2560 },
+  'chat-background': { maxEdge: 2560 },
+};
+
+function compressOptsFor(path: string): CompressImageOptions | null {
+  return IMAGE_UPLOAD_COMPRESS_OPTS[path.replace(/^\/?upload\//, '')] ?? null;
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   post: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'POST', body: data !== undefined ? JSON.stringify(data) : undefined }),
   patch: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'PATCH', body: data !== undefined ? JSON.stringify(data) : undefined }),
+  put: <T>(path: string, data?: unknown) =>
+    request<T>(path, { method: 'PUT', body: data !== undefined ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
-  upload: <T>(path: string, file: File, onProgress?: UploadProgressHandler) => {
-    assertWithinSizeLimit(path, file);
+  upload: async <T>(path: string, file: File, onProgress?: UploadProgressHandler) => {
+    const opts = compressOptsFor(path);
+    const prepared = opts ? await compressImage(file, opts) : file;
+    assertWithinSizeLimit(path, prepared);
     const formData = new FormData();
-    formData.append('file', file);
+    formData.append('file', prepared);
     return uploadWithProgress<T>(path, formData, onProgress);
   },
-  uploadMany: <T>(path: string, files: File[], onProgress?: UploadProgressHandler) => {
-    for (const file of files) assertWithinSizeLimit(path, file);
+  uploadMany: async <T>(path: string, files: File[], onProgress?: UploadProgressHandler) => {
+    const opts = compressOptsFor(path);
+    const prepared = opts ? await compressImages(files, opts) : files;
+    for (const file of prepared) assertWithinSizeLimit(path, file);
     const formData = new FormData();
-    for (const file of files) formData.append('files', file);
+    for (const file of prepared) formData.append('files', file);
     return uploadWithProgress<T>(path, formData, onProgress);
   },
 };
