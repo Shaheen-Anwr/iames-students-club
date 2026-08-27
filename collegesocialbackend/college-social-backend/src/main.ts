@@ -1,9 +1,21 @@
+import { setDefaultResultOrder } from 'dns';
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
 import * as cookieParser from 'cookie-parser';
 import { Model } from 'mongoose';
+
+// Node's built-in fetch (undici) resolves and races both A/AAAA records by default. On some hosts/
+// containers, outbound IPv6 is present in DNS but not actually routable -- every fetch() call then
+// eats a real connect timeout on the (dead) IPv6 address before it ever falls back to IPv4, which
+// can make it fail outright rather than just being slow (confirmed directly against this app's own
+// Cloudinary account: fetch() consistently threw ETIMEDOUT/ENETUNREACH while curl to the identical
+// URL succeeded immediately). This affects every fetch() in the app -- StorageService.getObject()'s
+// Cloudinary fallback, PostsService.streamAttachment()'s chunk reassembly, link previews, etc. --
+// so it's fixed once here rather than per call site. IPv4-first is also simply the safer default
+// for a typical server host regardless of this specific bug.
+setDefaultResultOrder('ipv4first');
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { corsOriginValidator } from './common/cors-origin';

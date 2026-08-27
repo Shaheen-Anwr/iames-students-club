@@ -33,8 +33,9 @@ services:
         sync: false
       - key: FRONTEND_URL
         sync: false
-      - key: MAX_FILE_SIZE_MB
-        value: "200"
+      # Per-category upload size limits (MAX_VIDEO_SIZE_MB, MAX_LECTURE_SIZE_MB, etc.) are optional
+      # -- each falls back to a built-in default suited to that content type when unset (see
+      # src/upload/multer.config.ts). Add one here only to override a specific category.
       - key: COLLEGE_EMAIL_DOMAIN
         sync: false
       # smtp-relay.brevo.com:587 is Brevo's free-tier relay (see EmailService/.env.example for why

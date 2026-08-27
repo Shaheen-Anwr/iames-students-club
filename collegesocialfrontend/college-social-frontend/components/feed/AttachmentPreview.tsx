@@ -3,6 +3,7 @@
 import { useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Download, FileText, Paperclip, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
+import { postAttachmentUrl } from '@/lib/api';
 import { assetUrl, formatBytes } from '@/lib/utils';
 import type { Post, PostAttachmentType } from '@/lib/types';
 import { ImageGallery } from './ImageGallery';
@@ -20,7 +21,10 @@ const DOCUMENT_COLORS: Record<'lecture' | 'file', { text: string; bg: string }> 
   file: { text: 'text-slate-400', bg: 'bg-slate-400/15' },
 };
 
-type AttachmentPreviewProps = Pick<Post, 'attachmentType' | 'attachmentUrl' | 'attachmentOriginalName' | 'attachmentSize' | 'images'>;
+type AttachmentPreviewProps = Pick<Post, 'attachmentType' | 'attachmentUrl' | 'attachmentOriginalName' | 'attachmentSize' | 'images'> & {
+  // Required for 'lecture'/'file' -- see postAttachmentUrl(). Not needed for 'image'/'video'/'none'.
+  postId?: string;
+};
 
 export function isPdf(url: string, name?: string | null) {
   return url.toLowerCase().endsWith('.pdf') || (name ?? '').toLowerCase().endsWith('.pdf');
@@ -60,7 +64,7 @@ function VideoPlayer({ url }: { url: string }) {
   );
 }
 
-export function AttachmentPreview({ attachmentType, attachmentUrl, attachmentOriginalName, attachmentSize, images }: AttachmentPreviewProps) {
+export function AttachmentPreview({ attachmentType, attachmentUrl, attachmentOriginalName, attachmentSize, images, postId }: AttachmentPreviewProps) {
   const [previewOpen, setPreviewOpen] = useState(false);
 
   if (attachmentType === 'none') return null;
@@ -71,11 +75,18 @@ export function AttachmentPreview({ attachmentType, attachmentUrl, attachmentOri
   }
 
   if (!attachmentUrl) return null;
-  const url = assetUrl(attachmentUrl)!;
 
   if (attachmentType === 'video') {
-    return <VideoPlayer url={url} />;
+    // Always a complete, directly playable Cloudinary URL even when the source video was too large
+    // for one asset and got split -- see the backend's StorageService.upload() splice path. No
+    // proxy needed.
+    return <VideoPlayer url={assetUrl(attachmentUrl)!} />;
   }
+
+  // 'lecture'/'file' go through the backend instead of attachmentUrl directly -- it transparently
+  // reassembles an attachment that was too large for one Cloudinary asset (see postAttachmentUrl()),
+  // and just redirects straight to Cloudinary for a normal, unsplit one.
+  const url = postId ? postAttachmentUrl(postId) : assetUrl(attachmentUrl)!;
 
   const Icon = attachmentType === 'lecture' ? FileText : Paperclip;
   const colors = DOCUMENT_COLORS[attachmentType];

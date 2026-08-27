@@ -6,6 +6,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import { MentionTextarea } from '@/components/shared/MentionTextarea';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -50,6 +51,7 @@ export function CreatePostBox({
   const [academicYear, setAcademicYear] = useState<AcademicYear | ''>(user?.academicYear ?? '');
   const [specialization, setSpecialization] = useState<Specialization | ''>(user?.specialization ?? '');
   const [submitting, setSubmitting] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
 
   const academicYearOptions = user?.department ? getAcademicYearsForDepartment(user.department) : [];
   const specializationOptions = user?.department ? SPECIALIZATIONS_BY_DEPARTMENT[user.department] : [];
@@ -125,21 +127,26 @@ export function CreatePostBox({
       let attachmentUrl: string | undefined;
       let attachmentOriginalName: string | undefined;
       let attachmentSize: number | undefined;
+      let attachmentChunkCount: number | undefined;
       let attachmentType: PostAttachmentType = 'none';
       let uploadedImages: string[] | undefined;
 
       if (images.length > 0) {
+        setUploadPercent(0);
         const { images: urls } = await api.uploadMany<{ images: string[] }>(
           '/upload/post-images',
           images.map((img) => img.file),
+          setUploadPercent,
         );
         uploadedImages = urls;
         attachmentType = 'image';
       } else if (file && pendingType) {
-        const uploaded = await api.upload<UploadResult>(`/upload/${pendingType}`, file);
+        setUploadPercent(0);
+        const uploaded = await api.upload<UploadResult>(`/upload/${pendingType}`, file, setUploadPercent);
         attachmentUrl = uploaded.url;
         attachmentOriginalName = file.name;
         attachmentSize = uploaded.size;
+        attachmentChunkCount = uploaded.chunkCount;
         attachmentType = pendingType;
       }
 
@@ -149,6 +156,7 @@ export function CreatePostBox({
         attachmentUrl,
         attachmentOriginalName,
         attachmentSize,
+        attachmentChunkCount,
         images: uploadedImages,
         courseCode: courseCode.trim() || undefined,
         scope,
@@ -167,6 +175,7 @@ export function CreatePostBox({
       showToast(err instanceof ApiError ? err.message : 'تعذّر إنشاء المنشور.', 'error');
     } finally {
       setSubmitting(false);
+      setUploadPercent(null);
     }
   }
 
@@ -229,12 +238,14 @@ export function CreatePostBox({
                 <p className="truncate text-sm font-medium text-foreground">{file.name}</p>
                 <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
               </div>
-              <button
-                onClick={clearAttachment}
-                className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface hover:text-danger"
-              >
-                <X className="h-4 w-4" />
-              </button>
+              {!submitting && (
+                <button
+                  onClick={clearAttachment}
+                  className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface hover:text-danger"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              )}
             </div>
           )}
 
@@ -243,14 +254,25 @@ export function CreatePostBox({
               {images.map((img, i) => (
                 <div key={img.previewUrl} className="group relative aspect-square overflow-hidden rounded-xl2 bg-surface-2">
                   <img src={img.previewUrl} alt="" className="h-full w-full object-cover" />
-                  <button
-                    onClick={() => removeImage(i)}
-                    className="absolute end-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white transition-opacity hover:bg-black/80"
-                  >
-                    <X className="h-3.5 w-3.5" />
-                  </button>
+                  {!submitting && (
+                    <button
+                      onClick={() => removeImage(i)}
+                      className="absolute end-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white transition-opacity hover:bg-black/80"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               ))}
+            </div>
+          )}
+
+          {uploadPercent !== null && (
+            <div className="flex flex-col gap-1.5">
+              <ProgressBar percent={uploadPercent} />
+              <span className="text-center text-xs text-muted-foreground">
+                {uploadPercent < 100 ? `جاري الرفع… ${uploadPercent}%` : 'جاري النشر…'}
+              </span>
             </div>
           )}
 
@@ -259,7 +281,8 @@ export function CreatePostBox({
               <button
                 type="button"
                 onClick={pickImages}
-                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+                disabled={submitting}
+                className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
               >
                 <ImageIcon className="h-4 w-4" />
                 صورة
@@ -269,7 +292,8 @@ export function CreatePostBox({
                   key={type}
                   type="button"
                   onClick={() => pickFile(type)}
-                  className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+                  disabled={submitting}
+                  className="flex items-center gap-1.5 rounded-full px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <Icon className="h-4 w-4" />
                   {label}

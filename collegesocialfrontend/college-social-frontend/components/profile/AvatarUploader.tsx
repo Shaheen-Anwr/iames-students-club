@@ -10,6 +10,14 @@ import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import type { UploadResult } from '@/lib/types';
 
+function getOptimizedAvatarUrl(url?: string | null) {
+  if (!url) return undefined;
+  if (url.includes('res.cloudinary.com') && !url.includes('/f_auto')) {
+    return url.replace('/upload/', '/upload/f_auto,q_auto,w_250,h_250,c_fill/');
+  }
+  return url;
+}
+
 export function AvatarUploader({
   photoUrl,
   name,
@@ -29,7 +37,9 @@ export function AvatarUploader({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+
     setUploading(true);
+
     try {
       const result = await api.upload<UploadResult>('/upload/photo', file);
       onUploaded(result.url);
@@ -55,10 +65,12 @@ export function AvatarUploader({
     }
   }
 
+  const optimizedPhotoUrl = getOptimizedAvatarUrl(photoUrl);
+
   return (
     <div className="group relative">
       <Avatar
-        src={photoUrl}
+        src={optimizedPhotoUrl}
         name={name}
         size="xl"
         ring

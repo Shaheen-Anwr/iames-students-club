@@ -16,6 +16,11 @@ export class LectureFolder {
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   createdBy: Types.ObjectId;
+
+  // Populated automatically by { timestamps: true } below -- declared here only so TS knows about
+  // them on a hydrated document (e.g. PostsService.toLectureFolderDto()).
+  createdAt: Date;
+  updatedAt: Date;
 }
 
 export const LectureFolderSchema = SchemaFactory.createForClass(LectureFolder);

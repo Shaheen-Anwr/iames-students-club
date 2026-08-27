@@ -65,6 +65,15 @@ export class Post {
   @Prop({ type: Number, required: false, default: null })
   attachmentSize: number | null;
 
+  // >1 only when the original file exceeded Cloudinary's per-asset cap (see StorageService.upload())
+  // and was split into multiple assets named "<base>-part-0", "-part-1", etc. -- attachmentUrl still
+  // points at part 0. For 'lecture'/'file' (raw) attachments, PostsController's GET :id/attachment
+  // derives and re-streams the remaining parts as one continuous file; for 'video', no special
+  // handling is needed since attachmentUrl is already a Cloudinary splice/concatenation URL that
+  // plays all parts as a single video. null/1 means a normal, unsplit upload.
+  @Prop({ type: Number, required: false, default: null })
+  attachmentChunkCount: number | null;
+
   // Only populated when attachmentType is 'image' -- a Facebook-style multi-photo post. Every
   // other attachment type carries exactly one file via attachmentUrl above.
   @Prop({ type: [String], default: [] })

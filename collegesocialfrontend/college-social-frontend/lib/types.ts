@@ -111,6 +111,12 @@ export interface Post {
   attachmentUrl?: string | null;
   attachmentOriginalName?: string | null;
   attachmentSize?: number | null;
+  // >1 when the original upload was too large for a single Cloudinary asset and got split (see the
+  // backend's StorageService.upload()). Only meaningful for 'lecture'/'file' -- fetch such an
+  // attachment via `/posts/${_id}/attachment` (assetUrl-style helper) rather than attachmentUrl
+  // directly so the backend can transparently reassemble it. 'video' needs no such handling:
+  // attachmentUrl is already a complete, directly playable Cloudinary URL either way.
+  attachmentChunkCount?: number | null;
   // Only set when attachmentType is 'image' -- a multi-photo post.
   images?: string[];
   courseCode?: string | null;
@@ -595,6 +601,9 @@ export interface SharedMedia {
 
 export interface UploadResult {
   url: string;
+  // >1 when the file was too large for a single Cloudinary asset and got split -- see Post's
+  // attachmentChunkCount and the backend's StorageService.upload(). Absent/1 for a normal upload.
+  chunkCount?: number;
   originalName?: string;
   size: number;
   mimeType: string;

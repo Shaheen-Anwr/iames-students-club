@@ -2,13 +2,16 @@
 
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
-import { ChevronLeft, FileText, Folder, Plus, Video } from 'lucide-react';
+import { ChevronLeft, FileText, Folder, MoreHorizontal, Pencil, Plus, Trash2, Video } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
+import { Dropdown } from '@/components/ui/Dropdown';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { cn, timeAgo } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { useToast } from '@/lib/toast-context';
 import type { LectureFolder, PostAttachmentType } from '@/lib/types';
 import { CreateFolderModal } from './CreateFolderModal';
 
@@ -39,10 +42,14 @@ export function LectureFoldersGrid({
   emptyLabel: string;
 }) {
   const { user } = useAuth();
+  const { showToast } = useToast();
   const canManage = user?.role === 'admin' || user?.role === 'professor';
   const [folders, setFolders] = useState<LectureFolder[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
+  const [editingFolder, setEditingFolder] = useState<LectureFolder | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<LectureFolder | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     setLoading(true);
@@ -52,8 +59,39 @@ export function LectureFoldersGrid({
       .finally(() => setLoading(false));
   }, [attachmentType]);
 
-  function handleCreated(folder: LectureFolder) {
-    setFolders((prev) => [folder, ...prev]);
+  function openCreate() {
+    setEditingFolder(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(folder: LectureFolder) {
+    setEditingFolder(folder);
+    setModalOpen(true);
+  }
+
+  function handleSaved(folder: LectureFolder) {
+    setFolders((prev) => {
+      const exists = prev.some((f) => f.id === folder.id);
+      if (exists) return prev.map((f) => (f.id === folder.id ? folder : f));
+      return [folder, ...prev];
+    });
+    setModalOpen(false);
+    setEditingFolder(null);
+  }
+
+  async function confirmDelete() {
+    if (!deleteTarget?.id) return;
+    setDeleting(true);
+    try {
+      await api.delete(`/posts/lectures/folders/${deleteTarget.id}`);
+      setFolders((prev) => prev.filter((f) => f.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      showToast('تم حذف المجلد بنجاح.');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر حذف المجلد.', 'error');
+    } finally {
+      setDeleting(false);
+    }
   }
 
   const Icon = attachmentType === 'lecture' ? FileText : Video;
@@ -66,7 +104,7 @@ export function LectureFoldersGrid({
           {title}
         </h1>
         {canManage && (
-          <Button size="sm" onClick={() => setModalOpen(true)}>
+          <Button size="sm" onClick={openCreate}>
             <Plus className="h-4 w-4" />
             مجلد جديد
           </Button>
@@ -84,13 +122,20 @@ export function LectureFoldersGrid({
         </div>
       ) : (
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {folders.map((folder) => (
-            <Link key={folder.name} href={`${basePath}/${encodeURIComponent(folder.name)}`} className="group">
-              <Card className="flex items-center gap-3 p-5 transition-shadow hover:shadow-card">
-                <div className={cn('flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl', folderColor(folder.name))}>
+          {folders.map((folder) => {
+            const canManageThis = canManage && Boolean(folder.id);
+            return (
+              <Card key={folder.id ?? folder.name} className="group relative flex items-center gap-3 p-5 transition-shadow hover:shadow-card">
+                <Link href={`${basePath}/${encodeURIComponent(folder.name)}`} className="absolute inset-0 z-0" aria-label={folder.name} />
+                <div
+                  className={cn(
+                    'pointer-events-none relative z-10 flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl',
+                    folderColor(folder.name),
+                  )}
+                >
                   <Folder className="h-6 w-6" />
                 </div>
-                <div className="min-w-0 flex-1">
+                <div className="pointer-events-none relative z-10 min-w-0 flex-1">
                   <p className="truncate text-sm font-semibold text-foreground">{folder.name}</p>
                   <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
                     <span>{folder.lectureCount} محاضرة</span>
@@ -102,14 +147,49 @@ export function LectureFoldersGrid({
                     )}
                   </div>
                 </div>
-                <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-x-1" />
+                {canManageThis ? (
+                  <div className="relative z-10 shrink-0">
+                    <Dropdown
+                      trigger={
+                        <span className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
+                          <MoreHorizontal className="h-[18px] w-[18px]" />
+                        </span>
+                      }
+                      items={[
+                        { label: 'إعادة تسمية', icon: Pencil, onClick: () => openEdit(folder) },
+                        { label: 'حذف المجلد', icon: Trash2, onClick: () => setDeleteTarget(folder), destructive: true },
+                      ]}
+                    />
+                  </div>
+                ) : (
+                  <ChevronLeft className="pointer-events-none relative z-10 h-4 w-4 shrink-0 text-muted-foreground transition-transform group-hover:-translate-x-1" />
+                )}
               </Card>
-            </Link>
-          ))}
+            );
+          })}
         </div>
       )}
 
-      <CreateFolderModal open={modalOpen} onClose={() => setModalOpen(false)} onCreated={handleCreated} attachmentType={attachmentType} />
+      <CreateFolderModal
+        open={modalOpen}
+        onClose={() => {
+          setModalOpen(false);
+          setEditingFolder(null);
+        }}
+        onSaved={handleSaved}
+        attachmentType={attachmentType}
+        folder={editingFolder}
+      />
+
+      <ConfirmModal
+        open={Boolean(deleteTarget)}
+        onClose={() => setDeleteTarget(null)}
+        onConfirm={confirmDelete}
+        title="حذف المجلد"
+        message={`هل أنت متأكد من حذف مجلد "${deleteTarget?.name ?? ''}"؟ لن يتم حذف المحاضرات الموجودة بداخله.`}
+        confirmLabel="حذف"
+        loading={deleting}
+      />
     </div>
   );
 }

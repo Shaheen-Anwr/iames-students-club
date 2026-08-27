@@ -15,9 +15,9 @@ export default () => ({
     expiresIn: process.env.JWT_EXPIRES_IN ?? '15m',
   },
   refreshTokenExpiresInDays: parseInt(process.env.REFRESH_TOKEN_EXPIRES_IN_DAYS ?? '30', 10),
-  upload: {
-    maxFileSizeMb: parseInt(process.env.MAX_FILE_SIZE_MB ?? '200', 10),
-  },
+  // Per-category upload size limits (MAX_VIDEO_SIZE_MB, MAX_LECTURE_SIZE_MB, etc.) are read
+  // directly from process.env in src/upload/multer.config.ts, not here -- Nest evaluates
+  // @UseInterceptors(FileInterceptor(...)) decorator arguments before DI/ConfigService exist.
   collegeEmailDomain: process.env.COLLEGE_EMAIL_DOMAIN ?? '',
   // Plain SMTP for verification/reset emails -- works with any provider, no code changes to
   // switch. See EmailService and .env.example for why (Brevo's free tier is the recommended one).

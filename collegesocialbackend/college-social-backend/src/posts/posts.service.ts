@@ -1,6 +1,7 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { Response } from 'express';
 import { Post, PostAttachmentType, PostDocument, PostScope, ReactionType } from './schemas/post.schema';
 import { Comment, CommentDocument } from './schemas/comment.schema';
 import { LectureFolder, LectureFolderDocument } from './schemas/lecture-folder.schema';
@@ -44,6 +45,8 @@ export interface PostStats {
 
 @Injectable()
 export class PostsService {
+  private readonly logger = new Logger(PostsService.name);
+
   constructor(
     @InjectModel(Post.name) private postModel: Model<PostDocument>,
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
@@ -102,6 +105,7 @@ export class PostsService {
       attachmentUrl: dto.attachmentUrl ?? null,
       attachmentOriginalName: dto.attachmentOriginalName ?? null,
       attachmentSize: dto.attachmentSize ?? null,
+      attachmentChunkCount: dto.attachmentChunkCount ?? null,
       images: dto.images ?? [],
       courseCode: dto.courseCode ?? null,
       scope,
@@ -251,6 +255,74 @@ export class PostsService {
       .exec();
     if (!post) throw new NotFoundException('المنشور غير موجود');
     return post;
+  }
+
+  private static readonly ATTACHMENT_MIME_BY_EXT: Record<string, string> = {
+    pdf: 'application/pdf',
+    ppt: 'application/vnd.ms-powerpoint',
+    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+    doc: 'application/msword',
+    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    txt: 'text/plain',
+  };
+
+  // Streams a post's 'lecture'/'file' (raw) attachment to the response. An ordinary, unsplit
+  // attachment is just a 302 redirect straight to Cloudinary -- zero extra bandwidth through this
+  // server. A chunked one (attachmentChunkCount > 1, see StorageService.upload()'s raw-splitting
+  // path) is reassembled here by fetching each "<group>-part-<i>" piece in turn and writing its
+  // bytes to the response in order, so the client only ever sees one continuous file and never has
+  // to know it was split. Buffers one part (well under Cloudinary's per-asset cap) at a time rather
+  // than the whole reconstructed file, keeping memory bounded regardless of the total size.
+  async streamAttachment(id: string, res: Response): Promise<void> {
+    const post = await this.postModel.findById(id).lean().exec();
+    if (!post || !post.attachmentUrl) throw new NotFoundException('المرفق غير موجود');
+
+    const chunkCount = post.attachmentChunkCount ?? 1;
+    if (chunkCount <= 1) {
+      res.redirect(post.attachmentUrl);
+      return;
+    }
+
+    const ext = (post.attachmentOriginalName ?? '').split('.').pop()?.toLowerCase() ?? '';
+    const displayName = post.attachmentOriginalName ?? 'file';
+    // Non-ASCII (e.g. Arabic) filenames aren't valid in a plain `filename=` header value -- give a
+    // sanitized ASCII fallback alongside the real name via the RFC 5987 `filename*=` form.
+    const asciiFallback = displayName.replace(/[^\x20-\x7E]/g, '_');
+    res.setHeader('Content-Type', PostsService.ATTACHMENT_MIME_BY_EXT[ext] ?? 'application/octet-stream');
+    res.setHeader('Content-Disposition', `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(displayName)}`);
+
+    const FETCH_RETRIES = 3;
+    for (let i = 0; i < chunkCount; i += 1) {
+      const partUrl = i === 0 ? post.attachmentUrl : post.attachmentUrl.replace('-part-0', `-part-${i}`);
+      let lastError: unknown;
+      let fetched = false;
+
+      for (let attempt = 1; attempt <= FETCH_RETRIES && !fetched; attempt += 1) {
+        try {
+          const partRes = await fetch(partUrl);
+          if (!partRes.ok) throw new Error(`part ${i} responded ${partRes.status}`);
+          res.write(Buffer.from(await partRes.arrayBuffer()));
+          fetched = true;
+        } catch (error) {
+          lastError = error;
+          // A transient read timeout/connection drop mid-fetch is common enough on a real network
+          // (confirmed directly against this app's own Cloudinary account: intermittent "terminated"
+          // errors on nothing more than a plain sequential fetch) that it shouldn't cost the user a
+          // truncated file -- retry a couple of times with a short backoff before giving up on this
+          // part entirely.
+          if (attempt < FETCH_RETRIES) await new Promise((r) => setTimeout(r, 500 * attempt));
+        }
+      }
+
+      if (!fetched) {
+        // A part failing mid-stream after earlier parts were already written can't cleanly become
+        // a fresh error response (headers/body are already sent) -- log it and end what we have
+        // rather than hang the request open.
+        this.logger.error(`streamAttachment: failed fetching part ${i} of post ${id} after ${FETCH_RETRIES} attempts: ${(lastError as Error)?.message}`);
+        break;
+      }
+    }
+    res.end();
   }
 
   // One reaction per user per post: picking the same type again removes it, a different type
@@ -631,12 +703,39 @@ export class PostsService {
     return result;
   }
 
+  // Live lecture count/last-activity for a single folder name, matching the aggregation in
+  // listLectureFolders() -- used to return a fully-populated folder (not a bare Mongoose doc) from
+  // create/update so the frontend never has to guess/reload to get lectureCount/latestAt.
+  private async lectureFolderStats(
+    attachmentType: 'lecture' | 'video',
+    name: string,
+  ): Promise<{ count: number; latestAt: Date | null }> {
+    const [stats] = await this.postModel.aggregate<{ count: number; latestAt: Date }>([
+      { $match: { attachmentType, courseCode: name } },
+      { $group: { _id: null, count: { $sum: 1 }, latestAt: { $max: '$createdAt' } } },
+    ]);
+    return stats ? { count: stats.count, latestAt: stats.latestAt } : { count: 0, latestAt: null };
+  }
+
+  private async toLectureFolderDto(
+    folder: LectureFolderDocument,
+  ): Promise<{ id: string; name: string; lectureCount: number; latestAt: Date; createdAt: Date }> {
+    const stats = await this.lectureFolderStats(folder.attachmentType, folder.name);
+    return {
+      id: folder._id.toString(),
+      name: folder.name,
+      lectureCount: stats.count,
+      latestAt: stats.latestAt ?? folder.createdAt,
+      createdAt: folder.createdAt,
+    };
+  }
+
   async createLectureFolder(
     userId: string,
     userRole: Role,
     name: string,
     attachmentType: 'lecture' | 'video',
-  ): Promise<LectureFolderDocument> {
+  ): Promise<{ id: string; name: string; lectureCount: number; latestAt: Date; createdAt: Date }> {
     if (userRole === Role.STUDENT) {
       throw new ForbiddenException('إنشاء المجلدات متاح للمشرفين وأعضاء هيئة التدريس فقط');
     }
@@ -654,7 +753,40 @@ export class PostsService {
       attachmentType,
       createdBy: new Types.ObjectId(userId),
     });
-    return folder.save();
+    await folder.save();
+    return this.toLectureFolderDto(folder);
+  }
+
+  // Renames a folder and re-tags every lecture already filed under its old name (courseCode is the
+  // only link between a lecture and its folder -- see the schema comment) so nothing "falls out" of
+  // the folder just because it was renamed.
+  async updateLectureFolder(
+    id: string,
+    requesterId: string,
+    name: string,
+  ): Promise<{ id: string; name: string; lectureCount: number; latestAt: Date; createdAt: Date }> {
+    const folder = await this.lectureFolderModel.findById(id).exec();
+    if (!folder) throw new NotFoundException('المجلد غير موجود');
+    if (folder.createdBy.toString() !== requesterId) {
+      throw new ForbiddenException('يمكنك تعديل المجلدات التي أنشأتها فقط');
+    }
+    const trimmed = name.trim();
+    if (!trimmed) throw new BadRequestException('اسم المجلد مطلوب');
+
+    if (trimmed.toLowerCase() !== folder.name.toLowerCase()) {
+      const existing = await this.lectureFolderModel
+        .findOne({ attachmentType: folder.attachmentType, name: trimmed, _id: { $ne: folder._id } })
+        .collation({ locale: 'en', strength: 2 })
+        .exec();
+      if (existing) throw new BadRequestException('يوجد مجلد بهذا الاسم بالفعل');
+
+      await this.postModel
+        .updateMany({ attachmentType: folder.attachmentType, courseCode: folder.name }, { $set: { courseCode: trimmed } })
+        .exec();
+      folder.name = trimmed;
+      await folder.save();
+    }
+    return this.toLectureFolderDto(folder);
   }
 
   async deleteLectureFolder(id: string, requesterId: string): Promise<void> {

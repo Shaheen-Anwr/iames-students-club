@@ -10,6 +10,14 @@ import { useToast } from '@/lib/toast-context';
 import { cn } from '@/lib/utils';
 import type { UploadResult } from '@/lib/types';
 
+function getOptimizedCoverUrl(url?: string | null) {
+  if (!url) return undefined;
+  if (url.includes('res.cloudinary.com') && !url.includes('/f_auto')) {
+    return url.replace('/upload/', '/upload/f_auto,q_auto,w_1200,c_fill/');
+  }
+  return url;
+}
+
 export function CoverPhotoUploader({
   coverPhotoUrl,
   onUploaded,
@@ -27,7 +35,9 @@ export function CoverPhotoUploader({
     const file = e.target.files?.[0];
     e.target.value = '';
     if (!file) return;
+
     setUploading(true);
+
     try {
       const result = await api.upload<UploadResult>('/upload/cover-photo', file);
       onUploaded(result.url);
@@ -54,18 +64,19 @@ export function CoverPhotoUploader({
   }
 
   const busy = uploading || removing;
+  const optimizedCoverUrl = getOptimizedCoverUrl(coverPhotoUrl);
 
   return (
     <div
       className={cn(
         'group relative h-36 sm:h-48',
-        coverPhotoUrl
+        optimizedCoverUrl
           ? 'bg-cover bg-center'
           : 'bg-gradient-to-l from-background via-surface-2 to-accent/20',
       )}
-      style={coverPhotoUrl ? { backgroundImage: `url(${coverPhotoUrl})` } : undefined}
+      style={optimizedCoverUrl ? { backgroundImage: `url(${optimizedCoverUrl})` } : undefined}
     >
-      {coverPhotoUrl && (
+      {optimizedCoverUrl && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
       )}
       <div className="absolute bottom-3 end-3">

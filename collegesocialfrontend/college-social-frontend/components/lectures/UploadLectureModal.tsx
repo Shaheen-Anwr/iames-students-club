@@ -5,6 +5,7 @@ import { Upload, X } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
@@ -47,6 +48,7 @@ export function UploadLectureModal({
   const [specialization, setSpecialization] = useState<Specialization | ''>('');
   const [file, setFile] = useState<File | null>(null);
   const [submitting, setSubmitting] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState(0);
 
   const specializationOptions = department ? SPECIALIZATIONS_BY_DEPARTMENT[department] : [];
   const academicYearOptions = department ? getAcademicYearsForDepartment(department) : [];
@@ -58,9 +60,11 @@ export function UploadLectureModal({
     setAcademicYear('');
     setSpecialization('');
     setFile(null);
+    setUploadPercent(0);
   }
 
   function handleClose() {
+    if (submitting) return; // avoid orphaning an in-flight upload if the user closes mid-transfer
     reset();
     onClose();
   }
@@ -86,13 +90,16 @@ export function UploadLectureModal({
       return;
     }
     setSubmitting(true);
+    setUploadPercent(0);
     try {
-      const uploaded = await api.upload<UploadResult>(`/upload/${attachmentType}`, file);
+      const uploaded = await api.upload<UploadResult>(`/upload/${attachmentType}`, file, setUploadPercent);
       const post = await api.post<Post>('/posts', {
         caption: caption.trim(),
         attachmentType,
         attachmentUrl: uploaded.url,
         attachmentOriginalName: file.name,
+        attachmentSize: file.size,
+        attachmentChunkCount: uploaded.chunkCount,
         courseCode: courseCode.trim() || undefined,
         department: department || undefined,
         academicYear: academicYear || undefined,
@@ -100,11 +107,13 @@ export function UploadLectureModal({
         scope: 'public',
       });
       onUploaded(post);
-      handleClose();
+      // handleClose() no-ops while submitting (see its guard) -- flip the flag first, then close.
+      setSubmitting(false);
+      reset();
+      onClose();
       showToast('تم رفع الملف بنجاح.');
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر رفع الملف.', 'error');
-    } finally {
       setSubmitting(false);
     }
   }
@@ -115,35 +124,57 @@ export function UploadLectureModal({
         <button
           type="button"
           onClick={() => fileInputRef.current?.click()}
-          className="flex items-center justify-center gap-2 rounded-xl border-2 border-dashed border-border py-6 text-sm text-muted-foreground hover:border-accent hover:text-accent"
+          disabled={submitting}
+          className="flex flex-col items-center justify-center gap-1.5 rounded-xl border-2 border-dashed border-border py-7 text-sm text-muted-foreground transition-colors hover:border-accent hover:bg-accent/5 hover:text-accent disabled:cursor-not-allowed disabled:opacity-60"
         >
-          <Upload className="h-4 w-4" />
-          {file ? 'تغيير الملف' : 'اختر ملفًا'}
+          <Upload className="h-5 w-5" />
+          {file ? 'تغيير الملف' : 'اضغط لاختيار ملف أو اسحبه هنا'}
         </button>
-        <input ref={fileInputRef} type="file" accept={accept} className="hidden" onChange={handleFileChange} />
+        <input ref={fileInputRef} type="file" accept={accept} className="hidden" onChange={handleFileChange} disabled={submitting} />
 
         {file && (
           <div className="flex items-center gap-2 rounded-lg bg-accent/10 px-3 py-2 text-sm text-foreground">
             <span className="truncate">
               {file.name} · {formatBytes(file.size)}
             </span>
-            <button type="button" onClick={() => setFile(null)} className="ms-auto text-muted-foreground hover:text-accent">
-              <X className="h-4 w-4" />
-            </button>
+            {!submitting && (
+              <button type="button" onClick={() => setFile(null)} className="ms-auto text-muted-foreground hover:text-accent">
+                <X className="h-4 w-4" />
+              </button>
+            )}
           </div>
         )}
 
-        <Input placeholder="عنوان (اختياري)" value={caption} onChange={(e) => setCaption(e.target.value)} />
+        {submitting && (
+          <div className="flex flex-col gap-1.5">
+            <ProgressBar percent={uploadPercent} />
+            <span className="text-center text-xs text-muted-foreground">
+              {uploadPercent < 100 ? `جاري الرفع… ${uploadPercent}%` : 'جاري المعالجة…'}
+            </span>
+          </div>
+        )}
+
+        <Input placeholder="عنوان (اختياري)" value={caption} onChange={(e) => setCaption(e.target.value)} disabled={submitting} />
         {lockedCourseCode ? (
           <div className="rounded-lg bg-surface-2 px-3 py-2 text-sm text-muted-foreground">
             المجلد: <span className="font-medium text-foreground">{lockedCourseCode}</span>
           </div>
         ) : (
-          <Input placeholder="رمز المقرر (اختياري)، مثل CS101" value={courseCode} onChange={(e) => setCourseCode(e.target.value)} />
+          <Input
+            placeholder="رمز المقرر (اختياري)، مثل CS101"
+            value={courseCode}
+            onChange={(e) => setCourseCode(e.target.value)}
+            disabled={submitting}
+          />
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <select value={department} onChange={(e) => handleDepartmentChange(e.target.value as Department | '')} className={SELECT_CLASS}>
+          <select
+            value={department}
+            onChange={(e) => handleDepartmentChange(e.target.value as Department | '')}
+            disabled={submitting}
+            className={SELECT_CLASS}
+          >
             <option value="">كل الشعب</option>
             {DEPARTMENTS.map((d) => (
               <option key={d} value={d}>
@@ -154,7 +185,7 @@ export function UploadLectureModal({
           <select
             value={academicYear}
             onChange={(e) => setAcademicYear(e.target.value as AcademicYear | '')}
-            disabled={!department}
+            disabled={!department || submitting}
             className={SELECT_CLASS}
           >
             <option value="">{department ? 'كل السنوات' : 'اختر الشعبة أولًا'}</option>
@@ -169,7 +200,7 @@ export function UploadLectureModal({
         <select
           value={specialization}
           onChange={(e) => setSpecialization(e.target.value as Specialization | '')}
-          disabled={!department}
+          disabled={!department || submitting}
           className={SELECT_CLASS}
         >
           <option value="">{department ? 'كل التخصصات' : 'اختر الشعبة أولًا'}</option>

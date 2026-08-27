@@ -28,6 +28,13 @@ export class CreatePostDto {
   @Min(0)
   attachmentSize?: number;
 
+  // From the upload response's `chunkCount` field -- >1 when the file was too large for a single
+  // Cloudinary asset and got split (see StorageService.upload()). Omitted/1 for a normal upload.
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  attachmentChunkCount?: number;
+
   // Only used when attachmentType is 'image' -- URLs from POST /api/upload/post-images.
   @IsOptional()
   @IsArray()

@@ -7,14 +7,17 @@ import {
   Patch,
   Post as HttpPost,
   Query,
+  Res,
   UseGuards,
 } from '@nestjs/common';
+import { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { PostsService } from './posts.service';
 import { CreatePostDto } from './dto/create-post.dto';
 import { CreateLectureFolderDto } from './dto/create-lecture-folder.dto';
+import { UpdateLectureFolderDto } from './dto/update-lecture-folder.dto';
 import { UpdatePostDto } from './dto/update-post.dto';
 import { SharePostDto } from './dto/share-post.dto';
 import { SetReactionDto } from './dto/set-reaction.dto';
@@ -122,6 +125,17 @@ export class PostsController {
     return this.postsService.createLectureFolder(user.userId, user.role, dto.name, dto.type);
   }
 
+  // PATCH /api/posts/lectures/folders/:id  { name } -- only the folder's own creator may rename it.
+  // Renaming also re-tags every lecture already filed under the old name (see PostsService).
+  @Patch('lectures/folders/:id')
+  async updateLectureFolder(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() dto: UpdateLectureFolderDto,
+  ) {
+    return this.postsService.updateLectureFolder(id, user.userId, dto.name);
+  }
+
   // DELETE /api/posts/lectures/folders/:id -- only the folder's own creator may delete it.
   @Delete('lectures/folders/:id')
   async deleteLectureFolder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
@@ -132,6 +146,17 @@ export class PostsController {
   @Get(':id')
   async findOne(@Param('id') id: string) {
     return this.postsService.findOne(id);
+  }
+
+  // GET /api/posts/:id/attachment -- streams the post's raw/'lecture' or 'file' attachment,
+  // transparently reassembling it when it was too large for a single Cloudinary asset and got split
+  // into pieces on upload (see StorageService.upload()). A normal, unsplit attachment is just
+  // redirected straight to its Cloudinary URL -- no extra bandwidth through this server. Frontend
+  // components should always link/embed a lecture PDF or generic file through this endpoint rather
+  // than a stored attachmentUrl directly, so they never need to know whether it was chunked.
+  @Get(':id/attachment')
+  async streamAttachment(@Param('id') id: string, @Res() res: Response) {
+    await this.postsService.streamAttachment(id, res);
   }
 
   // POST /api/posts/:id/react  { type: 'like'|'dislike'|'care'|'support'|'not_interested'|'sad'|'angry' }

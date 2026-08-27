@@ -5,6 +5,17 @@ import Cookies from 'js-cookie';
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 export const TOKEN_COOKIE = 'college_social_token';
 
+// A 'lecture'/'file' post's attachment should always be linked/embedded through this rather than
+// its raw attachmentUrl -- the backend transparently reassembles it here when it was too large for
+// a single Cloudinary asset and got split on upload (see the backend's StorageService.upload() and
+// PostsController's GET :id/attachment), and just redirects straight to Cloudinary otherwise. Works
+// in plain markup (<a>/<iframe>) with no JS/Authorization header needed: the backend's JWT guard
+// also accepts the same access-token cookie the browser already sends on this same-site request
+// (see the backend's JwtStrategy).
+export function postAttachmentUrl(postId: string): string {
+  return `${API_URL}/posts/${postId}/attachment`;
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -173,6 +184,82 @@ export async function streamAiMessage(
   return attempt(false);
 }
 
+// 0-100. fetch() has no upload-progress event at all, so a real progress bar needs
+// XMLHttpRequest for the upload path specifically -- everything else stays on fetch via request().
+export type UploadProgressHandler = (percent: number) => void;
+
+function uploadWithProgress<T>(path: string, formData: FormData, onProgress?: UploadProgressHandler, isRetry = false): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${API_URL}${path}`);
+    xhr.withCredentials = true;
+    const token = getToken();
+    if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+
+    xhr.upload.onprogress = (e) => {
+      if (onProgress && e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
+    };
+
+    xhr.onload = () => {
+      let body: unknown = null;
+      if (xhr.responseText) {
+        try {
+          body = JSON.parse(xhr.responseText);
+        } catch {
+          body = xhr.responseText;
+        }
+      }
+
+      if (xhr.status === 401 && !isRetry) {
+        refreshAccessToken()
+          .then(() => uploadWithProgress<T>(path, formData, onProgress, true))
+          .then(resolve, () => {
+            clearToken();
+            reject(new ApiError(401, extractMessage(body, 'فشل الطلب (401)')));
+          });
+        return;
+      }
+
+      if (xhr.status < 200 || xhr.status >= 300) {
+        reject(new ApiError(xhr.status, extractMessage(body, `فشل الطلب (${xhr.status})`)));
+        return;
+      }
+
+      resolve(body as T);
+    };
+
+    xhr.onerror = () => reject(new ApiError(0, 'تعذّر الاتصال بالخادم'));
+    xhr.send(formData);
+  });
+}
+
+// Per-category ceiling (MB), mirroring the backend's own limits (see the backend's
+// multer.config.ts SIZE_LIMIT_MB_BY_CATEGORY -- keep these two in sync). Images/audio match what
+// the connected Cloudinary account's plan enforces directly (10MB/100MB on the free tier -- not
+// just an app preference, Cloudinary itself would reject anything larger). 'lecture'/'video'/'file'
+// are higher because the backend transparently splits an oversized upload into multiple sub-cap
+// Cloudinary assets and reassembles them on read (see StorageService.upload()'s chunked path) --
+// this is still a real ceiling (disk space, processing time), just a much more generous one.
+const UPLOAD_MAX_SIZE_MB: Record<string, number> = {
+  photo: 10,
+  'cover-photo': 10,
+  'post-images': 10,
+  lecture: 300, // PDF/PPT/DOC lecture notes and scanned books -- chunked above Cloudinary's 10MB raw cap
+  video: 1024, // lecture recordings -- chunked above Cloudinary's 100MB video cap
+  file: 200, // chunked
+  audio: 100,
+  'chat-background': 10,
+};
+
+function assertWithinSizeLimit(path: string, file: File) {
+  const category = path.replace(/^\/?upload\//, '');
+  const maxMb = UPLOAD_MAX_SIZE_MB[category];
+  if (maxMb === undefined) return;
+  if (file.size > maxMb * 1024 * 1024) {
+    throw new ApiError(413, `حجم الملف "${file.name}" أكبر من الحد المسموح به (${maxMb} ميجابايت).`);
+  }
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   post: <T>(path: string, data?: unknown) =>
@@ -180,14 +267,16 @@ export const api = {
   patch: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'PATCH', body: data !== undefined ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
-  upload: <T>(path: string, file: File) => {
+  upload: <T>(path: string, file: File, onProgress?: UploadProgressHandler) => {
+    assertWithinSizeLimit(path, file);
     const formData = new FormData();
     formData.append('file', file);
-    return request<T>(path, { method: 'POST', body: formData });
+    return uploadWithProgress<T>(path, formData, onProgress);
   },
-  uploadMany: <T>(path: string, files: File[]) => {
+  uploadMany: <T>(path: string, files: File[], onProgress?: UploadProgressHandler) => {
+    for (const file of files) assertWithinSizeLimit(path, file);
     const formData = new FormData();
     for (const file of files) formData.append('files', file);
-    return request<T>(path, { method: 'POST', body: formData });
+    return uploadWithProgress<T>(path, formData, onProgress);
   },
 };
