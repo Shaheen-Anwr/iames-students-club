@@ -8,12 +8,18 @@ export const TOKEN_COOKIE = 'college_social_token';
 // A 'lecture'/'file' post's attachment should always be linked/embedded through this rather than
 // its raw attachmentUrl -- the backend transparently reassembles it here when it was too large for
 // a single Cloudinary asset and got split on upload (see the backend's StorageService.upload() and
-// PostsController's GET :id/attachment), and just redirects straight to Cloudinary otherwise. Works
-// in plain markup (<a>/<iframe>) with no JS/Authorization header needed: the backend's JWT guard
-// also accepts the same access-token cookie the browser already sends on this same-site request
-// (see the backend's JwtStrategy).
+// PostsController's GET :id/attachment), and just redirects straight to Cloudinary otherwise.
+// Plain markup (<a>/<iframe>) can't attach a custom Authorization header, so the current access
+// token is embedded directly as a query param instead -- the backend's JwtStrategy accepts it from
+// there as a fallback. (A same-site cookie fallback also exists server-side, but confirmed in
+// production not to reliably survive the frontend's cross-domain rewrite proxy to the real backend
+// -- this query param is what actually works regardless of that.) Short-lived like any access token;
+// if it's expired by the time this is opened, the request 401s and the caller should re-fetch a
+// fresh post (its attachmentUrl doesn't change, only this wrapper needs a live token).
 export function postAttachmentUrl(postId: string): string {
-  return `${API_URL}/posts/${postId}/attachment`;
+  const token = getToken();
+  const query = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${API_URL}/posts/${postId}/attachment${query}`;
 }
 
 export class ApiError extends Error {
