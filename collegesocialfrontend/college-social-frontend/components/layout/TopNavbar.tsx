@@ -83,7 +83,9 @@ export function TopNavbar() {
         <span className="hidden text-base font-extrabold tracking-tight text-foreground sm:inline">IEAMS Students Club</span>
       </Link>
 
-      <div className="relative w-full max-w-[220px]" ref={searchRef}>
+      {/* Inline search is desktop/tablet only -- on phones it would crowd the bar at ~320-360px,
+          so it collapses to the icon button in the right-hand cluster (opens the command palette). */}
+      <div className="relative hidden w-full max-w-[220px] sm:block md:max-w-xs" ref={searchRef}>
         <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
         <input
           value={query}
@@ -210,6 +212,14 @@ export function TopNavbar() {
       </nav>
 
       <div className="ms-auto flex shrink-0 items-center gap-1">
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          aria-label="بحث"
+          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground sm:hidden"
+        >
+          <Search className="h-[18px] w-[18px]" />
+        </button>
         <StreakPointsPill className="hidden sm:flex" />
         <ThemeToggle />
         <NotificationBell />

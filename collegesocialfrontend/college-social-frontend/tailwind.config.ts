@@ -128,6 +128,18 @@ const config: Config = {
         'bubble-in': { from: { opacity: '0', transform: 'scale(0.96) translateY(4px)' }, to: { opacity: '1', transform: 'scale(1) translateY(0)' } },
         // Overlay/menu entrance for Phase B primitives (Dialog, Menu, Popover).
         'scale-in': { from: { opacity: '0', transform: 'scale(0.94)' }, to: { opacity: '1', transform: 'scale(1)' } },
+        // Reaction strip: each emoji springs up from the pill, staggered; the picked reaction
+        // pops on the trigger button.
+        'reaction-rise': {
+          '0%': { opacity: '0', transform: 'translateY(10px) scale(0.4)' },
+          '60%': { transform: 'translateY(-3px) scale(1.12)' },
+          '100%': { opacity: '1', transform: 'translateY(0) scale(1)' },
+        },
+        'reaction-pop': {
+          '0%': { transform: 'scale(0.3)', opacity: '0.4' },
+          '55%': { transform: 'scale(1.28)' },
+          '100%': { transform: 'scale(1)', opacity: '1' },
+        },
         blink: { '0%, 92%, 100%': { transform: 'scaleY(1)' }, '96%': { transform: 'scaleY(0.1)' } },
         bob: { '0%, 100%': { transform: 'translateY(0)' }, '50%': { transform: 'translateY(-2px)' } },
         wave: { '0%, 100%': { transform: 'rotate(0deg)' }, '25%': { transform: 'rotate(-18deg)' }, '75%': { transform: 'rotate(14deg)' } },
@@ -165,6 +177,11 @@ const config: Config = {
         'slide-up': 'slide-up 0.2s ease-out',
         'bubble-in': 'bubble-in 0.15s ease-out',
         'scale-in': 'scale-in 0.16s var(--ease-emphasized)',
+        // 'backwards' (not 'both'): hold the pre-animation state during the stagger delay, but do
+        // NOT persist the final transform afterwards -- the buttons rely on utility-class
+        // transforms for hover/highlight scaling once they've settled.
+        'reaction-rise': 'reaction-rise 0.28s var(--ease-emphasized) backwards',
+        'reaction-pop': 'reaction-pop 0.32s var(--ease-emphasized)',
         blink: 'blink 4.5s ease-in-out infinite',
         bob: 'bob 2.4s ease-in-out infinite',
         wave: 'wave 0.6s ease-in-out infinite',

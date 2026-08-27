@@ -64,7 +64,8 @@ export function MobileNav() {
                     )}
                   >
                     <Icon className="h-5 w-5 shrink-0" />
-                    {/* Active item expands to show its label; the width change animates. */}
+                    {/* Active item expands to show its label; the width change animates. Hidden
+                        below 360px, where five items + an expanded label would overflow the pill. */}
                     <AnimatePresence initial={false}>
                       {active && (
                         <motion.span
@@ -72,7 +73,7 @@ export function MobileNav() {
                           animate={{ opacity: 1, width: 'auto' }}
                           exit={{ opacity: 0, width: 0 }}
                           transition={transitions.snappy}
-                          className="overflow-hidden whitespace-nowrap text-[13px] font-semibold"
+                          className="hidden overflow-hidden whitespace-nowrap text-[13px] font-semibold min-[360px]:block"
                         >
                           {label}
                         </motion.span>
@@ -104,7 +105,9 @@ export function MobileNav() {
               >
                 <LayoutGrid className="h-5 w-5 shrink-0" />
                 {moreActive && (
-                  <span className="whitespace-nowrap text-[13px] font-semibold">المزيد</span>
+                  <span className="hidden whitespace-nowrap text-[13px] font-semibold min-[360px]:inline">
+                    المزيد
+                  </span>
                 )}
               </span>
             </button>

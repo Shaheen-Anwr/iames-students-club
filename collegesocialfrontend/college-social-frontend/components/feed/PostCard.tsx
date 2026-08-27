@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Bookmark, Bot, Heart, Lock, MessageCircle, MoreHorizontal, Pencil, Share2, Trash2, Users } from 'lucide-react';
+import { Bookmark, Bot, Lock, MessageCircle, MoreHorizontal, Pencil, Share2, ThumbsUp, Trash2, Users } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -301,16 +301,22 @@ export function PostCard({
           {totalReactions > 0 ? (
             <button
               onClick={() => setReactionsModalOpen(true)}
-              className="group flex items-center gap-1.5 rounded-full bg-surface-2/70 py-1 pe-2.5 ps-1 transition-colors hover:bg-surface-2"
+              className="group flex items-center gap-1.5 rounded-full bg-surface-2/70 py-1 pe-2.5 ps-1.5 transition-colors hover:bg-surface-2"
             >
-              <span
-                className={cn(
-                  'flex h-5 w-5 items-center justify-center rounded-full',
-                  REACTION_COLORS[topReactions[0][0]].bg,
-                  REACTION_COLORS[topReactions[0][0]].text,
-                )}
-              >
-                <ReactionIcon type={topReactions[0][0]} className="h-3 w-3" />
+              <span className="flex items-center">
+                {topReactions.map(([type], i) => (
+                  <span
+                    key={type}
+                    style={{ marginInlineStart: i === 0 ? 0 : -6, zIndex: topReactions.length - i }}
+                    className={cn(
+                      'flex h-5 w-5 items-center justify-center rounded-full ring-2 ring-surface',
+                      REACTION_COLORS[type].bg,
+                      REACTION_COLORS[type].text,
+                    )}
+                  >
+                    <ReactionIcon type={type} className="h-3 w-3" />
+                  </span>
+                ))}
               </span>
               <span key={totalReactions} className="animate-bubble-in font-medium text-foreground/70 group-hover:text-foreground">
                 {totalReactions}
@@ -345,17 +351,23 @@ export function PostCard({
                 onPointerUp={handlers.onPointerUp}
                 onPointerCancel={handlers.onPointerCancel}
                 title={myReaction ? REACTION_META[myReaction.type].label : 'إعجاب'}
+                aria-pressed={!!myReaction}
                 className={cn(
-                  'flex h-10 w-10 touch-none select-none items-center justify-center rounded-full transition-all active:scale-90',
-                  myReaction ? cn(REACTION_COLORS[myReaction.type].bg, REACTION_COLORS[myReaction.type].text) : 'text-muted-foreground hover:bg-surface-2 hover:text-accent',
+                  'flex h-10 min-w-10 touch-none select-none items-center justify-center gap-1.5 rounded-full px-2 text-[13px] font-semibold transition-all active:scale-90',
+                  myReaction
+                    ? cn(REACTION_COLORS[myReaction.type].bg, REACTION_COLORS[myReaction.type].text)
+                    : 'text-muted-foreground hover:bg-surface-2 hover:text-accent',
                 )}
               >
                 {myReaction ? (
-                  <span key={myReaction.type} className="animate-bubble-in">
-                    <ReactionIcon type={myReaction.type} className="h-5 w-5" />
-                  </span>
+                  <>
+                    <span key={myReaction.type} className="animate-reaction-pop">
+                      <ReactionIcon type={myReaction.type} className="h-5 w-5" />
+                    </span>
+                    <span className="animate-fade-in">{REACTION_META[myReaction.type].label}</span>
+                  </>
                 ) : (
-                  <Heart className="h-[22px] w-[22px]" />
+                  <ThumbsUp className="h-[22px] w-[22px]" />
                 )}
               </button>
             )}
