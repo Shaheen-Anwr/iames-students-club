@@ -288,10 +288,12 @@ export class PostsService {
     // Non-ASCII (e.g. Arabic) filenames aren't valid in a plain `filename=` header value -- give a
     // sanitized ASCII fallback alongside the real name via the RFC 5987 `filename*=` form.
     const asciiFallback = displayName.replace(/[^\x20-\x7E]/g, '_');
-    res.setHeader('Content-Type', PostsService.ATTACHMENT_MIME_BY_EXT[ext] ?? 'application/octet-stream');
-    res.setHeader('Content-Disposition', `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(displayName)}`);
+    const contentType = PostsService.ATTACHMENT_MIME_BY_EXT[ext] ?? 'application/octet-stream';
+    const contentDisposition = `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(displayName)}`;
 
     const FETCH_RETRIES = 3;
+    let bytesWritten = 0;
+
     for (let i = 0; i < chunkCount; i += 1) {
       const partUrl = i === 0 ? post.attachmentUrl : post.attachmentUrl.replace('-part-0', `-part-${i}`);
       let lastError: unknown;
@@ -301,7 +303,17 @@ export class PostsService {
         try {
           const partRes = await fetch(partUrl);
           if (!partRes.ok) throw new Error(`part ${i} responded ${partRes.status}`);
-          res.write(Buffer.from(await partRes.arrayBuffer()));
+          const buffer = Buffer.from(await partRes.arrayBuffer());
+          // Headers (and the 200 status they imply) are only committed once we know there's
+          // actually a first byte to send -- setting them any earlier and then failing on part 0
+          // would have sent the browser a "successful" empty response with the right Content-Type,
+          // which looks exactly like a real file but silently opens/downloads as nothing.
+          if (bytesWritten === 0) {
+            res.setHeader('Content-Type', contentType);
+            res.setHeader('Content-Disposition', contentDisposition);
+          }
+          res.write(buffer);
+          bytesWritten += buffer.length;
           fetched = true;
         } catch (error) {
           lastError = error;
@@ -315,10 +327,16 @@ export class PostsService {
       }
 
       if (!fetched) {
-        // A part failing mid-stream after earlier parts were already written can't cleanly become
-        // a fresh error response (headers/body are already sent) -- log it and end what we have
-        // rather than hang the request open.
         this.logger.error(`streamAttachment: failed fetching part ${i} of post ${id} after ${FETCH_RETRIES} attempts: ${(lastError as Error)?.message}`);
+        if (bytesWritten === 0) {
+          // Nothing sent to the client yet -- safe to return a real error status instead of a fake
+          // empty "200 OK" that the browser would otherwise treat as a genuine, if empty, file.
+          res.status(502).json({ message: 'تعذّر تحميل المرفق، حاول مرة أخرى.' });
+          return;
+        }
+        // Otherwise, a part failing mid-stream after earlier parts were already written can't
+        // cleanly become a fresh error response (headers/body are already sent) -- end what we
+        // have rather than hang the request open.
         break;
       }
     }
