@@ -278,6 +278,7 @@ export function PostCard({
             attachmentUrl={post.attachmentUrl}
             attachmentOriginalName={post.attachmentOriginalName}
             attachmentSize={post.attachmentSize}
+            attachmentChunkCount={post.attachmentChunkCount}
             images={post.images}
           />
         </div>

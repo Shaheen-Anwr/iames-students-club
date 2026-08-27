@@ -13,13 +13,46 @@ export const TOKEN_COOKIE = 'college_social_token';
 // token is embedded directly as a query param instead -- the backend's JwtStrategy accepts it from
 // there as a fallback. (A same-site cookie fallback also exists server-side, but confirmed in
 // production not to reliably survive the frontend's cross-domain rewrite proxy to the real backend
-// -- this query param is what actually works regardless of that.) Short-lived like any access token;
-// if it's expired by the time this is opened, the request 401s and the caller should re-fetch a
-// fresh post (its attachmentUrl doesn't change, only this wrapper needs a live token).
+// -- this query param is what actually works regardless of that.)
+//
+// CAVEAT: the token is captured at call time and baked into the returned string. Access tokens
+// live ~15min, so a URL built for a feed/lecture list that then sits open longer -- or whose token
+// gets silently refreshed after render -- points at an expired token and 401s when finally opened.
+// Prefer fetchAttachmentObjectUrl() below, which fetches on demand through the normal
+// refresh-on-401 path; use this only where an eager string URL is genuinely required.
 export function postAttachmentUrl(postId: string): string {
   const token = getToken();
   const query = token ? `?token=${encodeURIComponent(token)}` : '';
   return `${API_URL}/posts/${postId}/attachment${query}`;
+}
+
+// Fetches a 'lecture'/'file' post's attachment and returns a short-lived blob: object URL for it.
+// Unlike postAttachmentUrl(), the request carries a live Authorization header and retries once
+// through refreshAccessToken() on a 401, so an attachment opened after its access token has already
+// expired still works instead of surfacing the 401. The caller owns the returned URL and must
+// URL.revokeObjectURL() it when done (see useAttachmentObjectUrl()).
+export async function fetchAttachmentObjectUrl(postId: string, isRetry = false): Promise<string> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const res = await fetch(`${API_URL}/posts/${postId}/attachment`, { headers, credentials: 'include' });
+
+  if (res.status === 401 && !isRetry) {
+    try {
+      await refreshAccessToken();
+      return fetchAttachmentObjectUrl(postId, true);
+    } catch {
+      clearToken();
+      // fall through -- report the original 401 below
+    }
+  }
+
+  if (!res.ok) {
+    throw new ApiError(res.status, `فشل تحميل المرفق (${res.status})`);
+  }
+
+  return URL.createObjectURL(await res.blob());
 }
 
 export class ApiError extends Error {

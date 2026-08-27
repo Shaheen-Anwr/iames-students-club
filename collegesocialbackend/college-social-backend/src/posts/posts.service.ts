@@ -311,6 +311,13 @@ export class PostsService {
           if (bytesWritten === 0) {
             res.setHeader('Content-Type', contentType);
             res.setHeader('Content-Disposition', contentDisposition);
+            // A post's attachment never changes after upload (a new upload is a new post, not an
+            // edit to this one), so it's safe to tell the browser to keep this reconstructed file
+            // indefinitely instead of re-fetching and re-stitching every part again on every single
+            // open -- that per-open cost was the main reason a chunked file felt slow to view
+            // repeatedly. `private` (not `public`) since the URL carries a per-viewer access token
+            // in its query string -- this is a per-browser cache, not a shared/CDN one.
+            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
           }
           res.write(buffer);
           bytesWritten += buffer.length;

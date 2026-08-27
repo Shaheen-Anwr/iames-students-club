@@ -138,3 +138,15 @@ export class Post {
 
 export const PostSchema = SchemaFactory.createForClass(Post);
 PostSchema.index({ caption: 'text' });
+// The individual per-field indexes above (scope/department/etc.) each help their own equality
+// filter, but every feed query also sorts by `createdAt` -- without an index covering that,
+// MongoDB has to collect every matching document and sort in memory instead of reading them back
+// pre-sorted, which gets slower as the collection grows regardless of how selective the filter is.
+// These compound indexes cover PostsService.feed()'s two actual shapes (the department-scoped feed,
+// and everything else -- public feed, profile feed, course/attachment browsing, etc.) with the sort
+// field last, plus a savedBy index for findSaved() (savedBy is an array, so this is a multikey
+// index) and a plain createdAt index as a fallback for any other sort-by-recency query.
+PostSchema.index({ scope: 1, department: 1, createdAt: -1 });
+PostSchema.index({ scope: 1, createdAt: -1 });
+PostSchema.index({ savedBy: 1, createdAt: -1 });
+PostSchema.index({ createdAt: -1 });

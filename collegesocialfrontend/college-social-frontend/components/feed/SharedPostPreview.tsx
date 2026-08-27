@@ -48,6 +48,7 @@ export function SharedPostPreview({ post }: { post: Post }) {
           attachmentType={post.attachmentType}
           attachmentUrl={post.attachmentUrl}
           attachmentOriginalName={post.attachmentOriginalName}
+          attachmentChunkCount={post.attachmentChunkCount}
           images={post.images}
         />
       )}

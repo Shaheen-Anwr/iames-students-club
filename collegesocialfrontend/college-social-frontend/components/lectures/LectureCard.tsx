@@ -8,7 +8,7 @@ import {
   AttachmentPreview,
   isPdf,
 } from '@/components/feed/AttachmentPreview';
-import { api, postAttachmentUrl } from '@/lib/api';
+import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { ACADEMIC_YEAR_LABELS } from '@/lib/academic-years';
@@ -132,6 +132,7 @@ export function LectureCard({
           attachmentType={post.attachmentType}
           attachmentUrl={post.attachmentUrl}
           attachmentOriginalName={post.attachmentOriginalName}
+          attachmentChunkCount={post.attachmentChunkCount}
         />
       </div>
 
@@ -139,7 +140,9 @@ export function LectureCard({
         <LecturePdfLightbox
           open={lightboxOpen}
           onClose={() => setLightboxOpen(false)}
-          url={postAttachmentUrl(post._id)}
+          postId={post._id}
+          attachmentUrl={post.attachmentUrl}
+          attachmentChunkCount={post.attachmentChunkCount}
           title={
             post.attachmentOriginalName ??
             post.caption ??
