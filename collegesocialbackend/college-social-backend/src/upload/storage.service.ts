@@ -1,11 +1,11 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary, UploadApiResponse } from 'cloudinary';
-import { copyFile, mkdir, readFile, rm, unlink } from 'fs/promises';
+import { copyFile, mkdir, readFile, rm, stat, unlink } from 'fs/promises';
 import { extname, join } from 'path';
 import { v4 as uuid } from 'uuid';
 import { CLOUDINARY_ASSET_CAP_MB, isChunkable, UploadCategory } from './multer.config';
-import { segmentVideo, splitFileIntoByteChunks } from './chunked-upload.util';
+import { compressVideo, segmentVideo, splitFileIntoByteChunks } from './chunked-upload.util';
 
 // Local uploads live under UPLOADS_DIR (default <repo>/uploads)/<category>/<file>, the same tree
 // ServeStaticModule already exposes at /uploads/** (see app.module.ts) -- so a relative
@@ -35,7 +35,10 @@ const RESOURCE_TYPE_BY_CATEGORY: Record<UploadCategory, 'image' | 'video' | 'raw
 // particular viewer. Picked per use case: an avatar or chat wallpaper never needs to be huge, a
 // cover photo or feed image can run a bit bigger.
 const IMAGE_MAX_DIMENSION: Partial<Record<UploadCategory, number>> = {
-  photos: 512,
+  // 1024 (not 512): an avatar can now be opened full-frame in the app's photo viewer, and 512
+  // looked soft on a high-DPR phone. q_auto:good keeps a 1024 JPEG around ~100-200KB, so the
+  // storage cost is negligible. Also used by the legacy re-compression path (recompressStoredImage).
+  photos: 1024,
   'cover-photos': 1600,
   'post-images': 1920,
   'chat-backgrounds': 1920,
@@ -66,6 +69,17 @@ const CHUNK_UPLOAD_CONCURRENCY = 4;
 // leaves headroom against off-by-one edge cases (raw byte-splitting is exact, but better safe) and,
 // for video, against a segment landing slightly over its target due to keyframe-aligned cuts.
 const CHUNK_SAFETY_FACTOR = 0.95;
+
+// Cloudinary's per-asset media_limits are DECIMAL megabytes (its docs/usage API report e.g. video =
+// 100_000_000 bytes = ~95.4 MiB), but CLOUDINARY_ASSET_CAP_MB is a plain "MB" number that the rest
+// of this file multiplies by 1024*1024. Using the binary value to decide "is this too big for one
+// asset?" left a dead zone (~95.4-100 MiB for video): a file in it wasn't big enough to trigger
+// splitting, yet Cloudinary still rejected it as too large. Deciding against the decimal value --
+// and with CHUNK_SAFETY_FACTOR headroom on top -- closes that gap. This is the single number used
+// both to decide whether to split/compress AND as the per-piece target when we do.
+function chunkThresholdBytes(category: UploadCategory): number {
+  return Math.floor(CLOUDINARY_ASSET_CAP_MB[category] * 1_000_000 * CHUNK_SAFETY_FACTOR);
+}
 
 export interface UploadOutcome {
   url: string;
@@ -113,12 +127,12 @@ export class StorageService {
       }
 
       const resourceType = RESOURCE_TYPE_BY_CATEGORY[category];
-      const assetCapBytes = CLOUDINARY_ASSET_CAP_MB[category] * 1024 * 1024;
+      const threshold = chunkThresholdBytes(category);
 
-      if (size > assetCapBytes && isChunkable(category)) {
+      if (size > threshold && isChunkable(category)) {
         return resourceType === 'video'
-          ? await this.uploadChunkedVideo(tempPath, workDir, category, assetCapBytes)
-          : await this.uploadChunkedRaw(tempPath, workDir, category, originalName, assetCapBytes);
+          ? await this.uploadChunkedVideo(tempPath, workDir, category, threshold)
+          : await this.uploadChunkedRaw(tempPath, workDir, category, originalName, threshold);
       }
 
       const result = await this.uploadSingleAsset(tempPath, category, resourceType, originalName);
@@ -138,9 +152,9 @@ export class StorageService {
     workDir: string,
     category: UploadCategory,
     originalName: string,
-    assetCapBytes: number,
+    targetPieceBytes: number,
   ): Promise<UploadOutcome> {
-    const partPaths = await splitFileIntoByteChunks(tempPath, Math.floor(assetCapBytes * CHUNK_SAFETY_FACTOR), workDir);
+    const partPaths = await splitFileIntoByteChunks(tempPath, targetPieceBytes, workDir);
     const groupId = uuid();
     const uploaded = await this.uploadPartsConcurrently(partPaths, category, 'raw', originalName, groupId);
 
@@ -148,15 +162,47 @@ export class StorageService {
     return { url: uploaded[0].secure_url, chunkCount: uploaded.length };
   }
 
-  // Segments an oversized video with ffmpeg into pieces each under Cloudinary's video asset cap,
-  // uploads each as its own video asset, then returns ONE synthesized delivery URL that splices all
-  // of them into a single continuous video (verified against this account: Cloudinary's fl_splice
-  // transformation concatenates multiple uploaded videos server-side) -- no reconstruction needed on
-  // read, no custom multi-segment player, the existing <video> tag just works unchanged.
-  private async uploadChunkedVideo(tempPath: string, workDir: string, category: UploadCategory, assetCapBytes: number): Promise<UploadOutcome> {
-    const partPaths = await segmentVideo(tempPath, Math.floor(assetCapBytes * CHUNK_SAFETY_FACTOR), workDir);
+  // Handles a video too large for a single Cloudinary asset in up to three steps:
+  //   1. Re-encode the whole file once (smaller resolution + CRF, see compressVideo). This alone
+  //      usually brings a "just over the cap" phone/screen recording well under it.
+  //   2. If the re-encoded result fits in one asset, upload it as a plain single asset -- its
+  //      secure_url plays in any <video> tag with no splice/reconstruction.
+  //   3. Only if it's STILL too big (very long or very high-motion source) fall back to segmenting
+  //      the already-compressed file with ffmpeg and returning ONE synthesized delivery URL that
+  //      splices every piece into a single continuous video (Cloudinary's fl_splice, verified
+  //      against this account) -- again no custom multi-segment player needed on read.
+  private async uploadChunkedVideo(
+    tempPath: string,
+    workDir: string,
+    category: UploadCategory,
+    targetPieceBytes: number,
+  ): Promise<UploadOutcome> {
+    let sourcePath = tempPath;
+    let sourceSize = (await stat(tempPath)).size;
+
+    try {
+      const compressed = await compressVideo(tempPath, join(workDir, 'compressed'));
+      if (compressed.sizeBytes > 0 && compressed.sizeBytes < sourceSize) {
+        this.logger.log(
+          `Compressed "${category}" video from ~${Math.round(sourceSize / 1_000_000)}MB to ~${Math.round(compressed.sizeBytes / 1_000_000)}MB before upload.`,
+        );
+        sourcePath = compressed.path;
+        sourceSize = compressed.sizeBytes;
+      }
+    } catch (error) {
+      // Compression is an optimisation, not a requirement -- a codec ffmpeg can't decode, an
+      // ffmpeg crash, etc. just means we upload/segment the original bytes as before.
+      this.logger.warn(`Video pre-compression failed, using the original instead: ${(error as Error)?.message ?? String(error)}`);
+    }
+
+    if (sourceSize <= targetPieceBytes) {
+      const result = await this.uploadSingleAsset(sourcePath, category, 'video', 'video.mp4');
+      return { url: result.secure_url, chunkCount: 1 };
+    }
+
+    const partPaths = await segmentVideo(sourcePath, targetPieceBytes, join(workDir, 'segments'));
     const groupId = uuid();
-    // originalName is a constant here (not partPaths[i]'s name) -- ffmpeg always writes segments as
+    // The name arg is a constant here (not partPaths[i]'s name) -- ffmpeg always writes segments as
     // .mp4 (see chunked-upload.util.ts), and video format is auto-detected from bytes, not forced.
     const uploaded = await this.uploadPartsConcurrently(partPaths, category, 'video', 'segment.mp4', groupId);
 
@@ -307,5 +353,47 @@ export class StorageService {
     } catch {
       return null;
     }
+  }
+
+  // One-off legacy backfill (see src/scripts/compress-legacy-images.ts): re-uploads an existing
+  // Cloudinary *image* over itself with this category's size cap applied as an incoming
+  // transformation, so the STORED master shrinks and stops counting full-size against the
+  // free-tier storage quota. Deliberately does NOT apply fetch_format here -- that would change
+  // the asset's stored format/extension and could break URLs already saved in the DB; format
+  // modernization happens at delivery time instead (frontend lib/images.ts::cldOptimize).
+  // `invalidate: true` purges the old CDN copy; the 'legacy-compressed' tag lets the script skip
+  // assets it already processed. Returns null when Cloudinary isn't configured; returns a
+  // `skippedReason` (no re-upload) for an animated GIF, where re-encoding risks surprises and the
+  // storage win is marginal. Throws on a real Cloudinary error so the script can count failures.
+  async recompressStoredImage(
+    publicId: string,
+    category: UploadCategory,
+  ): Promise<{ beforeBytes: number; afterBytes: number; version: number; skippedReason?: string } | null> {
+    if (!this.configured) return null;
+
+    const before = await cloudinary.api.resource(publicId, { resource_type: 'image' });
+    if (before.format === 'gif' && (before.pages ?? 1) > 1) {
+      return { beforeBytes: before.bytes, afterBytes: before.bytes, version: before.version, skippedReason: 'animated-gif' };
+    }
+
+    const cap = IMAGE_MAX_DIMENSION[category] ?? 1920;
+    const sourceUrl = cloudinary.url(publicId, {
+      resource_type: 'image',
+      secure: true,
+      version: before.version,
+      format: before.format,
+    });
+
+    const result = await cloudinary.uploader.upload(sourceUrl, {
+      public_id: publicId,
+      resource_type: 'image',
+      type: 'upload',
+      overwrite: true,
+      invalidate: true,
+      transformation: [{ width: cap, height: cap, crop: 'limit' }, { quality: 'auto:good' }],
+      tags: ['legacy-compressed'],
+    });
+
+    return { beforeBytes: before.bytes, afterBytes: result.bytes, version: result.version };
   }
 }

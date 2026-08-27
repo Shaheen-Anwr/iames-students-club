@@ -1,8 +1,10 @@
 'use client';
 
-import { useEffect, useRef, useState, type CSSProperties } from 'react';
-import { createPortal } from 'react-dom';
+import { useState } from 'react';
+import * as Menu from '@radix-ui/react-dropdown-menu';
 import { cn } from '@/lib/utils';
+import { useIsMobile } from '@/lib/use-media-query';
+import { Sheet } from './Sheet';
 
 export interface DropdownItem {
   label: string;
@@ -17,102 +19,102 @@ interface DropdownProps {
   items: DropdownItem[];
   align?: 'start' | 'end';
   placement?: 'bottom' | 'top';
+  /** Heading for the mobile action sheet. */
+  menuLabel?: string;
+  /** Classes for the desktop menu panel. */
   className?: string;
 }
 
-const MENU_WIDTH = 192; // w-48
-const GAP = 8; // matches the old mt-2/mb-2
+/**
+ * Overflow / action menu. On phones it opens a bottom action sheet with finger-sized rows; on
+ * desktop it's an anchored Radix menu with full keyboard support (arrows, Home/End, type-ahead,
+ * ESC) and viewport collision handling. RTL alignment comes from the app-wide DirectionProvider.
+ *
+ * API unchanged: pass a `trigger` node and `items`.
+ */
+export function Dropdown({
+  trigger,
+  items,
+  align = 'end',
+  placement = 'bottom',
+  menuLabel = 'خيارات',
+  className,
+}: DropdownProps) {
+  const isMobile = useIsMobile();
+  const [sheetOpen, setSheetOpen] = useState(false);
 
-// Renders the menu in a portal at document.body, positioned from the trigger's live
-// bounding rect (fixed positioning). This is deliberate: several call sites (avatar/cover
-// photo uploaders) sit inside an `overflow-hidden` ancestor used to clip rounded card
-// corners, which silently clipped an in-flow `absolute` menu regardless of which edge it
-// opened from. Computing screen coordinates sidesteps that ancestor entirely.
-export function Dropdown({ trigger, items, align = 'end', placement = 'bottom', className }: DropdownProps) {
-  const [open, setOpen] = useState(false);
-  const [style, setStyle] = useState<CSSProperties>({});
-  const triggerRef = useRef<HTMLButtonElement>(null);
-  const menuRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    if (!open) return;
-
-    function updatePosition() {
-      const rect = triggerRef.current?.getBoundingClientRect();
-      if (!rect) return;
-      const rtl = document.documentElement.dir === 'rtl';
-      const anchorLeft = (align === 'end') === rtl;
-      // Always resolve to a `left` offset (rather than `left` for one branch and `right` for the
-      // other) so it can be clamped into the viewport below — a menu whose trigger sits close to
-      // an edge would otherwise render partway off-screen with no way to shift it back in.
-      let left = anchorLeft ? rect.left : rect.right - MENU_WIDTH;
-      left = Math.min(Math.max(left, GAP), window.innerWidth - MENU_WIDTH - GAP);
-      const next: CSSProperties = { position: 'fixed', width: MENU_WIDTH, left };
-      if (placement === 'top') next.bottom = window.innerHeight - rect.top + GAP;
-      else next.top = rect.bottom + GAP;
-      setStyle(next);
-    }
-
-    updatePosition();
-
-    function onClickOutside(e: MouseEvent) {
-      const target = e.target as Node;
-      if (triggerRef.current?.contains(target)) return;
-      if (menuRef.current?.contains(target)) return;
-      setOpen(false);
-    }
-    function onKey(e: KeyboardEvent) {
-      if (e.key === 'Escape') setOpen(false);
-    }
-    function onDismiss() {
-      setOpen(false);
-    }
-    document.addEventListener('mousedown', onClickOutside);
-    document.addEventListener('keydown', onKey);
-    window.addEventListener('scroll', onDismiss, true);
-    window.addEventListener('resize', onDismiss);
-    return () => {
-      document.removeEventListener('mousedown', onClickOutside);
-      document.removeEventListener('keydown', onKey);
-      window.removeEventListener('scroll', onDismiss, true);
-      window.removeEventListener('resize', onDismiss);
-    };
-  }, [open, align, placement]);
-
-  return (
-    <>
-      <button ref={triggerRef} type="button" onClick={() => setOpen((o) => !o)} className="inline-flex">
-        {trigger}
-      </button>
-      {open &&
-        typeof document !== 'undefined' &&
-        createPortal(
-          <div
-            ref={menuRef}
-            style={style}
-            className={cn('glass z-40 rounded-xl p-1 shadow-card animate-bubble-in', className)}
-          >
+  if (isMobile) {
+    return (
+      <>
+        <button type="button" onClick={() => setSheetOpen(true)} className="inline-flex">
+          {trigger}
+        </button>
+        <Sheet open={sheetOpen} onOpenChange={setSheetOpen} title={menuLabel}>
+          <div className="flex flex-col">
             {items.map((item, i) => (
               <button
                 key={i}
                 type="button"
                 disabled={item.disabled}
                 onClick={() => {
-                  setOpen(false);
+                  setSheetOpen(false);
                   item.onClick();
                 }}
                 className={cn(
-                  'flex w-full items-center gap-2 rounded-lg px-3 py-2 text-start text-sm font-medium transition-colors disabled:cursor-not-allowed disabled:opacity-50',
-                  item.destructive ? 'text-danger hover:bg-danger/10' : 'text-foreground hover:bg-surface-2',
+                  'flex items-center gap-3 rounded-xl px-3 py-3.5 text-start text-[15px] font-medium transition-colors disabled:opacity-50',
+                  item.destructive
+                    ? 'text-danger active:bg-danger/10'
+                    : 'text-foreground active:bg-surface-2',
                 )}
               >
-                {item.icon && <item.icon className="h-4 w-4 shrink-0" />}
+                {item.icon && <item.icon className="h-5 w-5 shrink-0" />}
                 {item.label}
               </button>
             ))}
-          </div>,
-          document.body,
-        )}
-    </>
+          </div>
+        </Sheet>
+      </>
+    );
+  }
+
+  return (
+    <Menu.Root>
+      <Menu.Trigger asChild>
+        <button type="button" className="inline-flex outline-none">
+          {trigger}
+        </button>
+      </Menu.Trigger>
+      <Menu.Portal>
+        <Menu.Content
+          align={align}
+          side={placement}
+          sideOffset={8}
+          collisionPadding={8}
+          className={cn(
+            'glass z-50 min-w-[12rem] rounded-xl p-1 shadow-elev-3',
+            'data-[state=open]:animate-scale-in',
+            className,
+          )}
+        >
+          {items.map((item, i) => (
+            <Menu.Item
+              key={i}
+              disabled={item.disabled}
+              onSelect={() => item.onClick()}
+              className={cn(
+                'flex cursor-pointer select-none items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium outline-none transition-colors',
+                'data-[disabled]:cursor-not-allowed data-[disabled]:opacity-50',
+                item.destructive
+                  ? 'text-danger data-[highlighted]:bg-danger/10'
+                  : 'text-foreground data-[highlighted]:bg-surface-2',
+              )}
+            >
+              {item.icon && <item.icon className="h-4 w-4 shrink-0" />}
+              {item.label}
+            </Menu.Item>
+          ))}
+        </Menu.Content>
+      </Menu.Portal>
+    </Menu.Root>
   );
 }

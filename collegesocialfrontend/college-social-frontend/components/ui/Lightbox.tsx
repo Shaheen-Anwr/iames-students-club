@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { cldOptimize } from '@/lib/images';
 
 export function Lightbox({
   images,
@@ -33,7 +34,18 @@ export function Lightbox({
   if (typeof document === 'undefined') return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    // Top of the entire z-stack: a fullscreen photo is the most "modal" surface in the app and
+    // can be opened from inside menus, sheets, the message context menu (z-[100]) and the chat
+    // mobile-actions overlay (z-[9999]) -- it has to sit above all of them.
+    //
+    // stopPropagation on the container: this is portaled to <body>, but React still bubbles the
+    // event through the *component* tree back to whatever opened the lightbox -- and that trigger
+    // is often a click-to-open element (a cover photo, an avatar). Without this, clicking the X (or
+    // the backdrop) closes the lightbox and then the same click re-opens it on the way out.
+    <div
+      className="fixed inset-0 z-[10000] flex items-center justify-center p-4"
+      onClick={(e) => e.stopPropagation()}
+    >
       <div className="absolute inset-0 bg-black/90 animate-fade-in" onClick={onClose} />
 
       <button
@@ -61,7 +73,7 @@ export function Lightbox({
       )}
 
       <img
-        src={images[index]}
+        src={cldOptimize(images[index], { width: 1600, crop: 'limit' })}
         alt=""
         className="relative z-[5] max-h-[90vh] max-w-full rounded-lg object-contain animate-bubble-in"
         onClick={(e) => e.stopPropagation()}

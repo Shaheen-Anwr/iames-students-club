@@ -12,7 +12,8 @@
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
-    "test": "jest"
+    "test": "jest",
+    "compress:legacy": "node dist/scripts/compress-legacy-images.js"
   },
   "dependencies": {
     "@nestjs/common": "^10.4.0",

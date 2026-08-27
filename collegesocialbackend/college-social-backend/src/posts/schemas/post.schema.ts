@@ -9,6 +9,12 @@ export type PostDocument = HydratedDocument<Post>;
 export enum PostScope {
   PUBLIC = 'public',
   DEPARTMENT = 'department',
+  // Audience-restricted posts. 'friends' is visible to the author + everyone in the author's
+  // `friends` list; 'private' ("only me") is visible to the author alone. Unlike 'department',
+  // neither is tied to a browse tag -- they're pure access control, enforced in
+  // PostsService.feed()/canViewScope().
+  FRIENDS = 'friends',
+  PRIVATE = 'private',
 }
 
 export enum PostAttachmentType {
@@ -148,5 +154,9 @@ PostSchema.index({ caption: 'text' });
 // index) and a plain createdAt index as a fallback for any other sort-by-recency query.
 PostSchema.index({ scope: 1, department: 1, createdAt: -1 });
 PostSchema.index({ scope: 1, createdAt: -1 });
+// Profile feed: one author's posts narrowed to the audiences the viewer may see (scope $in),
+// newest first -- see PostsService.feed()'s profile branch. Also covers the main feed's
+// "friends-scoped posts by people I'm friends with" $or clause (author $in + scope equality).
+PostSchema.index({ author: 1, scope: 1, createdAt: -1 });
 PostSchema.index({ savedBy: 1, createdAt: -1 });
 PostSchema.index({ createdAt: -1 });

@@ -2,7 +2,8 @@
 
 import { useState } from 'react';
 import { cn } from '@/lib/utils';
-import { Lightbox } from './Lightbox';
+import { cldOptimize } from '@/lib/images';
+import { Lightbox } from '@/components/ui/Lightbox';
 
 // Facebook-style photo grid: 1 image fills the width, 2 sit side by side, 3 is one tall tile plus
 // two stacked, and 4+ is a 2x2 grid with a "+N" overlay on the last tile for anything beyond 4.
@@ -37,7 +38,7 @@ export function ImageGallery({ images }: { images: string[] }) {
               images.length >= 4 && 'aspect-square',
             )}
           >
-            <img src={url} alt="" className="h-full w-full object-cover transition-transform hover:scale-105" />
+            <img src={cldOptimize(url, { width: 800 })} alt="" className="h-full w-full object-cover transition-transform hover:scale-105" />
             {i === 3 && extra > 0 && (
               <div className="absolute inset-0 flex items-center justify-center bg-black/50 text-lg font-semibold text-white">
                 +{extra}

@@ -99,7 +99,9 @@ export interface PopulatedReaction {
   type: ReactionType;
 }
 
-export type PostScope = 'public' | 'department';
+// 'friends' -> visible to the author + their friends; 'private' -> the author only ("only me").
+// 'public'/'department' are the feed tabs; the latter also doubles as a browse tag.
+export type PostScope = 'public' | 'department' | 'friends' | 'private';
 
 export interface Post {
   _id: string;

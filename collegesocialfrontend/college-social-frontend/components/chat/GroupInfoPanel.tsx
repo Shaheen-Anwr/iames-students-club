@@ -213,7 +213,7 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
       <div className="space-y-5">
         <div className="flex flex-col items-center gap-3 pb-2">
           <div className="relative">
-            <Avatar src={assetUrl(avatarUrl)} name={title} size="xl" />
+            <Avatar src={assetUrl(avatarUrl)} name={title} size="xl" viewable />
             {conversation.isGroup && isAdmin && (
               <label className="absolute bottom-0 end-0 flex h-8 w-8 cursor-pointer items-center justify-center rounded-full bg-accent text-white shadow-soft">
                 <Camera className="h-4 w-4" />
@@ -374,7 +374,7 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
                 const isCreator = conversation.createdBy === p._id;
                 return (
                   <div key={p._id} className="flex items-center gap-2.5 rounded-xl2 px-2 py-2">
-                    <Avatar src={assetUrl(p.photoUrl)} name={p.name} size="sm" />
+                    <Avatar src={assetUrl(p.photoUrl)} name={p.name} size="sm" viewable />
                     <div className="min-w-0 flex-1">
                       <p className="flex items-center gap-1 truncate text-sm font-medium text-foreground">
                         {p.name} {memberIsAdmin && <Crown className="h-3 w-3 text-amber-500" />}

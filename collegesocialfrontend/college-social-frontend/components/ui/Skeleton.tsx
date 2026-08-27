@@ -1,7 +1,13 @@
 import { cn } from '@/lib/utils';
 
 export function Skeleton({ className }: { className?: string }) {
-  return <div className={cn('animate-pulse rounded-lg bg-surface-2', className)} />;
+  return (
+    <div className={cn('relative overflow-hidden rounded-lg bg-surface-2', className)}>
+      {/* Travelling highlight -- reads as "loading" more clearly than a whole-block pulse, and
+          animates only transform so it stays cheap. Falls back to static under reduce-motion. */}
+      <div className="absolute inset-0 animate-shimmer-sweep bg-gradient-to-r from-transparent via-foreground/[0.07] to-transparent" />
+    </div>
+  );
 }
 
 export function SkeletonText({ lines = 3, className }: { lines?: number; className?: string }) {

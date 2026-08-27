@@ -4,36 +4,124 @@
 
 @layer base {
   :root {
-    --background: 250 250 252;
+    /* Light theme -- clean near-white paper, greys tinted a few points toward the accent hue
+       so neutrals and accent feel like one family rather than grey + purple. */
+    --background: 248 249 252;
     --surface: 255 255 255;
-    --surface-2: 246 247 249;
-    --border: 228 231 236;
-    --foreground: 15 17 21;
-    --muted-foreground: 91 100 114;
+    --surface-2: 242 243 248;
+    /* Third surface step -- for controls layered on top of surface-2 (segmented tracks,
+       nested cards, table zebra) where surface-2 no longer reads as raised. */
+    --surface-3: 233 235 242;
+    /* Scrim base -- always paired with an alpha (bg-overlay/60). Kept as its own token so
+       light/dark can use different bases (near-black in light, pure black in dark). */
+    --overlay: 15 16 24;
+    --border: 224 227 235;
+    /* Hairlines that should barely register (inside cards, list dividers) vs. borders that
+       need to hold an edge (inputs, focused wells, popovers). */
+    --border-subtle: 235 237 243;
+    --border-strong: 200 205 216;
+    --foreground: 17 19 27;
+    --muted-foreground: 94 101 118;
+
     --accent: 124 92 252;
     --accent-2: 34 211 238;
+    /* Tonal accent ramp (violet). --accent stays the canonical mid-tone; the ramp exists so
+       primitives can reach for a specific step (soft fills, pressed states, borders) instead
+       of guessing with /alpha. Perceptually even; re-anchored + inverted in .dark below. */
+    --accent-50: 245 243 255;
+    --accent-100: 236 232 254;
+    --accent-200: 219 212 253;
+    --accent-300: 197 182 252;
+    --accent-400: 166 141 249;
+    --accent-500: 139 104 246;
+    --accent-600: 124 92 252;
+    --accent-700: 103 58 216;
+    --accent-800: 84 42 176;
+    --accent-900: 69 35 140;
+    --accent-950: 44 21 92;
+
     --gold: 197 143 15;
+    /* Semantic hues + a soft "-surface" tint each, for alert/badge/callout fills that read
+       cleaner than a muddy `/10` alpha over an already-tinted surface. */
     --success: 5 150 105;
+    --success-surface: 224 246 237;
     --danger: 220 38 38;
+    --danger-surface: 253 231 231;
     --warning: 217 119 6;
+    --warning-surface: 252 240 218;
+
+    /* Keyboard-focus ring colour. One token so every :focus-visible in the app matches. */
+    --ring: 124 92 252;
+
+    /* Elevation -- layered shadows tuned for a light ground (soft, warm-neutral, no ring).
+       Consumed via Tailwind `shadow-elev-1..4`. */
+    --elev-1: 0 1px 2px rgb(15 17 21 / 0.06), 0 1px 3px rgb(15 17 21 / 0.1);
+    --elev-2: 0 2px 4px rgb(15 17 21 / 0.06), 0 6px 16px -4px rgb(15 17 21 / 0.1);
+    --elev-3: 0 2px 8px rgb(15 17 21 / 0.06), 0 16px 32px -8px rgb(15 17 21 / 0.14);
+    --elev-4: 0 8px 24px -8px rgb(15 17 21 / 0.12), 0 32px 56px -16px rgb(15 17 21 / 0.2);
+
+    /* Motion primitives. JS (framer-motion) owns spring transforms; these drive CSS
+       transitions/animations so both stay in sync. */
+    --dur-fast: 120ms;
+    --dur-base: 200ms;
+    --dur-slow: 320ms;
+    --dur-slower: 480ms;
+    --ease-standard: cubic-bezier(0.4, 0, 0.2, 1);
+    --ease-emphasized: cubic-bezier(0.2, 0, 0, 1);
+    --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+
     /* Custom-property shim so JS (AiFab drag clamping) can read the iOS safe-area inset via
        getComputedStyle -- env() itself isn't readable from script. */
     --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
   }
 
   .dark {
-    --background: 8 10 15;
-    --surface: 17 20 27;
-    --surface-2: 24 28 37;
-    --border: 40 46 58;
-    --foreground: 240 242 245;
-    --muted-foreground: 148 157 172;
+    /* Dark theme -- deep violet-charcoal, never pure black (kills OLED smearing / halation and
+       lets surfaces sit above the ground without going flat grey). bg -> surface -> surface-2
+       -> surface-3 step up in even ~8-luminance increments so layering reads without heavy
+       borders. */
+    --background: 12 13 18;
+    --surface: 21 23 31;
+    --surface-2: 28 31 42;
+    --surface-3: 38 42 56;
+    --overlay: 0 0 0;
+    --border: 40 44 58;
+    --border-subtle: 29 32 43;
+    --border-strong: 58 64 84;
+    --foreground: 234 236 243;
+    --muted-foreground: 146 153 172;
+
     --accent: 139 124 255;
     --accent-2: 45 224 245;
+    /* Ramp inverts in dark: 50 = deepest violet-tinted fill, 950 = near-white text tint.
+       Button `subtle` (bg-accent-100 / text-accent-800) stays legible either way. */
+    --accent-50: 26 24 45;
+    --accent-100: 37 33 68;
+    --accent-200: 52 45 106;
+    --accent-300: 73 61 158;
+    --accent-400: 105 88 218;
+    --accent-500: 128 111 245;
+    --accent-600: 139 124 255;
+    --accent-700: 167 150 255;
+    --accent-800: 197 185 255;
+    --accent-900: 223 216 255;
+    --accent-950: 240 237 255;
+
     --gold: 227 179 65;
     --success: 52 211 153;
+    --success-surface: 15 43 36;
     --danger: 248 113 113;
+    --danger-surface: 48 24 27;
     --warning: 251 191 36;
+    --warning-surface: 48 38 16;
+
+    --ring: 139 124 255;
+
+    /* Dark ground: a top hairline + deeper cast reads as "raised" better than a soft shadow. */
+    --elev-1: 0 0 0 1px rgb(255 255 255 / 0.04), 0 1px 2px rgb(0 0 0 / 0.4);
+    --elev-2: 0 0 0 1px rgb(255 255 255 / 0.05), 0 6px 16px -4px rgb(0 0 0 / 0.5);
+    --elev-3: 0 0 0 1px rgb(255 255 255 / 0.06), 0 16px 32px -8px rgb(0 0 0 / 0.6);
+    --elev-4: 0 0 0 1px rgb(255 255 255 / 0.07), 0 32px 56px -16px rgb(0 0 0 / 0.7);
   }
 
   html {
@@ -58,11 +146,68 @@
   ::selection {
     @apply bg-accent/25 text-foreground;
   }
+
+  /* One keyboard-focus treatment for the whole app. :focus-visible only, so pointer users
+     never see it; sits as an outline (outside the box) so it stacks cleanly over any
+     component that also draws its own inner focus ring. */
+  :focus-visible {
+    outline: 2px solid rgb(var(--ring));
+    outline-offset: 2px;
+  }
+  /* A few elements clip their own overflow (menu items, list rows) where an outside outline
+     would be cropped -- pull it inward there. */
+  :is(li, [role='menuitem'], [role='option']):focus-visible {
+    outline-offset: -2px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
 
 @layer utilities {
   .glass {
     @apply bg-surface/70 backdrop-blur-xl border border-border;
+  }
+
+  /* Soft off-screen accent wash -- two low-alpha radial blooms (accent + accent-2) for hero
+     areas, auth screens, empty states. Sits under content; layer real UI on top. */
+  .bg-mesh {
+    background-image:
+      radial-gradient(58% 50% at 12% 0%, rgb(var(--accent) / 0.12), transparent 72%),
+      radial-gradient(52% 46% at 100% 8%, rgb(var(--accent-2) / 0.09), transparent 70%),
+      radial-gradient(60% 55% at 88% 100%, rgb(var(--accent) / 0.07), transparent 75%);
+  }
+
+  /* Gradient headline text -- pair with font-bold/extrabold; falls back to accent colour where
+     background-clip:text isn't honoured. */
+  .text-gradient-accent {
+    background-image: linear-gradient(115deg, rgb(var(--accent)), rgb(var(--accent-2)));
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: rgb(var(--accent));
+    -webkit-text-fill-color: transparent;
+  }
+
+  /* Opt-in keyboard-focus ring for custom controls that render as a <div>/<span> and want
+     the same treatment as native elements without relying on the global :focus-visible. */
+  .focus-ring {
+    @apply outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:[outline-color:rgb(var(--ring))];
+  }
+
+  /* Headline wrapping -- keeps multi-line Arabic/Latin titles from leaving one orphan word. */
+  .text-balance {
+    text-wrap: balance;
+  }
+  .text-pretty {
+    text-wrap: pretty;
   }
 
   /* Slim, unobtrusive scrollbars for chat/feed panels */
@@ -104,4 +249,3 @@
   }
 
 }
-

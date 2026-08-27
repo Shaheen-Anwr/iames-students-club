@@ -7,6 +7,7 @@ import { MentionTextarea } from '@/components/shared/MentionTextarea';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { formatBytes } from '@/lib/utils';
+import { maybeCompressVideo } from '@/lib/video-compress';
 import type { Attachment, AttachmentType, Message } from '@/lib/types';
 import { EmojiPicker } from './EmojiPicker';
 
@@ -48,6 +49,7 @@ export function MessageInput({
   }, [editingMessage]);
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
+  const [progress, setProgress] = useState<{ label: string; pct: number } | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
 
   const [recording, setRecording] = useState(false);
@@ -73,9 +75,22 @@ export function MessageInput({
       endpoint = '/upload/file';
     }
 
+    // Shrink large videos in the browser first (best-effort -- falls back to the original file,
+    // which the server then compresses). Keeps the upload small and the server request short.
+    let toUpload = file;
+    if (category === 'videos') {
+      setProgress({ label: 'جارٍ ضغط الفيديو…', pct: 0 });
+      const { file: prepared } = await maybeCompressVideo(file, {
+        onProgress: (f) => setProgress({ label: 'جارٍ ضغط الفيديو…', pct: Math.round(f * 100) }),
+      });
+      toUpload = prepared;
+    }
+
+    setProgress({ label: 'جارٍ الرفع…', pct: 0 });
     const uploaded = await api.upload<{ url: string; size: number; mimeType: string; originalName?: string }>(
       endpoint,
-      file,
+      toUpload,
+      (pct) => setProgress({ label: 'جارٍ الرفع…', pct: Math.round(pct) }),
     );
     return { url: uploaded.url, type, name: file.name, size: uploaded.size, mimeType: uploaded.mimeType };
   }
@@ -94,13 +109,19 @@ export function MessageInput({
     if (files.length) {
       setUploading(true);
       try {
-        attachments = await Promise.all(files.map(uploadFile));
+        // Sequential: a video may be re-encoded on the CPU first, and running several of those at
+        // once would just thrash. Also keeps the single progress bar meaningful.
+        const done: Attachment[] = [];
+        for (const file of files) done.push(await uploadFile(file));
+        attachments = done;
       } catch (err) {
         showToast(err instanceof ApiError ? err.message : 'تعذّر إرفاق الملف.', 'error');
         setUploading(false);
+        setProgress(null);
         return;
       }
       setUploading(false);
+      setProgress(null);
     }
 
     onSend(text.trim(), attachments, replyingTo?._id);
@@ -215,6 +236,18 @@ export function MessageInput({
               </button>
             </div>
           ))}
+        </div>
+      )}
+
+      {progress && (
+        <div className="mb-3 rounded-xl2 bg-surface-2/70 px-3.5 py-2.5">
+          <div className="mb-1.5 flex items-center justify-between text-xs font-medium text-muted-foreground">
+            <span>{progress.label}</span>
+            <span dir="ltr">{progress.pct}%</span>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-surface">
+            <div className="h-full rounded-full bg-accent transition-[width] duration-200" style={{ width: `${progress.pct}%` }} />
+          </div>
         </div>
       )}
 

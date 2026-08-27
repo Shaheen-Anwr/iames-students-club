@@ -25,9 +25,9 @@ interface TriggerProps {
 //
 // Desktop (mouse): hover opens the strip, click toggles the default reaction, clicking an emoji
 // in the strip selects it.
-// Touch: a quick tap toggles the default reaction (native click). A long-press (like Facebook)
-// opens the strip; dragging the finger across it highlights the emoji underneath, and lifting
-// selects whatever was highlighted (or the default reaction if the finger never left the button).
+// Touch: a quick tap opens the horizontal reaction strip so you can switch between reactions and
+// tap the one you want. A long-press (like Facebook) also opens the strip and lets you drag the
+// finger across it -- lifting selects whatever emoji is highlighted underneath.
 export function ReactionPicker({
   onToggle,
   onSelect,
@@ -129,9 +129,21 @@ export function ReactionPicker({
       if (e.pointerType === 'mouse') return;
       clearLongPressTimer();
       if (longPressFired.current) {
+        // Long-press + drag: commit whatever emoji the finger is over.
         onSelect(highlighted ?? 'like');
         setOpen(false);
         setHighlighted(null);
+        return;
+      }
+      // Quick tap: open (or close) the reaction strip instead of toggling the default
+      // reaction, so the user can pick a reaction with a second tap. Only treat it as a
+      // tap if the finger didn't travel (a drag/scroll shouldn't open anything).
+      const dx = e.clientX - startPos.current.x;
+      const dy = e.clientY - startPos.current.y;
+      if (Math.hypot(dx, dy) <= MOVE_CANCEL_PX) {
+        longPressFired.current = true; // consume the trailing synthetic click so it doesn't call onToggle
+        setOpen((prev) => !prev);
+        requestAnimationFrame(measure);
       }
     },
     onPointerCancel: () => {

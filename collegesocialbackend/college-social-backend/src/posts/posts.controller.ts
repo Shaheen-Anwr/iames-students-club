@@ -68,6 +68,7 @@ export class PostsController {
       scope,
       user.department,
       { department, academicYear, specialization },
+      user.userId,
     );
   }
 
@@ -144,8 +145,8 @@ export class PostsController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    return this.postsService.findOne(id);
+  async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.postsService.findOneForViewer(id, user.userId);
   }
 
   // GET /api/posts/:id/attachment -- streams the post's raw/'lecture' or 'file' attachment,
@@ -155,8 +156,8 @@ export class PostsController {
   // components should always link/embed a lecture PDF or generic file through this endpoint rather
   // than a stored attachmentUrl directly, so they never need to know whether it was chunked.
   @Get(':id/attachment')
-  async streamAttachment(@Param('id') id: string, @Res() res: Response) {
-    await this.postsService.streamAttachment(id, res);
+  async streamAttachment(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser, @Res() res: Response) {
+    await this.postsService.streamAttachment(id, res, user.userId);
   }
 
   // POST /api/posts/:id/react  { type: 'like'|'dislike'|'care'|'support'|'not_interested'|'sad'|'angry' }
@@ -191,8 +192,13 @@ export class PostsController {
 
   // GET /api/posts/:id/comments?page=1&limit=20
   @Get(':id/comments')
-  async listComments(@Param('id') id: string, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.postsService.listComments(id, Number(page) || 1, Number(limit) || 20);
+  async listComments(
+    @Param('id') id: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.postsService.listComments(id, user.userId, Number(page) || 1, Number(limit) || 20);
   }
 
   // POST /api/posts/:id/comments  { text }

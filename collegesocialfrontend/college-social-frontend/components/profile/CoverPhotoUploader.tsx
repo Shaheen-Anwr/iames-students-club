@@ -8,15 +8,9 @@ import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { cn } from '@/lib/utils';
+import { cldOptimize } from '@/lib/images';
+import { Lightbox } from '@/components/ui/Lightbox';
 import type { UploadResult } from '@/lib/types';
-
-function getOptimizedCoverUrl(url?: string | null) {
-  if (!url) return undefined;
-  if (url.includes('res.cloudinary.com') && !url.includes('/f_auto')) {
-    return url.replace('/upload/', '/upload/f_auto,q_auto,w_1200,c_fill/');
-  }
-  return url;
-}
 
 export function CoverPhotoUploader({
   coverPhotoUrl,
@@ -30,6 +24,7 @@ export function CoverPhotoUploader({
   const [uploading, setUploading] = useState(false);
   const [removing, setRemoving] = useState(false);
   const [confirmOpen, setConfirmOpen] = useState(false);
+  const [viewerOpen, setViewerOpen] = useState(false);
 
   async function handleChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
@@ -64,22 +59,23 @@ export function CoverPhotoUploader({
   }
 
   const busy = uploading || removing;
-  const optimizedCoverUrl = getOptimizedCoverUrl(coverPhotoUrl);
+  const displayCoverUrl = cldOptimize(coverPhotoUrl, { width: 1280, height: 400, crop: 'fill' });
 
   return (
     <div
       className={cn(
         'group relative h-36 sm:h-48',
-        optimizedCoverUrl
-          ? 'bg-cover bg-center'
+        displayCoverUrl
+          ? 'cursor-zoom-in bg-cover bg-center'
           : 'bg-gradient-to-l from-background via-surface-2 to-accent/20',
       )}
-      style={optimizedCoverUrl ? { backgroundImage: `url(${optimizedCoverUrl})` } : undefined}
+      style={displayCoverUrl ? { backgroundImage: `url(${displayCoverUrl})` } : undefined}
+      onClick={displayCoverUrl ? () => setViewerOpen(true) : undefined}
     >
-      {optimizedCoverUrl && (
+      {displayCoverUrl && (
         <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-black/35 to-transparent" />
       )}
-      <div className="absolute bottom-3 end-3">
+      <div className="absolute bottom-3 end-3" onClick={(e) => e.stopPropagation()}>
         {coverPhotoUrl ? (
           <Dropdown
             align="end"
@@ -117,6 +113,14 @@ export function CoverPhotoUploader({
         confirmLabel="حذف"
         loading={removing}
       />
+      {viewerOpen && coverPhotoUrl && (
+        <Lightbox
+          images={[cldOptimize(coverPhotoUrl, { width: 1600 })!]}
+          index={0}
+          onIndexChange={() => {}}
+          onClose={() => setViewerOpen(false)}
+        />
+      )}
     </div>
   );
 }

@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react';
 import { cn, initials } from '@/lib/utils';
+import { cldOptimize } from '@/lib/images';
+import { ViewablePhoto } from './ViewablePhoto';
 
 interface AvatarProps {
   src?: string | null;
@@ -8,6 +10,9 @@ interface AvatarProps {
   className?: string;
   ring?: boolean;
   online?: boolean;
+  // Opt-in: tap the photo to open it full-screen. Off by default so control avatars
+  // (nav menu, pickers, the uploader's edit button) stay plain.
+  viewable?: boolean;
 }
 
 const sizeClasses = {
@@ -18,6 +23,10 @@ const sizeClasses = {
   xl: 'h-24 w-24 text-2xl',
 };
 
+// Longest edge actually rendered per size -- keeps the delivered avatar a few KB instead of
+// shipping a multi-MB original into a small circle.
+const sizePx = { xs: 96, sm: 96, md: 96, lg: 160, xl: 320 } as const;
+
 const dotSizeClasses = {
   xs: 'h-1.5 w-1.5',
   sm: 'h-2 w-2',
@@ -26,12 +35,22 @@ const dotSizeClasses = {
   xl: 'h-4 w-4',
 };
 
-export function Avatar({ src, name, size = 'md', className, ring, online }: AvatarProps) {
+export function Avatar({ src, name, size = 'md', className, ring, online, viewable }: AvatarProps) {
   const [errored, setErrored] = useState(false);
 
   useEffect(() => {
     setErrored(false);
   }, [src]);
+
+  const thumbSrc = src ? cldOptimize(src, { width: sizePx[size], height: sizePx[size], crop: 'thumb' }) : undefined;
+  const showPhoto = Boolean(thumbSrc) && !errored;
+
+  const image = (
+    // Uploaded avatars are user photos from the backend; keep as plain <img> to avoid
+    // configuring next/image remote patterns for a dynamic, per-deployment backend origin.
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={thumbSrc} alt={name} className="h-full w-full object-cover" onError={() => setErrored(true)} />
+  );
 
   return (
     <div className="relative shrink-0">
@@ -43,11 +62,14 @@ export function Avatar({ src, name, size = 'md', className, ring, online }: Avat
           className,
         )}
       >
-        {src && !errored ? (
-          // Uploaded avatars are user photos from the backend; keep as plain <img> to avoid
-          // configuring next/image remote patterns for a dynamic, per-deployment backend origin.
-          // eslint-disable-next-line @next/next/no-img-element
-          <img src={src} alt={name} className="h-full w-full object-cover" onError={() => setErrored(true)} />
+        {showPhoto ? (
+          viewable ? (
+            <ViewablePhoto src={cldOptimize(src, { width: 1600 })} alt={name} className="block h-full w-full cursor-zoom-in">
+              {image}
+            </ViewablePhoto>
+          ) : (
+            image
+          )
         ) : (
           <span>{initials(name) || '?'}</span>
         )}

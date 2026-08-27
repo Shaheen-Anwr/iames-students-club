@@ -18,6 +18,7 @@ import {
 import { Avatar } from '@/components/ui/Avatar';
 import { TaggedText } from '@/components/shared/TaggedText';
 import { assetUrl, cn, formatBytes, timeAgo } from '@/lib/utils';
+import { cldOptimize } from '@/lib/images';
 import { extractFirstUrl, tickStatus } from '@/lib/chat-helpers';
 import type { Conversation, Message } from '@/lib/types';
 
@@ -321,6 +322,7 @@ export function MessageBubble({
               src={assetUrl(message.sender?.photoUrl)}
               name={message.sender?.name ?? 'مستخدم محذوف'}
               size="sm"
+              viewable
             />
           )}
         </div>
@@ -441,7 +443,7 @@ export function MessageBubble({
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
-                      src={url}
+                      src={cldOptimize(url, { width: 1000 })}
                       alt={attachment.name ?? 'صورة'}
                       className="animate-bubble-in max-h-64 max-w-full rounded-2xl object-cover"
                     />

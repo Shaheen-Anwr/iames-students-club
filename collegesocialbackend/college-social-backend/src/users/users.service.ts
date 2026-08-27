@@ -174,6 +174,13 @@ export class UsersService {
     return me.friends;
   }
 
+  // Raw friend id strings for `userId` -- lightweight (no populate), used by PostsService to decide
+  // who may see a 'friends'-scoped post. Returns [] if the user has no friends or doesn't exist.
+  async getFriendIds(userId: string): Promise<string[]> {
+    const me = await this.userModel.findById(userId).select('friends').lean<{ friends: Types.ObjectId[] }>().exec();
+    return (me?.friends ?? []).map((f) => f.toString());
+  }
+
   // Own pending requests only (received + sent), populated the same way -- unlike listFriends,
   // deliberately not exposed for an arbitrary id: who's pending is not public information.
   async listFriendRequests(userId: string): Promise<{ received: UserDocument[]; sent: UserDocument[] }> {

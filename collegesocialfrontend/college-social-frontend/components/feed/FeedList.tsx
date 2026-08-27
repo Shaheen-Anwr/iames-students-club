@@ -113,8 +113,13 @@ export function FeedList() {
   // A freshly created/shared post only belongs at the top of the list if it actually matches
   // every filter currently applied -- mirrors what the server would return for buildQuery().
   function matchesFilters(post: Post) {
+    // The server's "عام" feed also returns the viewer's own friends-only / "only me" posts (see
+    // PostsService.feed()), so those belong at the top of the public tab right after creation too.
+    const isOwnRestricted =
+      (post.scope === 'friends' || post.scope === 'private') && !!user && post.author?._id === user._id;
+    const scopeMatches = post.scope === scope || (scope === 'public' && isOwnRestricted);
     return (
-      post.scope === scope &&
+      scopeMatches &&
       (!courseCode || post.courseCode === courseCode) &&
       (!department || post.department === department) &&
       (!academicYear || post.academicYear === academicYear) &&

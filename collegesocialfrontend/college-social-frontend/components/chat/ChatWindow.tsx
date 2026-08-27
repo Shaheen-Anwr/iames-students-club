@@ -27,6 +27,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/chat-helpers';
 import { assetUrl } from '@/lib/utils';
+import { cldOptimize } from '@/lib/images';
 import { chatBackgroundStyle, useChatBackground } from '@/lib/chat-background';
 import type { Attachment, Message, User, Conversation } from '@/lib/types';
 import { useChat } from './ChatProvider';
@@ -106,7 +107,7 @@ function ImagePreviewModal({
       {/* Image */}
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={src}
+        src={cldOptimize(src, { width: 1600, crop: 'limit' })}
         alt={alt}
         className="max-h-[70vh] w-full flex-1 object-contain"
         onClick={(e) => e.stopPropagation()}

@@ -1,6 +1,8 @@
 import { FileText } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { ViewablePhoto } from '@/components/ui/ViewablePhoto';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
+import { cldOptimize } from '@/lib/images';
 import type { ChannelMessage } from '@/lib/types';
 
 const IMAGE_EXTENSIONS = /\.(png|jpe?g|gif|webp)$/i;
@@ -13,15 +15,17 @@ export function ChannelMessageBubble({ message, isOwn, showAvatar }: { message: 
     <div className={cn('flex items-end gap-2.5', isOwn && 'flex-row-reverse')}>
       <div className="w-8 shrink-0">
         {!isOwn && showAvatar && (
-          <Avatar src={assetUrl(message.sender?.photoUrl)} name={message.sender?.name ?? 'مستخدم محذوف'} size="sm" />
+          <Avatar src={assetUrl(message.sender?.photoUrl)} name={message.sender?.name ?? 'مستخدم محذوف'} size="sm" viewable />
         )}
       </div>
       <div className={cn('flex max-w-[75%] flex-col gap-1', isOwn ? 'items-end' : 'items-start')}>
         {attachment && (
           <div className={cn('animate-bubble-in overflow-hidden rounded-2xl', isOwn ? 'rounded-bl-md' : 'rounded-br-md')}>
             {isImage ? (
-              // eslint-disable-next-line @next/next/no-img-element
-              <img src={attachment} alt="مرفق" className="max-h-64 w-auto object-cover" />
+              <ViewablePhoto src={cldOptimize(attachment, { width: 1600 })} alt="مرفق" className="block">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={cldOptimize(attachment, { width: 1000 })} alt="مرفق" className="max-h-64 w-auto object-cover" />
+              </ViewablePhoto>
             ) : (
               <a
                 href={attachment}

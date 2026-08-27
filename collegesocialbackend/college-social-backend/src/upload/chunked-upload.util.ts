@@ -103,6 +103,52 @@ async function probeVideo(filePath: string): Promise<{ durationSec: number; size
   });
 }
 
+// Re-encodes a video once into a much smaller H.264/AAC MP4: caps the long edge at
+// VIDEO_COMPRESS_MAX_DIMENSION px (never upscales), uses a constant-quality setting (CRF, higher =
+// smaller/lower quality -- 28 is visually fine for lecture/phone footage) and a fast x264 preset so
+// it finishes in a reasonable time on a small instance, and moves the moov atom to the front
+// (+faststart) so the result streams/plays before it's fully downloaded. Returns the output path
+// and its size. A 500MB 1080p phone clip typically lands around 80-150MB here -- usually small
+// enough to upload as a single Cloudinary asset with no segmenting/splicing at all. All three
+// numbers are overridable via env (VIDEO_COMPRESS_CRF / VIDEO_COMPRESS_PRESET /
+// VIDEO_COMPRESS_MAX_DIMENSION) without a code change.
+export async function compressVideo(filePath: string, outDir: string): Promise<{ path: string; sizeBytes: number }> {
+  await mkdir(outDir, { recursive: true });
+  const outPath = join(outDir, 'compressed.mp4');
+
+  const crf = parsePositiveInt(process.env.VIDEO_COMPRESS_CRF) ?? 28;
+  const preset = process.env.VIDEO_COMPRESS_PRESET || 'veryfast';
+  const maxDimension = parsePositiveInt(process.env.VIDEO_COMPRESS_MAX_DIMENSION) ?? 1280;
+
+  await new Promise<void>((resolve, reject) => {
+    ffmpeg(filePath)
+      // scale='if(gt(a,1),min(W,iw),-2)' style, spelled out per-axis so it works for both portrait
+      // and landscape: clamp the longer edge to `maxDimension`, let the other axis scale to keep
+      // aspect ratio, and round to an even number (-2) because H.264 requires even dimensions. The
+      // outer min(..,iw/ih) guarantees we never upscale a video that's already smaller.
+      .videoFilters(
+        `scale='min(${maxDimension},iw)':'min(${maxDimension},ih)':force_original_aspect_ratio=decrease,scale=trunc(iw/2)*2:trunc(ih/2)*2`,
+      )
+      .videoCodec('libx264')
+      .audioCodec('aac')
+      .audioBitrate('128k')
+      .outputOptions([`-preset ${preset}`, `-crf ${crf}`, '-movflags +faststart', '-max_muxing_queue_size 1024'])
+      .output(outPath)
+      .on('end', () => resolve())
+      .on('error', reject)
+      .run();
+  });
+
+  const { size } = await stat(outPath);
+  return { path: outPath, sizeBytes: size };
+}
+
+function parsePositiveInt(value: string | undefined): number | null {
+  if (!value) return null;
+  const parsed = parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
+}
+
 // Splits a video into sequential segments, each targeting at most `targetChunkBytes` (with margin
 // for bitrate variance), written to "<outDir>/part-0.mp4", "part-1.mp4", etc. Segment duration is
 // derived from the source's average bitrate. The first two attempts use "-c copy" (stream copy --

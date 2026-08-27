@@ -3,6 +3,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { Check, Copy, RefreshCw, AlertCircle, AlertTriangle, Paperclip, FileStack } from 'lucide-react';
 import { cn, timeAgo } from '@/lib/utils';
+import { cldOptimize } from '@/lib/images';
+import { ViewablePhoto } from '@/components/ui/ViewablePhoto';
 import type { AiMessage } from '@/lib/types';
 import { AiAvatar } from './AiAvatar';
 import { AiMarkdown } from './AiMarkdown';
@@ -89,8 +91,14 @@ export function AiMessageBubble({
         )}
         {message.attachmentUrl &&
           (message.attachmentType === 'image' ? (
-            // eslint-disable-next-line @next/next/no-img-element
-            <img src={message.attachmentUrl} alt="" className="max-h-48 rounded-xl border border-border object-cover" />
+            <ViewablePhoto src={cldOptimize(message.attachmentUrl, { width: 1600 })} alt="" className="block">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={cldOptimize(message.attachmentUrl, { width: 800 })}
+                alt=""
+                className="max-h-48 rounded-xl border border-border object-cover"
+              />
+            </ViewablePhoto>
           ) : (
             <a
               href={message.attachmentUrl}

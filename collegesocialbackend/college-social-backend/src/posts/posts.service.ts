@@ -82,10 +82,12 @@ export class PostsService {
       throw new BadRequestException('السنة الدراسية المختارة غير متاحة لهذه الشعبة.');
     }
 
-    // Public unless the author has a department and either didn't specify a scope (defaults to
-    // their department) or explicitly asked for one -- a departmentless author can never post to
-    // 'department' scope since there's nothing to scope it to.
-    const scope = authorDepartment ? (dto.scope ?? PostScope.DEPARTMENT) : PostScope.PUBLIC;
+    // Audience selector. An explicit 'public'/'friends'/'private' is always honored as-is. When the
+    // author doesn't pick anything, it defaults to their department page (if they have a department)
+    // or the public feed. A departmentless author can never post to 'department' -- there's nothing
+    // to scope it to, so that's coerced to 'public'.
+    let scope = dto.scope ?? (authorDepartment ? PostScope.DEPARTMENT : PostScope.PUBLIC);
+    if (scope === PostScope.DEPARTMENT && !authorDepartment) scope = PostScope.PUBLIC;
 
     // A lecture/video library upload (components/lectures/UploadLectureModal) explicitly tags its
     // own department/year/specialization, independent of scope -- those uploads are always
@@ -117,7 +119,18 @@ export class PostsService {
     });
     await post.save();
 
-    for (const recipient of mentions) {
+    // Don't ping someone about a mention in a post they wouldn't be allowed to open: never for a
+    // 'private' post, and for a 'friends' post only if they're actually in the author's friends list.
+    const notifiableMentions =
+      scope === PostScope.PRIVATE
+        ? []
+        : scope === PostScope.FRIENDS
+          ? await (async () => {
+              const friendIds = new Set(await this.usersService.getFriendIds(authorId));
+              return mentions.filter((m) => friendIds.has(m.toString()));
+            })()
+          : mentions;
+    for (const recipient of notifiableMentions) {
       await this.notificationsService.create({
         recipient,
         actor: authorId,
@@ -165,19 +178,45 @@ export class PostsService {
     scope?: PostScope,
     viewerDepartment?: Department | null,
     filters?: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization },
+    viewerId?: string,
   ): Promise<PostDocument[]> {
     const filter: Record<string, unknown> = {};
     if (courseCode) filter.courseCode = courseCode;
-    if (authorId) filter.author = new Types.ObjectId(authorId);
     if (hasAttachment) filter.attachmentType = { $ne: 'none' };
+
     if (scope === PostScope.DEPARTMENT) {
       // Locked to the viewer's own department (from the JWT, never client-suppliable) -- an
       // explicit `filters.department` is ignored here rather than allowed to override it, so this
       // stays a pure narrowing filter and never a way to peek into another department's feed.
       filter.scope = PostScope.DEPARTMENT;
       filter.department = viewerDepartment ?? null;
+      if (authorId) filter.author = new Types.ObjectId(authorId);
+    } else if (authorId) {
+      // Profile feed -- one author's posts, narrowed to the audiences this viewer is allowed to
+      // see. The author sees all of their own; anyone else sees 'public'/'department', plus
+      // 'friends' only if they're actually in the author's friends list. 'private' never leaks.
+      filter.author = new Types.ObjectId(authorId);
+      if (!viewerId || viewerId !== authorId) {
+        const friendIds = viewerId ? await this.usersService.getFriendIds(viewerId) : [];
+        const visibleScopes: PostScope[] = [PostScope.PUBLIC, PostScope.DEPARTMENT];
+        if (friendIds.includes(authorId)) visibleScopes.push(PostScope.FRIENDS);
+        filter.scope = { $in: visibleScopes };
+      }
+      if (filters?.department) filter.department = filters.department;
     } else {
-      if (scope === PostScope.PUBLIC) filter.scope = PostScope.PUBLIC;
+      // Main "عام" feed -- public posts for everyone, plus the two audience-restricted kinds the
+      // viewer is entitled to: 'friends' posts authored by someone they're friends with, and
+      // their own 'friends'/'private' posts. 'department' stays out of this tab (it has its own).
+      const or: Record<string, unknown>[] = [{ scope: PostScope.PUBLIC }];
+      if (viewerId) {
+        const friendObjectIds = (await this.usersService.getFriendIds(viewerId)).map((id) => new Types.ObjectId(id));
+        or.push({ scope: PostScope.FRIENDS, author: { $in: friendObjectIds } });
+        or.push({
+          author: new Types.ObjectId(viewerId),
+          scope: { $in: [PostScope.FRIENDS, PostScope.PRIVATE] },
+        });
+      }
+      filter.$or = or;
       if (filters?.department) filter.department = filters.department;
     }
     if (filters?.academicYear) filter.academicYear = filters.academicYear;
@@ -257,6 +296,32 @@ export class PostsService {
     return post;
   }
 
+  // Access rule for a single post reached directly (a permalink, an attachment stream, or any
+  // interaction like reacting/commenting/sharing) rather than through feed()'s own filtering.
+  // 'public'/'department' are visible to any signed-in user here -- department is a browse filter
+  // in feed()/search(), not a hard wall on a direct link, matching the app's existing behavior.
+  // 'friends' requires being in the author's friends list; 'private' is author-only.
+  private async canViewScope(scope: PostScope, authorId: string | null, viewerId: string): Promise<boolean> {
+    if (authorId && authorId === viewerId) return true;
+    if (scope === PostScope.PRIVATE) return false;
+    if (scope === PostScope.FRIENDS) {
+      if (!authorId) return false;
+      return (await this.usersService.getFriendIds(viewerId)).includes(authorId);
+    }
+    return true;
+  }
+
+  // findOne() + the audience check above -- 404s (rather than 403s) when the viewer isn't allowed
+  // to see it, so a restricted post is indistinguishable from a non-existent one.
+  async findOneForViewer(id: string, viewerId: string): Promise<PostDocument> {
+    const post = await this.findOne(id);
+    const authorId = post.author ? (post.author as { _id: Types.ObjectId })._id.toString() : null;
+    if (!(await this.canViewScope(post.scope, authorId, viewerId))) {
+      throw new NotFoundException('المنشور غير موجود');
+    }
+    return post;
+  }
+
   private static readonly ATTACHMENT_MIME_BY_EXT: Record<string, string> = {
     pdf: 'application/pdf',
     ppt: 'application/vnd.ms-powerpoint',
@@ -273,9 +338,14 @@ export class PostsService {
   // bytes to the response in order, so the client only ever sees one continuous file and never has
   // to know it was split. Buffers one part (well under Cloudinary's per-asset cap) at a time rather
   // than the whole reconstructed file, keeping memory bounded regardless of the total size.
-  async streamAttachment(id: string, res: Response): Promise<void> {
+  async streamAttachment(id: string, res: Response, viewerId: string): Promise<void> {
     const post = await this.postModel.findById(id).lean().exec();
     if (!post || !post.attachmentUrl) throw new NotFoundException('المرفق غير موجود');
+
+    const authorId = post.author ? post.author.toString() : null;
+    if (!(await this.canViewScope(post.scope, authorId, viewerId))) {
+      throw new NotFoundException('المرفق غير موجود');
+    }
 
     const chunkCount = post.attachmentChunkCount ?? 1;
     if (chunkCount <= 1) {
@@ -353,7 +423,7 @@ export class PostsService {
   // One reaction per user per post: picking the same type again removes it, a different type
   // replaces it.
   async setReaction(id: string, userId: string, type: ReactionType): Promise<PostDocument> {
-    const post = await this.findOne(id);
+    const post = await this.findOneForViewer(id, userId);
     const uid = new Types.ObjectId(userId);
     const idx = post.reactions.findIndex((r) => r.user.equals(uid));
     const isNewReaction = idx < 0;
@@ -400,9 +470,14 @@ export class PostsService {
     await post.save();
 
     // Only newly-added mentions get pinged -- otherwise every unrelated edit would re-notify
-    // everyone already tagged in the post.
+    // everyone already tagged in the post. Same audience gate as create(): no mention pings on a
+    // 'private' post, and on a 'friends' post only to people in the author's friends list.
+    const friendIds =
+      post.scope === PostScope.FRIENDS ? new Set(await this.usersService.getFriendIds(requesterId)) : null;
     for (const recipient of mentions) {
       if (previousMentions.has(recipient.toString())) continue;
+      if (post.scope === PostScope.PRIVATE) continue;
+      if (friendIds && !friendIds.has(recipient.toString())) continue;
       await this.notificationsService.create({
         recipient,
         actor: requesterId,
@@ -431,6 +506,13 @@ export class PostsService {
 
     const root = await this.postModel.findById(rootId).exec();
     if (!root) throw new NotFoundException('المنشور الأصلي غير موجود');
+
+    // Only 'public'/'department' posts can be reshared -- forwarding a friends-only or "only me"
+    // post to the sharer's own (potentially wider) audience would leak it past the original
+    // author's chosen circle.
+    if (root.scope === PostScope.FRIENDS || root.scope === PostScope.PRIVATE) {
+      throw new ForbiddenException('لا يمكن مشاركة منشور خاص');
+    }
 
     const scope = authorDepartment ? PostScope.DEPARTMENT : PostScope.PUBLIC;
     // Same profile snapshot as a regular post (see create()) -- so a share is filterable by the
@@ -474,7 +556,7 @@ export class PostsService {
   }
 
   async addComment(postId: string, authorId: string, text: string): Promise<CommentDocument> {
-    const post = await this.findOne(postId);
+    const post = await this.findOneForViewer(postId, authorId);
     const mentions = await this.resolveMentions(text, authorId);
     const comment = await new this.commentModel({
       post: post._id,
@@ -509,7 +591,9 @@ export class PostsService {
   }
 
   // Top-level comments only -- replies are fetched per-parent via listReplies().
-  async listComments(postId: string, page = 1, limit = 20): Promise<CommentDocument[]> {
+  async listComments(postId: string, viewerId: string, page = 1, limit = 20): Promise<CommentDocument[]> {
+    // 404s if the viewer isn't allowed to see the post the comments belong to.
+    await this.findOneForViewer(postId, viewerId);
     return this.commentModel
       .find({ post: new Types.ObjectId(postId), parentComment: null })
       .sort({ createdAt: 1 })
@@ -657,7 +741,7 @@ export class PostsService {
   }
 
   async toggleSave(id: string, userId: string): Promise<PostDocument> {
-    const post = await this.findOne(id);
+    const post = await this.findOneForViewer(id, userId);
     const uid = new Types.ObjectId(userId);
     const alreadySaved = post.savedBy.some((savedId) => savedId.equals(uid));
 

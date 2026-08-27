@@ -14,11 +14,26 @@ import { useToast } from '@/lib/toast-context';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { ACADEMIC_YEAR_LABELS, getAcademicYearsForDepartment, type AcademicYear } from '@/lib/academic-years';
 import { SPECIALIZATIONS_BY_DEPARTMENT, SPECIALIZATION_LABELS, type Specialization } from '@/lib/specializations';
-import { assetUrl, cn, formatBytes } from '@/lib/utils';
+import { assetUrl, formatBytes } from '@/lib/utils';
 import type { Post, PostAttachmentType, PostScope, UploadResult } from '@/lib/types';
 
 const TAG_SELECT_CLASS =
   'h-7 rounded-full border border-border bg-surface-2/70 px-2.5 text-xs font-medium text-muted-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20';
+
+// Confirmation copy per audience, shown once the post lands.
+const SCOPE_TOAST: Record<PostScope, string> = {
+  department: 'تم النشر في صفحة الشعبة.',
+  public: 'تم النشر في الصفحة العامة.',
+  friends: 'تم النشر للأصدقاء.',
+  private: 'تم النشر لك فقط.',
+};
+
+// Labels for the audience dropdown. 'department' is filled in per-user (the department's own name).
+const SCOPE_LABEL: Record<Exclude<PostScope, 'department'>, string> = {
+  public: 'عام',
+  friends: 'الأصدقاء',
+  private: 'أنا فقط',
+};
 
 const ATTACHMENT_OPTIONS: { type: Exclude<PostAttachmentType, 'none' | 'image'>; label: string; icon: typeof FileText; accept: string }[] = [
   { type: 'lecture', label: 'محاضرة', icon: FileText, accept: '.pdf,.ppt,.pptx,.doc,.docx,.txt' },
@@ -170,7 +185,7 @@ export function CreatePostBox({
       setShowCourseInput(false);
       clearAttachment();
       clearImages();
-      showToast(scope === 'department' ? 'تم النشر في صفحة الشعبة.' : 'تم النشر في الصفحة العامة.');
+      showToast(SCOPE_TOAST[scope]);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إنشاء المنشور.', 'error');
     } finally {
@@ -301,30 +316,21 @@ export function CreatePostBox({
               ))}
             </div>
             <div className="flex flex-wrap items-center gap-2.5">
+              {/* Audience selector -- who gets to see this post. Always shown; the department
+                  option only exists for a user who has a department. */}
+              <select
+                value={scope}
+                onChange={(e) => setScope(e.target.value as PostScope)}
+                aria-label="من يمكنه رؤية هذا المنشور"
+                className={TAG_SELECT_CLASS}
+              >
+                {user.department && <option value="department">{DEPARTMENT_LABELS[user.department]}</option>}
+                <option value="public">{SCOPE_LABEL.public}</option>
+                <option value="friends">{SCOPE_LABEL.friends}</option>
+                <option value="private">{SCOPE_LABEL.private}</option>
+              </select>
               {user.department && (
                 <>
-                  <div className="flex gap-1 rounded-full bg-surface-2 p-0.5">
-                    <button
-                      type="button"
-                      onClick={() => setScope('department')}
-                      className={cn(
-                        'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                        scope === 'department' ? 'bg-gradient-accent text-white shadow-glow' : 'text-muted-foreground',
-                      )}
-                    >
-                      {DEPARTMENT_LABELS[user.department]}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setScope('public')}
-                      className={cn(
-                        'rounded-full px-2.5 py-1 text-xs font-medium transition-colors',
-                        scope === 'public' ? 'bg-gradient-accent text-white shadow-glow' : 'text-muted-foreground',
-                      )}
-                    >
-                      عام
-                    </button>
-                  </div>
                   <select
                     value={academicYear}
                     onChange={(e) => setAcademicYear(e.target.value as AcademicYear | '')}

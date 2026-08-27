@@ -5,7 +5,7 @@ import { FileText, Link2, PlayCircle } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { Tabs } from '@/components/ui/Tabs';
-import { Lightbox } from '@/components/feed/Lightbox';
+import { Lightbox } from '@/components/ui/Lightbox';
 import { api } from '@/lib/api';
 import { assetUrl, cn, formatBytes, timeAgo } from '@/lib/utils';
 import type { SharedMedia } from '@/lib/types';

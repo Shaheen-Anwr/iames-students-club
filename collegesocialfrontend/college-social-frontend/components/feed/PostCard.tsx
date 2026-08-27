@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Bookmark, Bot, Heart, MessageCircle, MoreHorizontal, Pencil, Share2, Trash2 } from 'lucide-react';
+import { Bookmark, Bot, Heart, Lock, MessageCircle, MoreHorizontal, Pencil, Share2, Trash2, Users } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -194,6 +194,18 @@ export function PostCard({
                 {timeAgo(post.createdAt)}
                 {edited && <span>· تم التعديل</span>}
                 {post.courseCode && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-muted-foreground">{post.courseCode}</span>}
+                {post.scope === 'friends' && (
+                  <span className="inline-flex items-center gap-1" title="مرئي للأصدقاء فقط">
+                    <Users className="h-3 w-3" />
+                    الأصدقاء
+                  </span>
+                )}
+                {post.scope === 'private' && (
+                  <span className="inline-flex items-center gap-1" title="مرئي لك فقط">
+                    <Lock className="h-3 w-3" />
+                    أنا فقط
+                  </span>
+                )}
               </p>
             </div>
           </Link>
@@ -353,9 +365,13 @@ export function PostCard({
             <MessageCircle className="h-[22px] w-[22px]" />
           </ActionIconButton>
 
-          <ActionIconButton onClick={() => setShareModalOpen(true)} title="مشاركة">
-            <Share2 className="h-5 w-5" />
-          </ActionIconButton>
+          {/* Friends-only / "only me" posts can't be reshared -- forwarding one to the sharer's
+              own audience would leak it past the author's chosen circle (server enforces this too). */}
+          {post.scope !== 'friends' && post.scope !== 'private' && (
+            <ActionIconButton onClick={() => setShareModalOpen(true)} title="مشاركة">
+              <Share2 className="h-5 w-5" />
+            </ActionIconButton>
+          )}
 
           <ActionIconButton onClick={() => shareToAi(post)} title="اسأل المساعد الذكي عن هذا المنشور">
             <Bot className="h-5 w-5" />
