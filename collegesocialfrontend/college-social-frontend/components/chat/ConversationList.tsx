@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { Archive, BellOff, MessageSquarePlus, Pin, Search, Star, Users, UsersRound } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -66,7 +67,7 @@ export function ConversationList() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center justify-between border-b border-border px-4 py-4">
+      <div className="flex items-center justify-between border-b border-border/70 px-4 py-4">
         <h1 className="text-lg font-semibold text-foreground">الدردشات</h1>
         <div className="flex items-center gap-1.5">
           <Link
@@ -93,7 +94,7 @@ export function ConversationList() {
           <button
             onClick={() => setModalOpen(true)}
             title="محادثة جديدة"
-            className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:scale-110 hover:shadow-glow active:scale-95"
+            className="flex h-9 w-9 items-center justify-center rounded-full bg-gradient-accent text-white shadow-elev-1 transition-transform hover:scale-110 hover:shadow-glow active:scale-95"
           >
             <MessageSquarePlus className="h-4 w-4" />
           </button>
@@ -123,8 +124,8 @@ export function ConversationList() {
                 key={f.key}
                 onClick={() => setFilter(f.key)}
                 className={cn(
-                  'shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all',
-                  active ? 'bg-gradient-accent text-white shadow-soft' : 'bg-surface-2 text-muted-foreground hover:text-foreground',
+                  'shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all active:scale-95',
+                  active ? 'bg-gradient-accent text-white shadow-elev-1' : 'bg-surface-2 text-muted-foreground hover:text-foreground',
                 )}
               >
                 {f.label}
@@ -147,19 +148,20 @@ export function ConversationList() {
             <Spinner className="h-5 w-5" />
           </div>
         ) : list.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 px-6 text-center">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2/70">
-              <Search className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground">
-              {showArchived
-                ? 'لا توجد محادثات مؤرشفة.'
-                : filter === 'unread'
-                  ? 'لا توجد محادثات غير مقروءة.'
-                  : filter === 'groups'
-                    ? 'لا توجد مجموعات بعد.'
-                    : 'لا توجد محادثات بعد. ابدأ واحدة باستخدام الزر أعلاه.'}
-            </p>
+          <div className="flex h-full items-center justify-center">
+            <EmptyState
+              icon={Search}
+              title={
+                showArchived
+                  ? 'لا توجد محادثات مؤرشفة'
+                  : filter === 'unread'
+                    ? 'لا توجد محادثات غير مقروءة'
+                    : filter === 'groups'
+                      ? 'لا توجد مجموعات بعد'
+                      : 'لا توجد محادثات بعد'
+              }
+              description={!showArchived && filter === 'all' ? 'ابدأ واحدة باستخدام الزر أعلاه.' : undefined}
+            />
           </div>
         ) : (
           list.map((conversation) => {
@@ -208,8 +210,9 @@ export function ConversationList() {
                 <Link
                   href={href}
                   className={cn(
-                    'flex items-center gap-3 border-b border-border bg-surface px-4 py-3.5 transition-colors hover:bg-surface-2',
-                    active && 'bg-accent/10 hover:bg-accent/10',
+                    'relative flex items-center gap-3 border-b border-border/70 bg-surface px-4 py-3.5 transition-colors hover:bg-surface-2',
+                    active &&
+                      'bg-accent/10 hover:bg-accent/10 before:absolute before:inset-y-2 before:start-0 before:w-1 before:rounded-full before:bg-accent',
                   )}
                 >
                   <Avatar src={assetUrl(conversation.groupIcon ?? avatarUser?.photoUrl)} name={title} size="lg" online={online} />

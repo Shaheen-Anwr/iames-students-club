@@ -24,10 +24,7 @@ export default function FeedPage() {
 
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden">
-      <div aria-hidden className="pointer-events-none absolute inset-0 overflow-hidden">
-        <div className="absolute -top-32 start-1/4 h-96 w-96 rounded-full bg-accent/10 blur-3xl" />
-        <div className="absolute top-56 end-0 h-72 w-72 rounded-full bg-accent-2/10 blur-3xl" />
-      </div>
+      <div aria-hidden className="bg-mesh pointer-events-none absolute inset-0 opacity-70" />
       <div ref={scrollRef} className="relative h-full overflow-y-auto scrollbar-thin">
         <ChatProvider>
           <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-6 lg:grid-cols-[300px_minmax(0,1fr)_300px]">

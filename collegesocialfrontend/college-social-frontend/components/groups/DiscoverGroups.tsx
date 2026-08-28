@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Search, Users } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/api';
@@ -53,7 +54,7 @@ export function DiscoverGroups() {
 
   return (
     <div className="flex h-full flex-col">
-      <div className="border-b border-border px-4 py-4 sm:px-6">
+      <div className="border-b border-border/70 px-4 py-4 sm:px-6">
         <h1 className="mb-3 text-lg font-semibold text-foreground">اكتشف المجموعات</h1>
         <div className="relative max-w-sm">
           <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
@@ -72,18 +73,15 @@ export function DiscoverGroups() {
             <Spinner className="h-5 w-5" />
           </div>
         ) : groups.length === 0 ? (
-          <div className="mx-4 mt-4 flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-6 py-14 text-center sm:mx-6">
-            <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2/70">
-              <Users className="h-5 w-5 text-muted-foreground" />
-            </div>
-            <p className="text-sm text-muted-foreground">لا توجد مجموعات عامة مطابقة</p>
+          <div className="mx-4 mt-4 rounded-2xl border border-dashed border-border sm:mx-6">
+            <EmptyState icon={Users} title="لا توجد مجموعات عامة مطابقة" />
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 p-4 sm:grid-cols-2 sm:p-6">
             {groups.map((group) => {
               const isMember = !!user && group.members.includes(user._id);
               return (
-                <Card key={group._id} className="flex flex-col gap-3.5 p-5">
+                <Card key={group._id} className="flex flex-col gap-3.5 p-5 transition-[box-shadow,transform] duration-200 hover:-translate-y-0.5 hover:shadow-elev-3">
                   <div className="flex items-start gap-3">
                     <div className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-base font-semibold text-white">
                       {group.name.trim().slice(0, 1)}

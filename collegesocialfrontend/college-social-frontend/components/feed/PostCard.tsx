@@ -180,12 +180,17 @@ export function PostCard({
   }
 
   return (
-    <Card
-      className={cn(
-        'p-4 transition-shadow duration-300 hover:shadow-card',
-        post.scope === 'department' ? 'border-s-4 border-s-accent-2' : 'border-s-4 border-s-accent',
-      )}
-    >
+    <Card className="relative p-4 hover:-translate-y-0.5 hover:border-accent/25 hover:shadow-elev-3 sm:p-5">
+      {/* Scope rail -- an inset pill instead of a full-bleed border: amber for a section
+          (شعبة) post, indigo for everything else. */}
+      <span
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute inset-y-4 start-0 w-1 rounded-full',
+          post.scope === 'department' ? 'bg-accent-2' : 'bg-accent',
+        )}
+      />
+
       <div className="flex items-start justify-between gap-3">
         {post.author ? (
           <Link href={`/profile/${post.author._id}`} className="flex items-center gap-3">
@@ -198,7 +203,11 @@ export function PostCard({
               <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
                 {timeAgo(post.createdAt)}
                 {edited && <span>· تم التعديل</span>}
-                {post.courseCode && <span className="rounded-full bg-surface-2 px-2 py-0.5 text-muted-foreground">{post.courseCode}</span>}
+                {post.courseCode && (
+                  <span className="rounded-full bg-surface-2 px-2 py-0.5 font-medium text-muted-foreground ring-1 ring-inset ring-border/60">
+                    {post.courseCode}
+                  </span>
+                )}
                 {post.scope === 'friends' && (
                   <span className="inline-flex items-center gap-1" title="مرئي للأصدقاء فقط">
                     <Users className="h-3 w-3" />
@@ -239,19 +248,19 @@ export function PostCard({
       </div>
 
       {(post.department || post.academicYear || post.specialization) && (
-        <div className="mt-2.5 flex flex-wrap gap-1.5">
+        <div className="mt-3 flex flex-wrap gap-1.5">
           {post.department && (
-            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-inset ring-border/60">
               {DEPARTMENT_LABELS[post.department]}
             </span>
           )}
           {post.academicYear && (
-            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-inset ring-border/60">
               {ACADEMIC_YEAR_LABELS[post.academicYear]}
             </span>
           )}
           {post.specialization && (
-            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] text-muted-foreground">
+            <span className="rounded-full bg-surface-2 px-2 py-0.5 text-[11px] font-medium text-muted-foreground ring-1 ring-inset ring-border/60">
               {SPECIALIZATION_LABELS[post.specialization]}
             </span>
           )}
@@ -281,7 +290,7 @@ export function PostCard({
         </div>
       ) : (
         caption && (
-          <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground">
+          <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground text-pretty">
             <TaggedText text={caption} />
           </p>
         )
@@ -343,7 +352,7 @@ export function PostCard({
         </div>
       )}
 
-      <div className="mt-2 flex items-center justify-between border-t border-border pt-1">
+      <div className="mt-3 flex items-center justify-between border-t border-border/70 pt-1">
         <div className="flex items-center gap-0.5">
           <ReactionPicker
             onToggle={handleMainButtonClick}

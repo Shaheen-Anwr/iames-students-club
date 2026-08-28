@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Bookmark } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { PostCard } from '@/components/feed/PostCard';
 import { api } from '@/lib/api';
@@ -53,19 +54,19 @@ export function SavedPostsList() {
           <Spinner className="h-6 w-6" />
         </div>
       ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <Bookmark className="h-7 w-7" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">لم تحفظ أي منشورات بعد</p>
-            <p className="text-xs text-muted-foreground">اضغط على أيقونة الحفظ في أي منشور لإضافته هنا.</p>
-          </div>
-          <Link href="/feed">
-            <Button size="sm" variant="outline">
-              تصفح المنشورات
-            </Button>
-          </Link>
+        <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+          <EmptyState
+            icon={Bookmark}
+            title="لم تحفظ أي منشورات بعد"
+            description="اضغط على أيقونة الحفظ في أي منشور لإضافته هنا."
+            action={
+              <Link href="/feed">
+                <Button size="sm" variant="outline">
+                  تصفح المنشورات
+                </Button>
+              </Link>
+            }
+          />
         </div>
       ) : (
         <>

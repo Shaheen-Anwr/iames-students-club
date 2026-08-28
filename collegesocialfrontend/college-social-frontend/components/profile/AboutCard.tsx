@@ -1,5 +1,6 @@
-import { Calendar, GraduationCap, IdCard, BookMarked, User as UserIcon } from 'lucide-react';
+import { Calendar, GraduationCap, Info, BookMarked, User as UserIcon } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { BadgeShelf } from '@/components/gamification/BadgeShelf';
 import { ROLE_LABELS, type User } from '@/lib/types';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
@@ -13,7 +14,7 @@ export function AboutCard({ user }: { user: User }) {
 
   return (
     <Card className="p-5">
-      <h2 className="mb-4 text-sm font-semibold text-foreground">معلومات</h2>
+      <SectionHeader icon={Info} title="معلومات" />
       <dl className="space-y-4 text-sm">
         {user.bio && (
           <div className="flex items-start gap-3">
@@ -21,10 +22,6 @@ export function AboutCard({ user }: { user: User }) {
             <dd className="whitespace-pre-wrap text-foreground">{user.bio}</dd>
           </div>
         )}
-        <div className="flex items-center gap-3">
-          <IdCard className="h-4 w-4 shrink-0 text-muted-foreground" />
-
-        </div>
         {user.role !== 'admin' && (
           <div className="flex items-center gap-3">
             <GraduationCap className="h-4 w-4 shrink-0 text-muted-foreground" />
@@ -56,7 +53,7 @@ export function AboutCard({ user }: { user: User }) {
           </div>
         )}
       </dl>
-      <div className="mt-5 border-t border-border pt-4">
+      <div className="mt-5 border-t border-border/70 pt-4">
         <h3 className="mb-2.5 text-xs font-semibold text-muted-foreground">الإنجازات</h3>
         <BadgeShelf badges={user.badges ?? []} />
       </div>

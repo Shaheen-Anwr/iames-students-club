@@ -279,23 +279,52 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     return msg;
   };
 
+  // Keep the latest conversation object reachable from effects that must NOT re-run when it
+  // merely changes identity -- the conversations array is rebuilt on every presence/typing ping.
+  const conversationRef = useRef(conversation);
+  useEffect(() => {
+    conversationRef.current = conversation;
+  }, [conversation]);
+
   // ========== LOAD MESSAGES ==========
+  // Depends on conversationId ONLY. It used to also depend on `conversation`, so every presence
+  // update (which rebuilds the conversations array, giving `conversation` a new reference)
+  // refetched the whole thread and flashed it behind a spinner -- "old messages disappearing".
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     api.get<Message[]>(`/chat/conversations/${conversationId}/messages?limit=50`).then((data) => {
       if (cancelled) return;
-      const corrected = data.map((msg) => {
-        if (!conversation) return msg;
-        return correctSenderPhoto(msg, conversation);
-      });
+      const conv = conversationRef.current;
+      const corrected = conv ? data.map((msg) => correctSenderPhoto(msg, conv)) : data;
       setMessages(corrected.reverse());
       setLoading(false);
     });
     return () => {
       cancelled = true;
     };
-  }, [conversationId, conversation]);
+  }, [conversationId]);
+
+  // Re-apply sender-photo corrections in place when the conversation object updates
+  // (participant avatar changed, list finally loaded) -- without refetching or clearing the thread.
+  useEffect(() => {
+    if (!conversation) return;
+    setMessages((prev) => prev.map((msg) => correctSenderPhoto(msg, conversation)));
+  }, [conversation]);
+
+  // Landed on a conversation that isn't in the cached list yet (a brand-new thread opened
+  // straight from a notification)? Pull the list once so the header, participants and the
+  // socket room-join resolve, instead of getting stuck on a spinner forever.
+  const refreshedForMissing = useRef(false);
+  useEffect(() => {
+    refreshedForMissing.current = false;
+  }, [conversationId]);
+  useEffect(() => {
+    if (!loading && !conversation && !refreshedForMissing.current) {
+      refreshedForMissing.current = true;
+      refresh();
+    }
+  }, [loading, conversation, refresh]);
 
   // ========== SOCKET EVENTS ==========
   useEffect(() => {

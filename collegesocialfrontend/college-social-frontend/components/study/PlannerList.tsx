@@ -6,6 +6,7 @@ import { ar } from 'date-fns/locale';
 import { CalendarClock, Circle, CheckCircle2, ListTodo, Plus, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
@@ -99,11 +100,8 @@ export function PlannerList() {
           <Spinner className="h-6 w-6" />
         </div>
       ) : tasks.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <ListTodo className="h-7 w-7" />
-          </div>
-          <p className="text-sm text-muted-foreground">لا توجد مهام بعد. أضف أول مهمة لتنظيم دراستك.</p>
+        <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+          <EmptyState icon={ListTodo} title="لا توجد مهام بعد" description="أضف أول مهمة لتنظيم دراستك." />
         </div>
       ) : (
         <div className="space-y-2.5">
@@ -113,9 +111,11 @@ export function PlannerList() {
               <Card
                 key={task._id}
                 className={cn(
-                  'flex items-center gap-3 p-3.5',
-                  urgency === 'overdue' && 'border-s-4 border-s-danger',
-                  urgency === 'soon' && 'border-s-4 border-s-warning',
+                  'relative flex items-center gap-3 p-3.5',
+                  urgency === 'overdue' &&
+                    'before:absolute before:inset-y-3 before:start-0 before:w-1 before:rounded-full before:bg-danger',
+                  urgency === 'soon' &&
+                    'before:absolute before:inset-y-3 before:start-0 before:w-1 before:rounded-full before:bg-warning',
                   task.done && 'opacity-60',
                 )}
               >

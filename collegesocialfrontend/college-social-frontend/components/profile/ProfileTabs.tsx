@@ -22,14 +22,16 @@ export function ProfileTabs({
   friendsCount?: number;
 }) {
   return (
-    <div className="flex gap-1 border-b border-border pb-2">
+    <div className="flex gap-1 border-b border-border/70 pb-2">
       {TABS.map((tab) => (
         <button
           key={tab.id}
           onClick={() => onChange(tab.id)}
           className={cn(
-            'rounded-full px-4 py-2 text-sm font-medium transition-colors',
-            active === tab.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-surface-2/70 hover:text-foreground',
+            'rounded-full px-4 py-2 text-sm font-medium transition-all active:scale-95',
+            active === tab.id
+              ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/20'
+              : 'text-muted-foreground hover:bg-surface-2/70 hover:text-foreground',
           )}
         >
           {tab.id === 'friends' && friendsCount ? `${tab.label} · ${friendsCount}` : tab.label}

@@ -4,7 +4,7 @@ import { Card } from '@/components/ui/Card';
 export function HomeSkeleton() {
   return (
     <div className="space-y-5">
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+      <div className="flex flex-col gap-4 rounded-2xl border border-border/80 bg-surface p-4 shadow-elev-1 sm:flex-row sm:items-center sm:justify-between sm:p-5">
         <div className="space-y-2">
           <Skeleton className="h-6 w-48" />
           <Skeleton className="h-3.5 w-64" />

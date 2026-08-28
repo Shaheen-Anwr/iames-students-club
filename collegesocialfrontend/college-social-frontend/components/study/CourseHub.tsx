@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { BookOpen, ChevronLeft, Paperclip, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { api } from '@/lib/api';
@@ -92,20 +93,18 @@ export function CourseHub() {
       <div className="space-y-3">
         <h2 className="text-sm font-semibold text-foreground">مقررات النظام</h2>
         {courses.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
-              <BookOpen className="h-7 w-7" />
-            </div>
-            <div className="space-y-1">
-              <p className="text-sm font-medium text-foreground">لا توجد مقررات بعد</p>
-              <p className="text-xs text-muted-foreground">ستظهر هنا المقررات التي تحتوي على مرفقات دراسية.</p>
-            </div>
+          <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+            <EmptyState
+              icon={BookOpen}
+              title="لا توجد مقررات بعد"
+              description="ستظهر هنا المقررات التي تحتوي على مرفقات دراسية."
+            />
           </div>
         ) : (
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {courses.map(({ courseCode, attachmentCount, latestAt }) => (
               <Link key={courseCode} href={`/study/courses/${encodeURIComponent(courseCode)}`} className="group">
-                <Card className="flex items-center gap-3 p-5 transition-shadow hover:shadow-card">
+                <Card interactive className="flex items-center gap-3 p-5">
                   <div
                     className={cn(
                       'flex h-12 w-12 shrink-0 items-center justify-center rounded-2xl text-sm font-bold',

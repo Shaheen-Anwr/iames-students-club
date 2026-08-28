@@ -15,7 +15,7 @@ interface PersonCardProps {
 // (FriendActionButton, a message button, or both).
 export function PersonCard({ user, action }: PersonCardProps) {
   return (
-    <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-border bg-surface p-4 text-center shadow-soft transition-shadow hover:shadow-card">
+    <div className="flex flex-col items-center gap-2.5 rounded-2xl border border-border/80 bg-surface p-4 text-center shadow-elev-1 transition-[box-shadow,transform,border-color] duration-200 ease-standard hover:-translate-y-0.5 hover:border-accent/30 hover:shadow-elev-3">
       <Link href={`/profile/${user._id}`} className="flex flex-col items-center gap-2.5">
         <Avatar src={assetUrl(user.photoUrl)} name={user.name} size="lg" />
         <div className="min-w-0">

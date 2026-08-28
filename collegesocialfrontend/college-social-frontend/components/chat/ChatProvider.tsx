@@ -1,6 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { api } from '@/lib/api';
 import { useSocket } from '@/lib/socket-context';
 import type { Conversation, Message } from '@/lib/types';
@@ -35,9 +35,60 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     refresh();
   }, [refresh]);
 
-  // 🔥 FIX: REMOVED the `newMessage` listener that called refresh().
-  // This was the cause of the chat window reloading on every new message.
-  // Now, the conversation list updates only on manual refresh or navigation.
+  // Stale-closure-free view of the current list, for the socket listener below.
+  const conversationsRef = useRef<Conversation[]>([]);
+  useEffect(() => {
+    conversationsRef.current = conversations;
+  }, [conversations]);
+
+  // Keep the conversation list live as messages land while you're elsewhere in the app.
+  // Deliberately narrow so the open ChatWindow is never disturbed (that was why the old
+  // blanket `newMessage` -> refresh() listener was removed):
+  //   - known conversation  -> bump its preview + move it to the top, locally.
+  //   - unknown conversation -> a single refresh() to pull in the brand-new thread, so opening
+  //     it from a notification doesn't dead-end on a spinner.
+  useEffect(() => {
+    if (!socket) return;
+    let refreshing = false;
+
+    const ensureKnown = (conversationId: string) => {
+      if (conversationsRef.current.some((c) => c._id === conversationId) || refreshing) return;
+      refreshing = true;
+      refresh().finally(() => {
+        refreshing = false;
+      });
+    };
+
+    const bumpLocal = (conversationId: string, preview: string, at: string) => {
+      setConversations((prev) => {
+        const idx = prev.findIndex((c) => c._id === conversationId);
+        if (idx === -1) return prev;
+        const next = [...prev];
+        const [conv] = next.splice(idx, 1);
+        next.unshift({ ...conv, lastMessagePreview: preview || conv.lastMessagePreview, lastMessageAt: at });
+        return next;
+      });
+    };
+
+    const onNewMessage = (message: Message) => {
+      if (!message?.conversation) return;
+      ensureKnown(message.conversation);
+      bumpLocal(message.conversation, message.text || '📎', message.createdAt ?? new Date().toISOString());
+    };
+
+    const onNewNotification = (n: { type?: string; conversationId?: string | null }) => {
+      if ((n?.type === 'chat_message' || n?.type === 'mention') && n.conversationId) {
+        ensureKnown(n.conversationId);
+      }
+    };
+
+    socket.on('newMessage', onNewMessage);
+    socket.on('newNotification', onNewNotification);
+    return () => {
+      socket.off('newMessage', onNewMessage);
+      socket.off('newNotification', onNewNotification);
+    };
+  }, [socket, refresh]);
 
   // Presence updates – only updates online status, no full reload.
   useEffect(() => {

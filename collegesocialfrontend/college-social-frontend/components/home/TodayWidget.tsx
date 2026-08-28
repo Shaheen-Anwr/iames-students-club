@@ -7,6 +7,7 @@ import { ar } from 'date-fns/locale';
 import { CalendarClock, CheckCircle2, Circle, Clock3, MapPin } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
@@ -18,11 +19,13 @@ const URGENCY_BADGE: Record<Exclude<Urgency, 'completed' | 'normal'>, { label: s
   urgent: { label: 'يستحق قريبًا', variant: 'warning' },
 };
 
+// Inset urgency rail (rounded pill at the row's start edge) rather than a hard 4px border.
+const RAIL = 'relative before:absolute before:inset-y-2 before:start-0 before:w-1 before:rounded-full';
 const URGENCY_BORDER: Record<Urgency, string> = {
-  overdue: 'border-s-4 border-s-danger',
-  urgent: 'border-s-4 border-s-warning',
-  normal: 'border-s-4 border-s-border',
-  completed: 'border-s-4 border-s-success',
+  overdue: `${RAIL} before:bg-danger`,
+  urgent: `${RAIL} before:bg-warning`,
+  normal: `${RAIL} before:bg-border`,
+  completed: `${RAIL} before:bg-success`,
 };
 
 function itemKey(item: DueItem) {
@@ -81,15 +84,17 @@ export function TodayWidget({ schedule, dueToday }: { schedule: ScheduleEntry[];
 
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <CalendarClock className="h-4 w-4 text-accent" />
-          <h2 className="text-sm font-semibold text-foreground">اليوم</h2>
-        </div>
-        {items.length > 0 && (
-          <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">{items.length} يحتاج انتباهك</span>
-        )}
-      </div>
+      <SectionHeader
+        icon={CalendarClock}
+        title="اليوم"
+        action={
+          items.length > 0 ? (
+            <span className="rounded-full bg-danger/10 px-2 py-0.5 text-xs font-medium text-danger">
+              {items.length} يحتاج انتباهك
+            </span>
+          ) : undefined
+        }
+      />
 
       {isEmpty ? (
         <div className="flex flex-col items-center gap-2 py-8 text-center">

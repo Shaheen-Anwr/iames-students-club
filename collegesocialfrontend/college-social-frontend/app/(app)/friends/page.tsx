@@ -7,6 +7,7 @@ import { PersonCard } from '@/components/friends/PersonCard';
 import { FriendActionButton } from '@/components/profile/FriendActionButton';
 import { useFriendSuggestions } from '@/components/feed/FeedFriendSuggestionsCard';
 import { Button } from '@/components/ui/Button';
+import { EmptyState as UiEmptyState } from '@/components/ui/EmptyState';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -21,7 +22,7 @@ function GridSkeleton({ count = 6 }: { count?: number }) {
   return (
     <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
       {Array.from({ length: count }).map((_, i) => (
-        <div key={i} className="flex flex-col items-center gap-2.5 rounded-2xl border border-border bg-surface p-4">
+        <div key={i} className="flex flex-col items-center gap-2.5 rounded-2xl border border-border/80 bg-surface p-4 shadow-elev-1">
           <Skeleton className="h-14 w-14 rounded-full" />
           <Skeleton className="h-3 w-16 rounded-md" />
           <Skeleton className="mt-1 h-8 w-full rounded-lg" />
@@ -33,9 +34,8 @@ function GridSkeleton({ count = 6 }: { count?: number }) {
 
 function EmptyState({ icon: Icon, text }: { icon: typeof UsersRound; text: string }) {
   return (
-    <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-surface-2/40 py-16 text-center text-muted-foreground">
-      <Icon className="h-8 w-8" />
-      <p className="text-sm">{text}</p>
+    <div className="rounded-2xl border border-dashed border-border bg-surface-2/40">
+      <UiEmptyState icon={Icon} title={text} />
     </div>
   );
 }
@@ -118,18 +118,23 @@ export default function FriendsPage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-3xl space-y-4 px-4 py-6">
-        <h1 className="flex items-center gap-2 text-xl font-bold text-foreground">
-          <UsersRound className="h-5 w-5 text-accent" /> الأصدقاء
+        <h1 className="flex items-center gap-2.5 text-xl font-bold text-foreground">
+          <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent">
+            <UsersRound className="h-4 w-4" />
+          </span>
+          الأصدقاء
         </h1>
 
-        <div className="flex gap-1 border-b border-border pb-2">
+        <div className="flex gap-1 border-b border-border/70 pb-2">
           {TABS.map((t) => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
               className={cn(
-                'flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-colors',
-                tab === t.id ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-surface-2/70 hover:text-foreground',
+                'flex items-center gap-1.5 rounded-full px-4 py-2 text-sm font-medium transition-all active:scale-95',
+                tab === t.id
+                  ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/20'
+                  : 'text-muted-foreground hover:bg-surface-2/70 hover:text-foreground',
               )}
             >
               {t.label}

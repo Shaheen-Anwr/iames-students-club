@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react';
 import { Inbox } from 'lucide-react';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { api } from '@/lib/api';
 import type { Post } from '@/lib/types';
@@ -41,11 +42,8 @@ export function UserPostsFeed({ userId }: { userId: string }) {
 
   if (posts.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border py-16 text-center text-muted-foreground">
-        <div className="flex h-12 w-12 items-center justify-center rounded-full bg-surface-2/70">
-          <Inbox className="h-5 w-5" />
-        </div>
-        <p className="text-sm">لا توجد منشورات لعرضها.</p>
+      <div className="rounded-xl2 border border-dashed border-border">
+        <EmptyState icon={Inbox} title="لا توجد منشورات لعرضها" />
       </div>
     );
   }

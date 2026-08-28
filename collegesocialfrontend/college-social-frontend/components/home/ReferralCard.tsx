@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Check, Copy, Gift, Share2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { cn } from '@/lib/utils';
@@ -63,10 +64,7 @@ export function ReferralCard() {
 
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center gap-2">
-        <Gift className="h-4 w-4 text-accent" />
-        <h2 className="text-sm font-semibold text-foreground">ادعُ أصدقاءك</h2>
-      </div>
+      <SectionHeader icon={Gift} title="ادعُ أصدقاءك" className="mb-3" />
 
       <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
         {done ? (

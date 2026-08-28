@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Crown, Flame, Trophy } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -40,19 +41,18 @@ export function Leaderboard() {
 
   if (entries.length === 0) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-warning/10 text-warning">
-          <Trophy className="h-7 w-7" />
-        </div>
-        <p className="text-sm text-muted-foreground">لا يوجد نشاط بعد لعرض المتصدرين.</p>
+      <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+        <EmptyState icon={Trophy} title="لا يوجد نشاط بعد" description="سيظهر المتصدرون هنا بمجرد بدء النشاط." />
       </div>
     );
   }
 
   return (
     <div className="space-y-2.5">
-      <h1 className="mb-1 flex items-center gap-2 text-lg font-semibold text-foreground">
-        <Trophy className="h-5 w-5 text-warning" />
+      <h1 className="mb-1 flex items-center gap-2.5 text-lg font-semibold text-foreground">
+        <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-warning/10 text-warning">
+          <Trophy className="h-4 w-4" />
+        </span>
         المتصدرون
       </h1>
       {entries.map((entry, index) => {

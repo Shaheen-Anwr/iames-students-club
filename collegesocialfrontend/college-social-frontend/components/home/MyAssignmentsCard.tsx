@@ -6,6 +6,7 @@ import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { ClipboardList, Plus, Users } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import type { Assignment } from '@/lib/types';
@@ -34,15 +35,15 @@ export function MyAssignmentsCard() {
 
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <ClipboardList className="h-4 w-4 text-accent" />
-          <h2 className="text-sm font-semibold text-foreground">واجباتك الأخيرة</h2>
-        </div>
-        <Link href="/study/assignments" className="text-xs font-medium text-muted-foreground hover:text-accent">
-          عرض الكل
-        </Link>
-      </div>
+      <SectionHeader
+        icon={ClipboardList}
+        title="واجباتك الأخيرة"
+        action={
+          <Link href="/study/assignments" className="text-muted-foreground hover:text-accent">
+            عرض الكل
+          </Link>
+        }
+      />
 
       {loading ? (
         <p className="py-6 text-center text-sm text-muted-foreground">جارِ التحميل...</p>

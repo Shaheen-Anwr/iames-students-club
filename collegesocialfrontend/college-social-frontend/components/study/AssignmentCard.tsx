@@ -35,11 +35,14 @@ function urgencyLabel(dueDate: string, urgency: ReturnType<typeof urgencyOf>) {
   return null;
 }
 
+// Inset "urgency rail" -- a rounded pill flush with the card's start edge (see PostCard), not a
+// hard full-bleed border.
+const RAIL_BASE = 'relative before:absolute before:inset-y-4 before:start-0 before:w-1 before:rounded-full';
 const BORDER_CLASSES: Record<ReturnType<typeof urgencyOf>, string> = {
-  overdue: 'border-s-4 border-s-danger',
-  urgent: 'border-s-4 border-s-warning',
-  normal: 'border-s-4 border-s-border',
-  completed: 'border-s-4 border-s-success',
+  overdue: `${RAIL_BASE} before:bg-danger`,
+  urgent: `${RAIL_BASE} before:bg-warning`,
+  normal: `${RAIL_BASE} before:bg-border`,
+  completed: `${RAIL_BASE} before:bg-success`,
 };
 
 export function AssignmentCard({ assignment, onDeleted }: { assignment: Assignment; onDeleted: (id: string) => void }) {

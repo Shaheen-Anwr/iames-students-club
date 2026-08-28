@@ -6,6 +6,7 @@ import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
 import { api } from '@/lib/api';
 import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { BadgeShelf } from '@/components/gamification/BadgeShelf';
 import { AnnouncementsStrip } from '@/components/announcements/AnnouncementsStrip';
 import { GreetingHeader } from '@/components/home/GreetingHeader';
@@ -46,37 +47,39 @@ export default function HomePage() {
   return (
     <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
       <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
-        <div className="animate-fade-in">
+        {/* Sections rise in gently in sequence rather than all snapping in at once. */}
+        <div className="animate-slide-up" style={{ animationDelay: '0ms' }}>
           <GreetingHeader user={user} />
         </div>
 
-        <div className="animate-fade-in">
+        <div className="animate-slide-up" style={{ animationDelay: '60ms' }}>
           <QuickActions />
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 animate-fade-in">
+        <div className="grid animate-slide-up grid-cols-1 gap-4 lg:grid-cols-2" style={{ animationDelay: '120ms' }}>
           <TodayWidget schedule={data.todaySchedule} dueToday={data.dueToday} />
           {isProfessor ? <MyAssignmentsCard /> : <CompactLeaderboard entries={data.leaderboard} />}
         </div>
 
-        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 animate-fade-in">
+        <div className="grid animate-slide-up grid-cols-1 gap-4 lg:grid-cols-2" style={{ animationDelay: '180ms' }}>
           <AnnouncementsStrip />
           <NotificationsPreview />
         </div>
 
         {!isProfessor && (
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2 animate-fade-in">
+          <div className="grid animate-slide-up grid-cols-1 gap-4 lg:grid-cols-2" style={{ animationDelay: '240ms' }}>
             <ReferralCard />
             <Card className="p-4">
-              <div className="mb-3 flex items-center justify-between">
-                <div className="flex items-center gap-2">
-                  <Award className="h-4 w-4 text-gold" />
-                  <h2 className="text-sm font-semibold text-foreground">أوسمتك</h2>
-                </div>
-                <Link href="/profile" className="text-xs font-medium text-muted-foreground hover:text-accent">
-                  عرض الملف الشخصي
-                </Link>
-              </div>
+              <SectionHeader
+                icon={Award}
+                tone="gold"
+                title="أوسمتك"
+                action={
+                  <Link href="/profile" className="text-muted-foreground hover:text-accent">
+                    عرض الملف الشخصي
+                  </Link>
+                }
+              />
               <BadgeShelf badges={user.badges ?? []} />
             </Card>
           </div>

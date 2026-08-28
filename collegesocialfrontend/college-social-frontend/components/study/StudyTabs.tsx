@@ -31,8 +31,10 @@ export function StudyTabs() {
             key={href}
             href={href}
             className={cn(
-              'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-colors',
-              active ? 'bg-surface text-accent shadow-soft' : 'text-muted-foreground hover:text-foreground',
+              'flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-3.5 py-2 text-sm font-medium transition-all active:scale-95',
+              active
+                ? 'bg-surface text-accent shadow-elev-1 ring-1 ring-inset ring-accent/20'
+                : 'text-muted-foreground hover:bg-surface/60 hover:text-foreground',
             )}
           >
             <Icon className="h-4 w-4" />

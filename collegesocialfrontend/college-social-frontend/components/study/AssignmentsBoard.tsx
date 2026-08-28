@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { useSearchParams } from 'next/navigation';
 import { ClipboardList, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -106,7 +107,7 @@ export function AssignmentsBoard({
             onClick={() => setUpcomingOnly((prev) => !prev)}
             className={cn(
               'flex h-10 shrink-0 items-center rounded-full px-4 text-sm font-medium transition-all active:scale-95',
-              upcomingOnly ? 'bg-gradient-accent text-white shadow-soft' : 'bg-surface-2/70 text-muted-foreground hover:bg-surface-2',
+              upcomingOnly ? 'bg-gradient-accent text-white shadow-elev-1' : 'bg-surface-2/70 text-muted-foreground hover:bg-surface-2',
             )}
           >
             القادمة فقط
@@ -119,22 +120,20 @@ export function AssignmentsBoard({
           <Spinner className="h-6 w-6" />
         </div>
       ) : safeAssignments.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <ClipboardList className="h-7 w-7" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">لا توجد واجبات حاليًا</p>
-            <p className="text-xs text-muted-foreground">
-              {canCreate ? 'أنشئ أول واجب لمشاركته مع الطلاب.' : 'ستظهر هنا واجبات أساتذتك عند إضافتها.'}
-            </p>
-          </div>
-          {canCreate && (
-            <Button size="sm" onClick={() => setModalOpen(true)}>
-              <Plus className="h-4 w-4" />
-              إنشاء واجب
-            </Button>
-          )}
+        <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+          <EmptyState
+            icon={ClipboardList}
+            title="لا توجد واجبات حاليًا"
+            description={canCreate ? 'أنشئ أول واجب لمشاركته مع الطلاب.' : 'ستظهر هنا واجبات أساتذتك عند إضافتها.'}
+            action={
+              canCreate ? (
+                <Button size="sm" onClick={() => setModalOpen(true)}>
+                  <Plus className="h-4 w-4" />
+                  إنشاء واجب
+                </Button>
+              ) : undefined
+            }
+          />
         </div>
       ) : (
         <div className="space-y-4">

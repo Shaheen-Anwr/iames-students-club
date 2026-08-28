@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Inbox } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
 import { api } from '@/lib/api';
@@ -162,7 +163,7 @@ export function FeedList() {
     <div className="space-y-4">
       <div className="flex items-center gap-3">
         <Avatar src={assetUrl(user?.photoUrl)} name={user?.name ?? '?'} size="md" />
-        <h1 className="bg-gradient-accent bg-clip-text text-xl font-extrabold tracking-tight text-transparent">
+        <h1 className="text-gradient-accent text-xl font-extrabold tracking-tight text-balance">
           {isNewUser
             ? `Welcome to our community${user?.name ? `, ${user.name}` : ''}!`
             : `Welcome back${user?.name ? `, ${user.name}` : ''}`}
@@ -200,9 +201,12 @@ export function FeedList() {
           ))}
         </div>
       ) : posts.length === 0 ? (
-        <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border bg-surface-2/40 py-16 text-center text-muted-foreground">
-          <Inbox className="h-8 w-8" />
-          <p className="text-sm">لا توجد منشورات بعد. كن أول من يشارك شيئًا.</p>
+        <div className="rounded-2xl border border-dashed border-border bg-surface-2/40">
+          <EmptyState
+            icon={Inbox}
+            title="لا توجد منشورات بعد"
+            description="كن أول من يشارك ملاحظة أو سؤالًا أو تحديثًا مع زملائك."
+          />
         </div>
       ) : (
         <>

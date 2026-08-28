@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { Crown, Trophy } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { useAuth } from '@/lib/auth-context';
 import { assetUrl, cn } from '@/lib/utils';
 import type { LeaderboardEntry } from '@/lib/types';
@@ -19,15 +20,16 @@ export function CompactLeaderboard({ entries }: { entries: LeaderboardEntry[] })
 
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Trophy className="h-4 w-4 text-warning" />
-          <h2 className="text-sm font-semibold text-foreground">المتصدرون</h2>
-        </div>
-        <Link href="/study/leaderboard" className="text-xs font-medium text-muted-foreground hover:text-accent">
-          عرض الكل
-        </Link>
-      </div>
+      <SectionHeader
+        icon={Trophy}
+        tone="warning"
+        title="المتصدرون"
+        action={
+          <Link href="/study/leaderboard" className="text-muted-foreground hover:text-accent">
+            عرض الكل
+          </Link>
+        }
+      />
 
       {entries.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">لا يوجد نشاط بعد.</p>

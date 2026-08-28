@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Bell } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
+import { SectionHeader } from '@/components/ui/SectionHeader';
 import { NOTIFICATION_LABELS, notificationHref } from '@/components/layout/NotificationBell';
 import { useNotifications } from '@/lib/notifications-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
@@ -22,15 +23,15 @@ export function NotificationsPreview() {
 
   return (
     <Card className="p-4">
-      <div className="mb-3 flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Bell className="h-4 w-4 text-accent" />
-          <h2 className="text-sm font-semibold text-foreground">أحدث الإشعارات</h2>
-        </div>
-        <Link href="/notifications" className="text-xs font-medium text-muted-foreground hover:text-accent">
-          عرض الكل
-        </Link>
-      </div>
+      <SectionHeader
+        icon={Bell}
+        title="أحدث الإشعارات"
+        action={
+          <Link href="/notifications" className="text-muted-foreground hover:text-accent">
+            عرض الكل
+          </Link>
+        }
+      />
 
       {recent.length === 0 ? (
         <p className="py-6 text-center text-sm text-muted-foreground">لا توجد إشعارات بعد.</p>
