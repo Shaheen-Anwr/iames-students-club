@@ -113,11 +113,19 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       }
     };
 
+    // A public group is created elsewhere -> it belongs in this user's list right away.
+    const onConversationCreated = (conversation: Conversation) => {
+      if (!conversation?._id) return;
+      setConversations((prev) => (prev.some((c) => c._id === conversation._id) ? prev : [conversation, ...prev]));
+    };
+
     socket.on('newMessage', onNewMessage);
     socket.on('newNotification', onNewNotification);
+    socket.on('conversationCreated', onConversationCreated);
     return () => {
       socket.off('newMessage', onNewMessage);
       socket.off('newNotification', onNewNotification);
+      socket.off('conversationCreated', onConversationCreated);
     };
   }, [socket, refresh]);
 

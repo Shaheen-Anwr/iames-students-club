@@ -6,6 +6,7 @@ import { ChannelMessage, ChannelMessageSchema } from './schemas/channel-message.
 import { GroupsService } from './groups.service';
 import { GroupsController } from './groups.controller';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { UploadModule } from '../upload/upload.module';
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
       { name: ChannelMessage.name, schema: ChannelMessageSchema },
     ]),
     NotificationsModule,
+    UploadModule,
   ],
   controllers: [GroupsController],
   providers: [GroupsService],

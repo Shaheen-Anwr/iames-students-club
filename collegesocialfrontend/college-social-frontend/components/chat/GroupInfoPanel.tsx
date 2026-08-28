@@ -434,14 +434,20 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
           >
             <Trash2 className="h-4 w-4" /> حذف المحادثة
           </button>
-          {conversation.isGroup && (
-            <button
-              disabled={busy}
-              onClick={leaveGroup}
-              className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-danger hover:bg-danger/10 disabled:opacity-50"
-            >
-              <LogOut className="h-4 w-4" /> مغادرة المجموعة
-            </button>
+          {conversation.isGroup && conversation.visibility === 'public' ? (
+            <p className="px-2 py-2.5 text-xs text-muted-foreground">
+              مجموعة عامة — لا يمكن مغادرتها. يمكن للمشرفين فقط إزالة الأعضاء.
+            </p>
+          ) : (
+            conversation.isGroup && (
+              <button
+                disabled={busy}
+                onClick={leaveGroup}
+                className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-danger hover:bg-danger/10 disabled:opacity-50"
+              >
+                <LogOut className="h-4 w-4" /> مغادرة المجموعة
+              </button>
+            )
           )}
         </div>
       </div>

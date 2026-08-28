@@ -119,9 +119,22 @@ export default function AdminPage() {
   const [active, setActive] = useState<ItemId>('overview');
   const [usersUnverifiedOnly, setUsersUnverifiedOnly] = useState(false);
 
+  // The "Users" panel manages accounts and is super-admin-only -- keep it out of the nav and out of
+  // reach for a regular admin (the backend enforces this too, via SuperAdminGuard).
+  const isSuperAdmin = !!user?.isSuperAdmin;
+  const nav = isSuperAdmin
+    ? NAV
+    : NAV.map((section) => ({ ...section, items: section.items.filter((item) => item.id !== 'users') })).filter(
+        (section) => section.items.length > 0,
+      );
+
   useEffect(() => {
     if (user && user.role !== 'admin') router.replace('/feed');
   }, [user, router]);
+
+  useEffect(() => {
+    if (active === 'users' && !isSuperAdmin) setActive('overview');
+  }, [active, isSuperAdmin]);
 
   if (!user || user.role !== 'admin') {
     return (
@@ -140,7 +153,7 @@ export default function AdminPage() {
               <ShieldCheck className="h-5 w-5 text-accent" />
               <h1 className="text-lg font-semibold text-foreground">لوحة الإدارة</h1>
             </div>
-            {NAV.map((section, i) => (
+            {nav.map((section, i) => (
               <div key={i} className="space-y-1">
                 {section.label && (
                   <p className="px-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
@@ -174,7 +187,7 @@ export default function AdminPage() {
           </div>
 
           <div className="flex gap-1 overflow-x-auto pb-1 scrollbar-thin md:hidden">
-            {NAV.flatMap((s) => s.items).map(({ id, label }) => (
+            {nav.flatMap((s) => s.items).map(({ id, label }) => (
               <button
                 key={id}
                 onClick={() => setActive(id)}
@@ -194,13 +207,17 @@ export default function AdminPage() {
 
           {active === 'overview' && (
             <AdminOverview
-              onViewPendingVerifications={() => {
-                setUsersUnverifiedOnly(true);
-                setActive('users');
-              }}
+              onViewPendingVerifications={
+                isSuperAdmin
+                  ? () => {
+                      setUsersUnverifiedOnly(true);
+                      setActive('users');
+                    }
+                  : undefined
+              }
             />
           )}
-          {active === 'users' && (
+          {active === 'users' && isSuperAdmin && (
             <AdminPanel unverifiedOnly={usersUnverifiedOnly} onUnverifiedOnlyChange={setUsersUnverifiedOnly} />
           )}
           {active === 'user-stats' && <AdminStats />}

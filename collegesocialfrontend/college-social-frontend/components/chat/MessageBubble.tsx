@@ -24,7 +24,7 @@ import { cldOptimize } from '@/lib/images';
 import { extractFirstUrl, tickStatus } from '@/lib/chat-helpers';
 import type { Conversation, Message } from '@/lib/types';
 
-import { QuickReactionBar } from './EmojiPicker';
+import { EmojiPicker, QuickReactionBar } from './EmojiPicker';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { MessageMenu, type MessageMenuItem } from './MessageMenu';
 import { VoiceMessagePlayer } from './VoiceMessagePlayer';
@@ -77,6 +77,7 @@ export function MessageBubble({
   onImageClick,
 }: MessageBubbleProps) {
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
+  const [fullPickerOpen, setFullPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
 
@@ -289,6 +290,7 @@ export function MessageBubble({
 
   function handleMessageClick() {
     setReactionBarOpen(false);
+    setFullPickerOpen(false);
     setMenuOpen(false);
     setMobileActionsOpen(true);
   }
@@ -582,8 +584,23 @@ export function MessageBubble({
                 onReact(message, emoji);
                 setReactionBarOpen(false);
               }}
-              onOpenFullPicker={() => setReactionBarOpen(false)}
+              onOpenFullPicker={() => {
+                setReactionBarOpen(false);
+                setFullPickerOpen(true);
+              }}
               align={isOwn ? 'end' : 'start'}
+            />
+            <EmojiPicker
+              open={fullPickerOpen}
+              onClose={() => setFullPickerOpen(false)}
+              onSelect={(emoji) => {
+                onReact(message, emoji);
+                setFullPickerOpen(false);
+              }}
+              anchorClassName={cn(
+                'absolute bottom-full z-30 mb-2 w-[19rem] rounded-2xl border border-border bg-surface p-2.5 shadow-card animate-slide-up',
+                isOwn ? 'end-0' : 'start-0',
+              )}
             />
           </div>
         </div>

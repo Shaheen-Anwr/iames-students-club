@@ -23,6 +23,7 @@ import { RedisIoAdapter } from './common/redis-io.adapter';
 import { User, UserDocument } from './users/schemas/user.schema';
 import { SELECTABLE_DEPARTMENTS } from './common/enums/department.enum';
 import { ACADEMIC_YEARS } from './common/enums/academic-year.enum';
+import { Role } from './common/enums/role.enum';
 
 // One-off, idempotent: grandfathers any pre-existing account (created before this auth overhaul)
 // as verified, and reconciles MongoDB's indexes with the current schema -- critical because the
@@ -44,6 +45,23 @@ async function runStartupMigrations(userModel: Model<UserDocument>) {
   await userModel
     .updateMany({ academicYear: { $nin: [...ACADEMIC_YEARS, null] } }, { $set: { academicYear: null } })
     .exec();
+
+  // Super admin backfill: user-account management (AdminController) now requires the isSuperAdmin
+  // flag, not just role: 'admin'. New deployments get it via UsersService.create (first account),
+  // but a pre-existing deployment has admins and no super admin -- promote the earliest-created
+  // admin so someone can still reach the user panel. Idempotent: a no-op once any super admin exists.
+  const hasSuperAdmin = await userModel.exists({ isSuperAdmin: true });
+  if (!hasSuperAdmin) {
+    const oldestAdmin = await userModel
+      .findOne({ role: Role.ADMIN })
+      .sort({ createdAt: 1 })
+      .exec();
+    if (oldestAdmin) {
+      oldestAdmin.isSuperAdmin = true;
+      await oldestAdmin.save();
+    }
+  }
+
   await userModel.syncIndexes();
 }
 

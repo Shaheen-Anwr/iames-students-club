@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { Bookmark, Bot, Lock, MessageCircle, MoreHorizontal, Pencil, Share2, ThumbsUp, Trash2, Users } from 'lucide-react';
+import { Bookmark, Bot, Link2, Lock, MessageCircle, MoreHorizontal, Pencil, Share2, ThumbsUp, Trash2, Users } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Button } from '@/components/ui/Button';
@@ -27,6 +27,7 @@ import { ReactionPicker } from './ReactionPicker';
 import { ReactionsListModal } from './ReactionsListModal';
 import { ShareModal } from './ShareModal';
 import { SharedPostPreview } from './SharedPostPreview';
+import { ShareSheet } from '@/components/shared/ShareSheet';
 
 // A plain icon action button -- the shared look for the like/comment/share/save row below.
 function ActionIconButton({
@@ -78,6 +79,7 @@ export function PostCard({
   const [saveBusy, setSaveBusy] = useState(false);
   const [reactionsModalOpen, setReactionsModalOpen] = useState(false);
   const [shareModalOpen, setShareModalOpen] = useState(false);
+  const [shareLinkOpen, setShareLinkOpen] = useState(false);
   const [shareCount, setShareCount] = useState(post.shareCount ?? 0);
   const [commentCount, setCommentCount] = useState(post.commentCount);
   const [commentsOpen, setCommentsOpen] = useState(initialCommentsOpen);
@@ -232,19 +234,27 @@ export function PostCard({
             </div>
           </div>
         )}
-        {isAuthor && (
-          <Dropdown
-            trigger={
-              <span className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
-                <MoreHorizontal className="h-[18px] w-[18px]" />
-              </span>
-            }
-            items={[
-              { label: 'تعديل المنشور', icon: Pencil, onClick: startEditing },
-              { label: 'حذف المنشور', icon: Trash2, onClick: () => setConfirmDeleteOpen(true), destructive: true },
-            ]}
-          />
-        )}
+        <Dropdown
+          trigger={
+            <span className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground">
+              <MoreHorizontal className="h-[18px] w-[18px]" />
+            </span>
+          }
+          items={[
+            { label: 'مشاركة الرابط', icon: Link2, onClick: () => setShareLinkOpen(true) },
+            ...(isAuthor
+              ? [
+                  { label: 'تعديل المنشور', icon: Pencil, onClick: startEditing },
+                  {
+                    label: 'حذف المنشور',
+                    icon: Trash2,
+                    onClick: () => setConfirmDeleteOpen(true),
+                    destructive: true,
+                  },
+                ]
+              : []),
+          ]}
+        />
       </div>
 
       {(post.department || post.academicYear || post.specialization) && (
@@ -430,6 +440,15 @@ export function PostCard({
       {commentsOpen && (
         <CommentsModal open={commentsOpen} onClose={() => setCommentsOpen(false)} postId={post._id} onCountChange={setCommentCount} />
       )}
+
+      <ShareSheet
+        open={shareLinkOpen}
+        onClose={() => setShareLinkOpen(false)}
+        heading="مشاركة المنشور"
+        title={post.author ? `منشور ${post.author.name} على اكاديميا` : 'منشور على اكاديميا'}
+        text={post.caption || undefined}
+        url={`/posts/${post._id}`}
+      />
 
       <ConfirmModal
         open={confirmDeleteOpen}

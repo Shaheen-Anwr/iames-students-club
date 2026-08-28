@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Modal } from '@/components/ui/Modal';
 import { Input } from '@/components/ui/Input';
@@ -14,19 +14,33 @@ import { useGroups } from '@/lib/groups-context';
 
 type Tab = 'create' | 'join';
 
-export function CreateOrJoinGroupModal({ open, onClose }: { open: boolean; onClose: () => void }) {
+export function CreateOrJoinGroupModal({
+  open,
+  onClose,
+  initialTab = 'create',
+}: {
+  open: boolean;
+  onClose: () => void;
+  initialTab?: Tab;
+}) {
   const router = useRouter();
   const { showToast } = useToast();
   const { addGroup } = useGroups();
-  const [tab, setTab] = useState<Tab>('create');
+  const [tab, setTab] = useState<Tab>(initialTab);
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [visibility, setVisibility] = useState<GroupVisibility>('private');
   const [code, setCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
+  // Each time the modal is opened, honour the caller's requested starting tab
+  // (a locked private-group row opens it straight on "join by code").
+  useEffect(() => {
+    if (open) setTab(initialTab);
+  }, [open, initialTab]);
+
   function reset() {
-    setTab('create');
+    setTab(initialTab);
     setName('');
     setDescription('');
     setVisibility('private');

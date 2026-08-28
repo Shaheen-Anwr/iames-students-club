@@ -23,6 +23,7 @@ const RESOURCE_TYPE_BY_CATEGORY: Record<UploadCategory, 'image' | 'video' | 'raw
   'cover-photos': 'image',
   'post-images': 'image',
   'chat-backgrounds': 'image',
+  'group-photos': 'image',
   videos: 'video',
   audio: 'video',
   lectures: 'raw',

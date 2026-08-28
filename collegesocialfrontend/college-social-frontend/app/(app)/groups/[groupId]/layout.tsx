@@ -3,6 +3,7 @@
 import { usePathname } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { GroupSidebar } from '@/components/groups/GroupSidebar';
+import { GroupUiProvider } from '@/lib/group-ui-context';
 
 export default function GroupDetailLayout({
   children,
@@ -15,16 +16,13 @@ export default function GroupDetailLayout({
   const isChannelSelected = pathname !== `/groups/${params.groupId}`;
 
   return (
-    <div className="flex min-h-0 flex-1">
-      <div
-        className={cn(
-          'flex flex-col border-e border-border bg-surface md:w-64 md:shrink-0',
-          isChannelSelected && 'hidden md:flex',
-        )}
-      >
-        <GroupSidebar groupId={params.groupId} />
+    <GroupUiProvider>
+      <div className="relative flex min-h-0 flex-1 overflow-hidden">
+        <GroupSidebar groupId={params.groupId} isChannelSelected={isChannelSelected} />
+        <div className={cn('min-h-0 min-w-0 flex-1 flex-col', isChannelSelected ? 'flex' : 'hidden md:flex')}>
+          {children}
+        </div>
       </div>
-      <div className={cn('min-h-0 flex-1 flex-col', isChannelSelected ? 'flex' : 'hidden md:flex')}>{children}</div>
-    </div>
+    </GroupUiProvider>
   );
 }

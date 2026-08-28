@@ -1,9 +1,14 @@
-import { IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsIn, IsInt, IsOptional, IsString, Min } from 'class-validator';
 
 export class UpdateConversationDto {
   @IsOptional()
   @IsString()
   name?: string;
+
+  // Lets a group admin flip an existing group between invite-only and public.
+  @IsOptional()
+  @IsIn(['private', 'public'])
+  visibility?: 'private' | 'public';
 
   @IsOptional()
   @IsString()

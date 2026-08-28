@@ -133,8 +133,31 @@ export class AdminService {
     }
     if (role !== Role.ADMIN) {
       await this.assertNotLastAdmin(id);
+      await this.assertNotLastSuperAdmin(id);
+      // A super admin can't outrank an admin -- demoting past 'admin' clears the flag too.
+      const target = await this.usersService.findById(id);
+      if (target.isSuperAdmin) {
+        await this.usersService.updateSuperAdmin(id, false);
+      }
     }
     return this.usersService.updateRole(id, role);
+  }
+
+  async updateSuperAdmin(id: string, isSuperAdmin: boolean, actor: AuthenticatedUser): Promise<UserDocument> {
+    if (id === actor.userId && !isSuperAdmin) {
+      throw new BadRequestException('لا يمكنك إزالة صلاحية المدير العام عن نفسك');
+    }
+    if (!isSuperAdmin) {
+      await this.assertNotLastSuperAdmin(id);
+    } else {
+      // A super admin is always an admin -- auto-promote on grant so the flag can't sit on a
+      // student/professor account.
+      const target = await this.usersService.findById(id);
+      if (target.role !== Role.ADMIN) {
+        await this.usersService.updateRole(id, Role.ADMIN);
+      }
+    }
+    return this.usersService.updateSuperAdmin(id, isSuperAdmin);
   }
 
   async updateActive(id: string, isActive: boolean, actor: AuthenticatedUser): Promise<UserDocument> {
@@ -157,6 +180,7 @@ export class AdminService {
       throw new BadRequestException('لا يمكنك حذف حسابك الخاص');
     }
     await this.assertNotLastAdmin(id);
+    await this.assertNotLastSuperAdmin(id);
     await this.usersService.remove(id);
     this.realtimeEmitter.emitToAdmins('admin:activity', {
       type: 'moderation',
@@ -173,6 +197,18 @@ export class AdminService {
     const adminCount = await this.usersService.countAdmins();
     if (adminCount <= 1) {
       throw new BadRequestException('لا يمكن إزالة آخر مدير متبقٍ');
+    }
+  }
+
+  // Guards against locking every user-management action out by demoting/deleting/revoking the only
+  // super admin -- nobody left could ever reach AdminController again.
+  private async assertNotLastSuperAdmin(targetId: string): Promise<void> {
+    const target = await this.usersService.findById(targetId);
+    if (!target.isSuperAdmin) return;
+
+    const superAdminCount = await this.usersService.countSuperAdmins();
+    if (superAdminCount <= 1) {
+      throw new BadRequestException('لا يمكن إزالة آخر مدير عام متبقٍ');
     }
   }
 }

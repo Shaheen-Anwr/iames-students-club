@@ -1,8 +1,10 @@
 'use client';
 
 import { useState } from 'react';
+import { PanelRight } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useGroups } from '@/lib/groups-context';
+import { useGroupUi } from '@/lib/group-ui-context';
 import { cn } from '@/lib/utils';
 import { AssignmentsBoard } from '@/components/study/AssignmentsBoard';
 import { QuizzesBoard } from '@/components/quizzes/QuizzesBoard';
@@ -19,6 +21,7 @@ const TABS: { id: StudyTab; label: string }[] = [
 export default function GroupStudyPage({ params }: { params: { groupId: string } }) {
   const { user } = useAuth();
   const { findGroup } = useGroups();
+  const { openDrawer } = useGroupUi();
   const group = findGroup(params.groupId);
   const [tab, setTab] = useState<StudyTab>('assignments');
 
@@ -26,6 +29,14 @@ export default function GroupStudyPage({ params }: { params: { groupId: string }
 
   return (
     <div className="mx-auto w-full max-w-3xl space-y-4 overflow-y-auto p-4 scrollbar-thin md:p-6">
+      <button
+        onClick={openDrawer}
+        className="flex items-center gap-2 rounded-full bg-surface-2/70 px-3 py-1.5 text-sm font-medium text-muted-foreground transition-colors hover:text-foreground md:hidden"
+      >
+        <PanelRight className="h-4 w-4" />
+        القنوات
+      </button>
+
       <div className="flex gap-1 rounded-full bg-surface-2/70 p-1">
         {TABS.map(({ id, label }) => (
           <button

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { BadgeCheck, ChevronDown, KeyRound, MailWarning, Search, Trash2, UserX, UserCheck } from 'lucide-react';
+import { BadgeCheck, ChevronDown, KeyRound, MailWarning, Search, Shield, ShieldCheck, Trash2, UserX, UserCheck } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Badge } from '@/components/ui/Badge';
 import { Card } from '@/components/ui/Card';
@@ -112,6 +112,22 @@ export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnl
       showToast(nextActive ? `تمت إعادة تفعيل ${target.name}.` : `تم إيقاف حساب ${target.name}.`);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر تحديث الحساب.', 'error');
+    } finally {
+      setBusyId(null);
+    }
+  }
+
+  async function handleToggleSuperAdmin(target: User) {
+    const nextValue = !target.isSuperAdmin;
+    setBusyId(target._id);
+    try {
+      const updated = await api.patch<User>(`/admin/users/${target._id}`, { isSuperAdmin: nextValue });
+      patchLocal(target._id, updated);
+      showToast(
+        nextValue ? `أصبح ${target.name} مديرًا عامًا.` : `أُزيلت صلاحية المدير العام عن ${target.name}.`,
+      );
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر تحديث صلاحية المدير العام.', 'error');
     } finally {
       setBusyId(null);
     }
@@ -283,8 +299,15 @@ export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnl
                         <div className="flex items-center gap-3">
                           <Avatar src={assetUrl(u.photoUrl)} name={u.name} size="sm" />
                           <div className="min-w-0">
-                            <p className="truncate font-medium text-foreground">
-                              {u.name} {isSelf && <span className="text-xs font-normal text-muted-foreground">(أنت)</span>}
+                            <p className="flex items-center gap-1.5 truncate font-medium text-foreground">
+                              <span className="truncate">{u.name}</span>
+                              {isSelf && <span className="text-xs font-normal text-muted-foreground">(أنت)</span>}
+                              {u.isSuperAdmin && (
+                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                                  <ShieldCheck className="h-3 w-3" />
+                                  مدير عام
+                                </span>
+                              )}
                             </p>
                             <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
                               <bdi dir="ltr">{u.collegeEmail}</bdi>
@@ -338,6 +361,16 @@ export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnl
                             onClick={() => setPasswordTarget(u)}
                           >
                             <KeyRound className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            title={u.isSuperAdmin ? 'إزالة صلاحية المدير العام' : 'ترقية إلى مدير عام'}
+                            disabled={isBusy || isSelf}
+                            onClick={() => handleToggleSuperAdmin(u)}
+                            className={cn(u.isSuperAdmin && 'text-accent')}
+                          >
+                            {u.isSuperAdmin ? <ShieldCheck className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
                           </Button>
                           <Button
                             variant="ghost"

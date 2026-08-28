@@ -5,6 +5,7 @@ import { Plus } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import type { Reel, ReelFeedPage } from '@/lib/types';
+import { ShareSheet } from '@/components/shared/ShareSheet';
 import { ReelCard } from './ReelCard';
 import { ReelCommentsSheet } from './ReelCommentsSheet';
 import { ReelUploadSheet } from './ReelUploadSheet';
@@ -25,6 +26,7 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
   const [activeIndex, setActiveIndex] = useState(0);
   const [muted, setMuted] = useState(true);
   const [commentsFor, setCommentsFor] = useState<string | null>(null);
+  const [shareReel, setShareReel] = useState<Reel | null>(null);
   const [uploadOpen, setUploadOpen] = useState(false);
 
   const patchReel = useCallback((id: string, patch: Partial<Reel>) => {
@@ -93,18 +95,8 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
     }
   }
 
-  async function handleShare(reel: Reel) {
-    const url = `${window.location.origin}/reels/${reel.id}`;
-    try {
-      if (navigator.share) {
-        await navigator.share({ title: 'ريل على اكاديميا', text: reel.caption || 'شاهد هذا الريل', url });
-      } else {
-        await navigator.clipboard.writeText(url);
-        showToast('تم نسخ الرابط.', 'success');
-      }
-    } catch {
-      /* user cancelled the share sheet */
-    }
+  function handleShare(reel: Reel) {
+    setShareReel(reel);
   }
 
   async function handleDelete(reel: Reel) {
@@ -185,6 +177,14 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
       />
 
       <ReelUploadSheet open={uploadOpen} onClose={() => setUploadOpen(false)} onCreated={handleCreated} />
+
+      <ShareSheet
+        open={shareReel !== null}
+        onClose={() => setShareReel(null)}
+        heading="مشاركة الريل"
+        title={shareReel?.caption ? `${shareReel.caption} — ريل على اكاديميا` : 'شاهد هذا الريل على اكاديميا'}
+        url={shareReel ? `/reels/${shareReel.id}` : ''}
+      />
     </div>
   );
 }

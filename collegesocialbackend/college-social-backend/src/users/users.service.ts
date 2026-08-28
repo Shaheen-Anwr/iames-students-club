@@ -259,6 +259,9 @@ export class UsersService {
       name: data.name,
       collegeEmail: data.collegeEmail,
       role: isFirstUser ? Role.ADMIN : data.role,
+      // The first account is also the sole super admin -- only it can manage user accounts until it
+      // grants the flag to another admin (see AdminService.updateSuperAdmin).
+      isSuperAdmin: isFirstUser,
       department: data.department ?? null,
     });
     try {
@@ -503,6 +506,15 @@ export class UsersService {
     return user;
   }
 
+  async updateSuperAdmin(id: string, isSuperAdmin: boolean): Promise<UserDocument> {
+    const user = await this.userModel
+      .findByIdAndUpdate(id, { isSuperAdmin }, { new: true })
+      .select('-passwordHash')
+      .exec();
+    if (!user) throw new NotFoundException('المستخدم غير موجود');
+    return user;
+  }
+
   async updatePasswordHash(id: string, passwordHash: string): Promise<UserDocument> {
     const user = await this.userModel.findByIdAndUpdate(id, { passwordHash }, { new: true }).exec();
     if (!user) throw new NotFoundException('المستخدم غير موجود');
@@ -524,6 +536,10 @@ export class UsersService {
 
   async countAdmins(): Promise<number> {
     return this.userModel.countDocuments({ role: Role.ADMIN }).exec();
+  }
+
+  async countSuperAdmins(): Promise<number> {
+    return this.userModel.countDocuments({ isSuperAdmin: true }).exec();
   }
 
   async getStats(): Promise<UserStats> {

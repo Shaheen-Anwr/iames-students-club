@@ -10,6 +10,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
 import { extractMentionIds } from '../common/utils/tag-parser.util';
 import { UsersService } from '../users/users.service';
+import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 
 export interface PaginatedConversations {
   data: unknown[];
@@ -42,14 +43,20 @@ export class ChatService {
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
+    private readonly realtimeEmitter: RealtimeEmitterService,
   ) {}
 
   async createConversation(creatorId: string, dto: CreateConversationDto): Promise<ConversationDocument> {
     const participantIds = Array.from(new Set([creatorId, ...dto.participantIds]));
-    const isGroup = dto.isGroup ?? false;
+    const visibility = dto.visibility === 'public' ? 'public' : 'private';
+    // A public conversation is always a group -- it makes no sense as a 1-to-1 DM.
+    const isGroup = visibility === 'public' ? true : (dto.isGroup ?? false);
 
     if (isGroup && !dto.name?.trim()) {
       throw new BadRequestException('اسم المجموعة مطلوب');
+    }
+    if (!isGroup && participantIds.length < 2) {
+      throw new BadRequestException('يجب تحديد مستخدم واحد على الأقل');
     }
 
     // For 1-to-1 chats, reuse an existing conversation instead of creating duplicates
@@ -71,6 +78,7 @@ export class ChatService {
     const conversation = new this.conversationModel({
       participants: participantIds.map((id) => new Types.ObjectId(id)),
       isGroup,
+      visibility,
       name: dto.name ?? null,
       createdBy: new Types.ObjectId(creatorId),
       admins: isGroup ? [new Types.ObjectId(creatorId)] : [],
@@ -78,22 +86,41 @@ export class ChatService {
     await conversation.save();
     // The frontend expects populated User objects in `participants`, same as
     // listConversationsForUser() -- without this, callers get raw ObjectIds instead.
-    return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
+    await conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
+
+    // A public group belongs in every user's chat list -- tell the online ones straight away
+    // instead of waiting for their next list refresh / socket reconnect.
+    if (visibility === 'public') {
+      this.realtimeEmitter.broadcast('conversationCreated', conversation.toJSON());
+    }
+    return conversation;
   }
 
   async listConversationsForUser(userId: string): Promise<(ConversationDocument & { unreadCount: number })[]> {
     const uid = new Types.ObjectId(userId);
     const conversations = await this.conversationModel
-      .find({ participants: uid, deletedBy: { $ne: uid } })
+      .find({
+        $or: [
+          { participants: uid, deletedBy: { $ne: uid } },
+          // Public groups show for everyone, member or not -- unless an admin removed them.
+          { visibility: 'public', blockedUsers: { $ne: uid } },
+        ],
+      })
       .sort({ lastMessageAt: -1, updatedAt: -1 })
       .populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt')
       .exec();
+
+    // Only surface unread badges for conversations the user has actually joined -- otherwise
+    // every public group they've never opened would scream its entire backlog at them.
+    const joinedIds = conversations
+      .filter((c) => c.participants.some((p) => (p as { _id?: Types.ObjectId } | null)?._id?.toString() === userId))
+      .map((c) => c._id);
 
     const unreadCounts = await this.messageModel
       .aggregate<{ _id: Types.ObjectId; count: number }>([
         {
           $match: {
-            conversation: { $in: conversations.map((c) => c._id) },
+            conversation: { $in: joinedIds },
             sender: { $ne: uid },
             readBy: { $ne: uid },
             deletedFor: { $ne: uid },
@@ -123,11 +150,46 @@ export class ChatService {
     return rows.map((r) => (r._id as Types.ObjectId).toString());
   }
 
+  // Public group IDs the user is allowed to see (member or not), minus any they've been
+  // removed from. Used by ChatGateway to join their socket to those rooms on connect.
+  async listPublicGroupIds(userId: string): Promise<string[]> {
+    const uid = new Types.ObjectId(userId);
+    const rows = await this.conversationModel
+      .find({ visibility: 'public', blockedUsers: { $ne: uid } })
+      .select('_id')
+      .lean()
+      .exec();
+    return rows.map((r) => (r._id as Types.ObjectId).toString());
+  }
+
   async assertParticipant(conversationId: string, userId: string): Promise<ConversationDocument> {
     const conversation = await this.conversationModel.findById(conversationId).exec();
     if (!conversation) throw new NotFoundException('المحادثة غير موجودة');
     const isParticipant = conversation.participants.some((p) => p.toString() === userId);
     if (!isParticipant) throw new ForbiddenException('أنت لست جزءًا من هذه المحادثة');
+    return conversation;
+  }
+
+  // Like assertParticipant, but a public group is reachable by any user who hasn't been
+  // removed from it. Opening or interacting with one auto-joins the user (that's the implicit
+  // "join" -- it also bounds message notification fan-out to people who've actually engaged).
+  async assertCanAccessConversation(
+    conversationId: string,
+    userId: string,
+    { autoJoin = true }: { autoJoin?: boolean } = {},
+  ): Promise<ConversationDocument> {
+    const conversation = await this.conversationModel.findById(conversationId).exec();
+    if (!conversation) throw new NotFoundException('المحادثة غير موجودة');
+    if (conversation.participants.some((p) => p.toString() === userId)) return conversation;
+
+    const isJoinablePublic =
+      conversation.visibility === 'public' && !conversation.blockedUsers.some((b) => b.toString() === userId);
+    if (!isJoinablePublic) throw new ForbiddenException('أنت لست جزءًا من هذه المحادثة');
+
+    if (autoJoin) {
+      conversation.participants.push(new Types.ObjectId(userId));
+      await conversation.save();
+    }
     return conversation;
   }
 
@@ -150,7 +212,7 @@ export class ChatService {
   }
 
   async getMessages(conversationId: string, userId: string, page = 1, limit = 30): Promise<MessageDocument[]> {
-    const conversation = await this.assertParticipant(conversationId, userId);
+    const conversation = await this.assertCanAccessConversation(conversationId, userId);
     await this.purgeExpiredMessages(conversation);
 
     const clearedEntry = conversation.clearedBy.find((c) => c.user.toString() === userId);
@@ -176,7 +238,7 @@ export class ChatService {
     attachments: AttachmentDto[] | undefined,
     replyTo: string | undefined,
   ): Promise<MessageDocument> {
-    const conversation = await this.assertParticipant(conversationId, senderId);
+    const conversation = await this.assertCanAccessConversation(conversationId, senderId);
     if (!text?.trim() && !attachments?.length) {
       throw new BadRequestException('لا يمكن إرسال رسالة فارغة');
     }
@@ -266,7 +328,7 @@ export class ChatService {
   async deleteMessage(messageId: string, userId: string, forEveryone: boolean): Promise<MessageDocument> {
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
-    await this.assertParticipant(message.conversation.toString(), userId);
+    await this.assertCanAccessConversation(message.conversation.toString(), userId);
 
     if (forEveryone) {
       if (message.sender.toString() !== userId) {
@@ -287,7 +349,7 @@ export class ChatService {
   async reactToMessage(messageId: string, userId: string, emoji: string): Promise<MessageDocument> {
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
-    await this.assertParticipant(message.conversation.toString(), userId);
+    await this.assertCanAccessConversation(message.conversation.toString(), userId);
 
     const existingIndex = message.reactions.findIndex((r) => r.user.toString() === userId);
     if (existingIndex >= 0 && message.reactions[existingIndex].emoji === emoji) {
@@ -305,12 +367,12 @@ export class ChatService {
   async forwardMessage(messageId: string, userId: string, conversationIds: string[]): Promise<MessageDocument[]> {
     const original = await this.messageModel.findById(messageId).exec();
     if (!original) throw new NotFoundException('الرسالة غير موجودة');
-    await this.assertParticipant(original.conversation.toString(), userId);
+    await this.assertCanAccessConversation(original.conversation.toString(), userId);
     if (original.deletedForEveryone) throw new BadRequestException('تم حذف هذه الرسالة');
 
     const results: MessageDocument[] = [];
     for (const conversationId of conversationIds) {
-      const conversation = await this.assertParticipant(conversationId, userId);
+      const conversation = await this.assertCanAccessConversation(conversationId, userId);
       const message = await new this.messageModel({
         conversation: conversation._id,
         sender: new Types.ObjectId(userId),
@@ -357,7 +419,7 @@ export class ChatService {
   }
 
   async markRead(conversationId: string, userId: string): Promise<string[]> {
-    await this.assertParticipant(conversationId, userId);
+    await this.assertCanAccessConversation(conversationId, userId);
     const uid = new Types.ObjectId(userId);
     const unread = await this.messageModel
       .find({ conversation: new Types.ObjectId(conversationId), sender: { $ne: uid }, readBy: { $ne: uid } })
@@ -376,7 +438,7 @@ export class ChatService {
   async starMessage(messageId: string, userId: string): Promise<MessageDocument> {
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
-    await this.assertParticipant(message.conversation.toString(), userId);
+    await this.assertCanAccessConversation(message.conversation.toString(), userId);
     const uid = new Types.ObjectId(userId);
     if (!message.starredBy.some((s) => s.toString() === userId)) message.starredBy.push(uid);
     await message.save();
@@ -386,7 +448,7 @@ export class ChatService {
   async unstarMessage(messageId: string, userId: string): Promise<MessageDocument> {
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
-    await this.assertParticipant(message.conversation.toString(), userId);
+    await this.assertCanAccessConversation(message.conversation.toString(), userId);
     message.starredBy = message.starredBy.filter((s) => s.toString() !== userId) as unknown as Types.ObjectId[];
     await message.save();
     return message.populate(MESSAGE_POPULATE);
@@ -401,7 +463,7 @@ export class ChatService {
   }
 
   async searchMessages(conversationId: string, userId: string, query: string): Promise<MessageDocument[]> {
-    await this.assertParticipant(conversationId, userId);
+    await this.assertCanAccessConversation(conversationId, userId);
     if (!query?.trim()) return [];
     return this.messageModel
       .find({
@@ -420,7 +482,7 @@ export class ChatService {
   // 500 non-deleted messages for this user rather than the whole history -- plenty for a UI
   // gallery, and avoids an unbounded collection scan on very long-lived conversations.
   async getSharedMedia(conversationId: string, userId: string) {
-    await this.assertParticipant(conversationId, userId);
+    await this.assertCanAccessConversation(conversationId, userId);
     const clearedEntry = (await this.conversationModel.findById(conversationId).exec())?.clearedBy.find(
       (c) => c.user.toString() === userId,
     );
@@ -472,7 +534,7 @@ export class ChatService {
   // --- Per-user conversation state: pin / archive / mute / clear ---
 
   async togglePin(conversationId: string, userId: string): Promise<ConversationDocument> {
-    const conversation = await this.assertParticipant(conversationId, userId);
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
     const uid = new Types.ObjectId(userId);
     const pinned = conversation.pinnedBy.some((p) => p.toString() === userId);
     conversation.pinnedBy = pinned
@@ -483,7 +545,7 @@ export class ChatService {
   }
 
   async toggleArchive(conversationId: string, userId: string): Promise<ConversationDocument> {
-    const conversation = await this.assertParticipant(conversationId, userId);
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
     const uid = new Types.ObjectId(userId);
     const archived = conversation.archivedBy.some((a) => a.toString() === userId);
     conversation.archivedBy = archived
@@ -494,7 +556,7 @@ export class ChatService {
   }
 
   async muteConversation(conversationId: string, userId: string, minutes?: number): Promise<ConversationDocument> {
-    const conversation = await this.assertParticipant(conversationId, userId);
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
     const until = minutes ? new Date(Date.now() + minutes * 60_000) : null;
     conversation.mutedBy = [
       ...conversation.mutedBy.filter((m) => m.user.toString() !== userId),
@@ -505,14 +567,14 @@ export class ChatService {
   }
 
   async unmuteConversation(conversationId: string, userId: string): Promise<ConversationDocument> {
-    const conversation = await this.assertParticipant(conversationId, userId);
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
     conversation.mutedBy = conversation.mutedBy.filter((m) => m.user.toString() !== userId);
     await conversation.save();
     return conversation;
   }
 
   async clearChat(conversationId: string, userId: string): Promise<void> {
-    const conversation = await this.assertParticipant(conversationId, userId);
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
     conversation.clearedBy = [
       ...conversation.clearedBy.filter((c) => c.user.toString() !== userId),
       { user: new Types.ObjectId(userId), at: new Date() },
@@ -524,7 +586,7 @@ export class ChatService {
   // and clears its history for them, same as clearChat. Reappears automatically the next time a
   // message lands in it (see the $pull in saveMessage above).
   async deleteConversation(conversationId: string, userId: string): Promise<void> {
-    const conversation = await this.assertParticipant(conversationId, userId);
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
     const uid = new Types.ObjectId(userId);
     conversation.clearedBy = [
       ...conversation.clearedBy.filter((c) => c.user.toString() !== userId),
@@ -542,6 +604,7 @@ export class ChatService {
     if (dto.groupDescription !== undefined) conversation.groupDescription = dto.groupDescription;
     if (dto.groupIcon !== undefined) conversation.groupIcon = dto.groupIcon;
     if (dto.disappearingSeconds !== undefined) conversation.disappearingSeconds = dto.disappearingSeconds;
+    if (dto.visibility !== undefined) conversation.visibility = dto.visibility;
     await conversation.save();
     return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
   }
@@ -551,6 +614,11 @@ export class ChatService {
     const toAdd = userIds.map((id) => new Types.ObjectId(id));
     const existingIds = new Set(conversation.participants.map((p) => p.toString()));
     conversation.participants.push(...toAdd.filter((id) => !existingIds.has(id.toString())));
+    // An explicit re-invite lifts a prior removal from a public group.
+    const addedSet = new Set(userIds);
+    conversation.blockedUsers = conversation.blockedUsers.filter(
+      (b) => !addedSet.has(b.toString()),
+    ) as unknown as Types.ObjectId[];
     await conversation.save();
     return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
   }
@@ -564,6 +632,11 @@ export class ChatService {
       (p) => p.toString() !== targetUserId,
     ) as unknown as Types.ObjectId[];
     conversation.admins = conversation.admins.filter((a) => a.toString() !== targetUserId) as unknown as Types.ObjectId[];
+    // In a public group a removed user would otherwise just re-join by re-opening it -- block
+    // them so the removal sticks and the group drops out of their chat list.
+    if (conversation.visibility === 'public' && !conversation.blockedUsers.some((b) => b.toString() === targetUserId)) {
+      conversation.blockedUsers.push(new Types.ObjectId(targetUserId));
+    }
     await conversation.save();
     return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
   }
@@ -571,6 +644,9 @@ export class ChatService {
   async leaveGroup(conversationId: string, userId: string): Promise<void> {
     const conversation = await this.assertParticipant(conversationId, userId);
     if (!conversation.isGroup) throw new ForbiddenException('هذا الإجراء متاح للمجموعات فقط');
+    if (conversation.visibility === 'public') {
+      throw new BadRequestException('لا يمكنك مغادرة مجموعة عامة');
+    }
     conversation.participants = conversation.participants.filter(
       (p) => p.toString() !== userId,
     ) as unknown as Types.ObjectId[];

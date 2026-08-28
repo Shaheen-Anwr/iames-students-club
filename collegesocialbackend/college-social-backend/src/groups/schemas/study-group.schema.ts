@@ -13,6 +13,10 @@ export class StudyGroup {
   @Prop({ type: String, required: false, default: null, trim: true })
   description: string | null;
 
+  // Cloudinary (or local) URL of the group's avatar image. Null = fall back to the initial-letter tile.
+  @Prop({ type: String, required: false, default: null })
+  photoUrl: string | null;
+
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   owner: Types.ObjectId;
 

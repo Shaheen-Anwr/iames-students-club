@@ -21,4 +21,10 @@ export class RealtimeEmitterService {
   emitToAdmins(event: string, payload: unknown) {
     this.server?.to('admins').emit(event, payload);
   }
+
+  // Fan an event out to every connected socket (e.g. a newly-created public group that belongs
+  // in everyone's chat list).
+  broadcast(event: string, payload: unknown) {
+    this.server?.emit(event, payload);
+  }
 }

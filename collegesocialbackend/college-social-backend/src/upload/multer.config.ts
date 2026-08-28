@@ -4,13 +4,23 @@ import { mkdirSync } from 'fs';
 import { extname, join } from 'path';
 import { v4 as uuid } from 'uuid';
 
-export type UploadCategory = 'photos' | 'cover-photos' | 'post-images' | 'lectures' | 'files' | 'videos' | 'audio' | 'chat-backgrounds';
+export type UploadCategory =
+  | 'photos'
+  | 'cover-photos'
+  | 'post-images'
+  | 'lectures'
+  | 'files'
+  | 'videos'
+  | 'audio'
+  | 'chat-backgrounds'
+  | 'group-photos';
 
 const ALLOWED_MIME_BY_CATEGORY: Record<UploadCategory, RegExp> = {
   photos: /^image\/(jpe?g|png|webp|gif)$/,
   'cover-photos': /^image\/(jpe?g|png|webp|gif)$/,
   'post-images': /^image\/(jpe?g|png|webp|gif)$/,
   'chat-backgrounds': /^image\/(jpe?g|png|webp|gif)$/,
+  'group-photos': /^image\/(jpe?g|png|webp|gif)$/,
   lectures: /^(application\/pdf|application\/vnd\.(openxmlformats|ms-powerpoint|ms-excel).*|application\/msword|text\/plain)$/,
   files: /.*/, // any file type is allowed for the generic "files" category
   videos: /^video\/(mp4|quicktime|x-matroska|webm)$/,
@@ -29,6 +39,7 @@ export const CLOUDINARY_ASSET_CAP_MB: Record<UploadCategory, number> = {
   'cover-photos': 10,
   'post-images': 10,
   'chat-backgrounds': 10,
+  'group-photos': 10,
   lectures: 10,
   files: 10,
   videos: 100,
@@ -54,6 +65,7 @@ const SIZE_LIMIT_MB_BY_CATEGORY: Record<UploadCategory, { envKey: string; defaul
   'cover-photos': { envKey: 'MAX_COVER_PHOTO_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB['cover-photos'] },
   'post-images': { envKey: 'MAX_POST_IMAGE_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB['post-images'] },
   'chat-backgrounds': { envKey: 'MAX_CHAT_BACKGROUND_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB['chat-backgrounds'] },
+  'group-photos': { envKey: 'MAX_GROUP_PHOTO_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB['group-photos'] },
   lectures: { envKey: 'MAX_LECTURE_SIZE_MB', defaultMb: 300 }, // PDF/PPT/DOC notes and scanned books -- chunked
   files: { envKey: 'MAX_GENERIC_FILE_SIZE_MB', defaultMb: 200 }, // chunked
   videos: { envKey: 'MAX_VIDEO_SIZE_MB', defaultMb: 1024 }, // lecture recordings -- chunked

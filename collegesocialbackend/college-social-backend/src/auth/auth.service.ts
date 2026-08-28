@@ -272,6 +272,7 @@ export class AuthService {
       name: user.name,
       collegeEmail: user.collegeEmail,
       role: user.role,
+      isSuperAdmin: user.isSuperAdmin,
       department: user.department,
       collegeEmailVerifiedAt: user.collegeEmailVerifiedAt,
       personalEmail: user.personalEmail,

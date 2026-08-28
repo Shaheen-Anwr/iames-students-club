@@ -24,6 +24,7 @@ export function NewGroupChatModal({ open, onClose }: { open: boolean; onClose: (
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState<User[]>([]);
   const [groupName, setGroupName] = useState('');
+  const [visibility, setVisibility] = useState<'private' | 'public'>('private');
   const [creating, setCreating] = useState(false);
 
   useEffect(() => {
@@ -33,6 +34,7 @@ export function NewGroupChatModal({ open, onClose }: { open: boolean; onClose: (
       setResults([]);
       setSelected([]);
       setGroupName('');
+      setVisibility('private');
     }
   }, [open]);
 
@@ -60,13 +62,14 @@ export function NewGroupChatModal({ open, onClose }: { open: boolean; onClose: (
   }
 
   async function createGroup() {
-    if (!groupName.trim() || selected.length === 0) return;
+    if (!groupName.trim()) return;
     setCreating(true);
     try {
       const conversation = await api.post<Conversation>('/chat/conversations', {
         participantIds: selected.map((u) => u._id),
         isGroup: true,
         name: groupName.trim(),
+        visibility,
       });
       addConversation(conversation);
       onClose();
@@ -132,14 +135,47 @@ export function NewGroupChatModal({ open, onClose }: { open: boolean; onClose: (
               })}
           </div>
           <div className="mt-4 flex justify-end">
-            <Button onClick={() => setStep('name')} disabled={selected.length === 0}>
-              التالي ({selected.length})
+            <Button onClick={() => setStep('name')}>
+              {selected.length > 0 ? `التالي (${selected.length})` : 'التالي'}
             </Button>
           </div>
         </>
       ) : (
         <>
           <Input autoFocus placeholder="اسم المجموعة" value={groupName} onChange={(e) => setGroupName(e.target.value)} />
+
+          <div className="mt-4">
+            <p className="mb-2 text-xs font-medium text-muted-foreground">من يمكنه رؤية المجموعة والانضمام إليها؟</p>
+            <div className="grid grid-cols-2 gap-2">
+              {(
+                [
+                  { key: 'private', label: 'خاصة', hint: 'بدعوة فقط' },
+                  { key: 'public', label: 'عامة', hint: 'تظهر لجميع الطلاب' },
+                ] as const
+              ).map((opt) => (
+                <button
+                  key={opt.key}
+                  type="button"
+                  onClick={() => setVisibility(opt.key)}
+                  className={cn(
+                    'rounded-xl2 border-2 px-3 py-2.5 text-start transition-colors',
+                    visibility === opt.key
+                      ? 'border-accent bg-accent/10'
+                      : 'border-border hover:bg-surface-2',
+                  )}
+                >
+                  <p className="text-sm font-semibold text-foreground">{opt.label}</p>
+                  <p className="text-[11px] text-muted-foreground">{opt.hint}</p>
+                </button>
+              ))}
+            </div>
+            {visibility === 'public' && (
+              <p className="mt-2 text-[11px] text-muted-foreground">
+                يمكن لأي مستخدم فتح هذه المجموعة والمشاركة فيها. لا يمكن للأعضاء المغادرة، والمشرفون فقط يمكنهم إزالة الأعضاء.
+              </p>
+            )}
+          </div>
+
           <div className="mt-4 flex justify-between">
             <Button variant="ghost" onClick={() => setStep('members')}>
               رجوع

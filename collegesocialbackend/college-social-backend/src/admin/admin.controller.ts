@@ -11,18 +11,17 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard } from '../common/guards/roles.guard';
-import { Roles } from '../common/decorators/roles.decorator';
+import { SuperAdminGuard } from '../common/guards/super-admin.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
-import { Role } from '../common/enums/role.enum';
 import { AdminService } from './admin.service';
 import { AdminUpdateUserDto } from './dto/admin-update-user.dto';
 import { AdminSetPasswordDto } from './dto/admin-set-password.dto';
 
-// All routes here require a valid JWT AND the "admin" role.
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(Role.ADMIN)
+// User-account management. Deliberately stricter than the other admin panels: these routes require
+// a valid JWT AND the "super admin" flag (a strict subset of role: 'admin'). Regular admins get a
+// 403 here but keep every other admin controller.
+@UseGuards(JwtAuthGuard, SuperAdminGuard)
 @Controller('admin/users')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
@@ -39,7 +38,7 @@ export class AdminController {
     return this.adminService.listUsers(Number(page) || 1, Number(limit) || 20, search, verifiedFilter);
   }
 
-  // PATCH /api/admin/users/:id  { role?, isActive? }
+  // PATCH /api/admin/users/:id  { role?, isActive?, isSuperAdmin? }
   @Patch(':id')
   async updateUser(
     @Param('id') id: string,
@@ -52,6 +51,9 @@ export class AdminController {
     }
     if (dto.isActive !== undefined) {
       user = await this.adminService.updateActive(id, dto.isActive, actor);
+    }
+    if (dto.isSuperAdmin !== undefined) {
+      user = await this.adminService.updateSuperAdmin(id, dto.isSuperAdmin, actor);
     }
     return user;
   }

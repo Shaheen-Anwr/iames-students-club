@@ -1,4 +1,4 @@
-import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus } from '@nestjs/common';
+import { ArgumentsHost, Catch, ExceptionFilter, HttpException, HttpStatus, Logger } from '@nestjs/common';
 import { Request, Response } from 'express';
 
 // @nestjs/platform-express's FileInterceptor already converts a raw Multer error into a proper
@@ -15,12 +15,20 @@ const MULTER_MESSAGE_OVERRIDES: Record<string, string> = {
 
 @Catch()
 export class HttpExceptionFilter implements ExceptionFilter {
+  private readonly logger = new Logger('HttpExceptionFilter');
+
   catch(exception: unknown, host: ArgumentsHost) {
     const ctx = host.switchToHttp();
     const response = ctx.getResponse<Response>();
     const request = ctx.getRequest<Request>();
 
     const status = exception instanceof HttpException ? exception.getStatus() : HttpStatus.INTERNAL_SERVER_ERROR;
+
+    // A catch-all @Catch() filter suppresses Nest's own unhandled-exception logging, so
+    // non-HttpException errors (real bugs -> 500) would otherwise vanish silently. Log them.
+    if (!(exception instanceof HttpException)) {
+      this.logger.error(`${request.method} ${request.url} -> 500`, (exception as Error)?.stack ?? String(exception));
+    }
 
     // exception.getResponse() for a NestJS-thrown HttpException is either a plain string, or an
     // object shaped { statusCode, message, error } (this is what ValidationPipe and every

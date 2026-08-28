@@ -81,6 +81,14 @@ export class User {
   @Prop({ type: String, required: true, enum: Role, default: Role.STUDENT })
   role: Role;
 
+  // Super admin -- a strict subset of `role: 'admin'`. Only super admins may manage user accounts
+  // (list / change role / activate / verify email / reset password / delete) via AdminController,
+  // and only a super admin may grant or revoke this flag on another admin. Regular admins keep
+  // every other admin panel. The very first account ever created gets this (see UsersService.create);
+  // existing deployments are backfilled in runStartupMigrations() so the oldest admin always has it.
+  @Prop({ default: false })
+  isSuperAdmin: boolean;
+
   @Prop({ default: true })
   isActive: boolean;
 

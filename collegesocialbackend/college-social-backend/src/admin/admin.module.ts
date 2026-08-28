@@ -23,6 +23,7 @@ import { AdminGamificationController } from './admin-gamification.controller';
 import { AdminQaController } from './admin-qa.controller';
 import { AdminChatController } from './admin-chat.controller';
 import { AdminService } from './admin.service';
+import { SuperAdminGuard } from '../common/guards/super-admin.guard';
 
 @Module({
   imports: [
@@ -52,6 +53,6 @@ import { AdminService } from './admin.service';
     AdminQaController,
     AdminChatController,
   ],
-  providers: [AdminService],
+  providers: [AdminService, SuperAdminGuard],
 })
 export class AdminModule {}

@@ -17,6 +17,10 @@ export interface User {
   photoUrl?: string | null;
   coverPhotoUrl?: string | null;
   role: Role;
+  // A strict subset of `role: 'admin'`. Only super admins may manage user accounts (the admin
+  // "Users" panel); regular admins keep every other panel. Backfilled server-side so the oldest
+  // admin always has it.
+  isSuperAdmin?: boolean;
   isActive?: boolean;
   createdAt?: string;
   bio?: string | null;
@@ -599,6 +603,8 @@ export interface Conversation {
   // entries are null for a participant whose account has since been deleted.
   participants: (User | null)[];
   isGroup: boolean;
+  // 'public' groups are visible to every user and anyone can join by opening them.
+  visibility?: 'private' | 'public';
   name?: string | null;
   lastMessagePreview?: string | null;
   lastMessageAt?: string | null;
@@ -607,6 +613,8 @@ export interface Conversation {
   groupIcon?: string | null;
   groupDescription?: string | null;
   admins?: string[];
+  // Public groups only: users an admin removed (blocked from re-joining).
+  blockedUsers?: string[];
   pinnedBy?: string[];
   archivedBy?: string[];
   mutedBy?: MutedEntry[];
@@ -635,6 +643,7 @@ export interface ReplyPreview {
   text: string;
   sender: { _id: string; name: string } | null;
   attachments?: Attachment[];
+  attachmentUrl?: string | null;
   deletedForEveryone?: boolean;
 }
 
@@ -711,12 +720,28 @@ export interface StudyGroup {
   _id: string;
   name: string;
   description?: string | null;
+  photoUrl?: string | null;
   owner: string;
   members: string[];
   visibility: GroupVisibility;
   inviteCode: string | null;
   createdAt: string;
   updatedAt?: string;
+}
+
+// One row in the unified "المجموعات" explorer (GET /groups/all) -- every group in the app,
+// annotated with the caller's relationship to it. No inviteCode / member id list.
+export interface GroupListItem {
+  _id: string;
+  name: string;
+  description: string | null;
+  photoUrl: string | null;
+  owner: string;
+  visibility: GroupVisibility;
+  memberCount: number;
+  isMember: boolean;
+  isOwner: boolean;
+  createdAt: string;
 }
 
 export interface Channel {
@@ -732,8 +757,27 @@ export interface ChannelMessage {
   // null when the sender's account has since been deleted.
   sender: User | null;
   text: string;
+  /** @deprecated legacy single-attachment field; use `attachments` */
   attachmentUrl?: string | null;
+  attachments?: Attachment[];
+  replyTo?: ReplyPreview | null;
+  reactions?: MessageReaction[];
+  edited?: boolean;
+  editedAt?: string | null;
+  deletedForEveryone?: boolean;
+  forwarded?: boolean;
+  starredBy?: string[];
+  mentions?: string[];
   createdAt: string;
+  /** Client-only: an optimistic message shown before the server has echoed it back. */
+  pending?: boolean;
+  /** Client-only: an optimistic message the server never acknowledged (tap to retry). */
+  failed?: boolean;
+}
+
+export interface GroupMembers {
+  owner: string;
+  members: User[];
 }
 
 export type NotificationType =

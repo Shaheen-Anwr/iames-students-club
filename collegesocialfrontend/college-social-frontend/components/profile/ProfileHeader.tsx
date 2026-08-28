@@ -6,6 +6,7 @@ import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { assetUrl } from '@/lib/utils';
 import { cldOptimize } from '@/lib/images';
 import type { User } from '@/lib/types';
+import { ShareButton } from '@/components/shared/ShareButton';
 import { AvatarUploader } from './AvatarUploader';
 import { CoverPhotoUploader } from './CoverPhotoUploader';
 import { ProfileTabs, type ProfileTab } from './ProfileTabs';
@@ -64,6 +65,15 @@ export function ProfileHeader({
               {DEPARTMENT_LABELS[user.department]}
             </span>
           )}
+          <ShareButton
+            className="ms-auto"
+            variant="pill"
+            label="مشاركة"
+            heading="مشاركة الملف الشخصي"
+            title={`${user.name} على اكاديميا`}
+            text={user.bio ?? undefined}
+            url={`/profile/${user._id}`}
+          />
         </div>
 
         <StreakPointsPill user={user} size="lg" className="mt-4 max-w-md" />

@@ -18,12 +18,13 @@ import { NewGroupChatModal } from './NewGroupChatModal';
 import { SwipeableRow } from './SwipeableRow';
 import { CreateOrJoinGroupModal } from '@/components/groups/CreateOrJoinGroupModal';
 
-type Filter = 'all' | 'unread' | 'groups';
+type Filter = 'all' | 'unread' | 'groups' | 'public';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'الكل' },
   { key: 'unread', label: 'غير مقروءة' },
   { key: 'groups', label: 'المجموعات' },
+  { key: 'public', label: 'عامة' },
 ];
 
 export function ConversationList() {
@@ -37,11 +38,18 @@ export function ConversationList() {
   const [showArchived, setShowArchived] = useState(false);
   const [filter, setFilter] = useState<Filter>('all');
 
-  const { pinned, regular, archived, unreadCount, groupsCount } = useMemo(() => {
-    if (!user) return { pinned: [], regular: [], archived: [], unreadCount: 0, groupsCount: 0 };
+  const { pinned, regular, archived, unreadCount, groupsCount, publicCount } = useMemo(() => {
+    if (!user) return { pinned: [], regular: [], archived: [], unreadCount: 0, groupsCount: 0, publicCount: 0 };
     const active = conversations.filter((c) => !isArchived(c, user._id));
+    const isPublicGroup = (c: (typeof active)[number]) => c.isGroup && c.visibility === 'public';
     const matchesFilter = (c: (typeof active)[number]) =>
-      filter === 'unread' ? (c.unreadCount ?? 0) > 0 : filter === 'groups' ? c.isGroup : true;
+      filter === 'unread'
+        ? (c.unreadCount ?? 0) > 0
+        : filter === 'groups'
+          ? c.isGroup
+          : filter === 'public'
+            ? isPublicGroup(c)
+            : true;
     const filtered = active.filter(matchesFilter);
     return {
       pinned: filtered.filter((c) => isPinned(c, user._id)),
@@ -49,6 +57,7 @@ export function ConversationList() {
       archived: conversations.filter((c) => isArchived(c, user._id)),
       unreadCount: active.filter((c) => (c.unreadCount ?? 0) > 0).length,
       groupsCount: active.filter((c) => c.isGroup).length,
+      publicCount: active.filter(isPublicGroup).length,
     };
   }, [conversations, user, filter]);
 
@@ -117,7 +126,8 @@ export function ConversationList() {
       {!showArchived && (
         <div className="flex items-center gap-2 overflow-x-auto border-b border-border px-4 py-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {FILTERS.map((f) => {
-            const count = f.key === 'unread' ? unreadCount : f.key === 'groups' ? groupsCount : 0;
+            const count =
+              f.key === 'unread' ? unreadCount : f.key === 'groups' ? groupsCount : f.key === 'public' ? publicCount : 0;
             const active = filter === f.key;
             return (
               <button
@@ -158,7 +168,9 @@ export function ConversationList() {
                     ? 'لا توجد محادثات غير مقروءة'
                     : filter === 'groups'
                       ? 'لا توجد مجموعات بعد'
-                      : 'لا توجد محادثات بعد'
+                      : filter === 'public'
+                        ? 'لا توجد مجموعات عامة بعد'
+                        : 'لا توجد محادثات بعد'
               }
               description={!showArchived && filter === 'all' ? 'ابدأ واحدة باستخدام الزر أعلاه.' : undefined}
             />
@@ -221,6 +233,11 @@ export function ConversationList() {
                       <p className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold text-foreground">
                         {pinnedFlag && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
                         <span className="truncate">{title}</span>
+                        {conversation.visibility === 'public' && (
+                          <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                            عامة
+                          </span>
+                        )}
                       </p>
                       {conversation.lastMessageAt && (
                         <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(conversation.lastMessageAt)}</span>

@@ -136,12 +136,18 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       // Auto-join one room per conversation / channel the user belongs to (IDs only -- see
       // listConversationIdsForUser) so messages reach them without an explicit join first. The
       // two lookups run in parallel; joins are applied in a single batched call.
-      const [conversationIds, channelIds] = await Promise.all([
+      const [conversationIds, channelIds, publicGroupIds] = await Promise.all([
         this.chatService.listConversationIdsForUser(payload.sub),
         this.groupsService.listMyChannelIds(payload.sub),
+        this.chatService.listPublicGroupIds(payload.sub),
       ]);
+      // Public groups the user hasn't joined still belong in their live feed -- join those
+      // rooms too, but keep them OUT of the presence-broadcast loop below so a reconnect storm
+      // doesn't fan presence writes across every public group.
+      const publicOnlyGroupIds = publicGroupIds.filter((id) => !conversationIds.includes(id));
       const rooms = [
         ...conversationIds.map((id) => `conversation:${id}`),
+        ...publicOnlyGroupIds.map((id) => `conversation:${id}`),
         ...channelIds.map((id) => `channel:${id}`),
         // Personal room -- lets RealtimeEmitterService reach this user's socket(s) for
         // notifications regardless of which page they're on.
@@ -257,7 +263,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('joinConversation')
   async onJoinConversation(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
-    await this.chatService.assertParticipant(conversationId, client.data.userId);
+    await this.chatService.assertCanAccessConversation(conversationId, client.data.userId);
     client.join(`conversation:${conversationId}`);
     return { event: 'joinedConversation', conversationId };
   }
@@ -397,6 +403,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       dto.channelId,
       client.data.userId,
       dto.text ?? '',
+      dto.attachments,
+      dto.replyTo,
       dto.attachmentUrl,
     );
 
@@ -404,10 +412,56 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     return { event: 'channelMessageSent', messageId: message.id };
   }
 
+  @SubscribeMessage('editChannelMessage')
+  async onEditChannelMessage(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() dto: { messageId: string } & EditMessageDto,
+  ) {
+    const message = await this.groupsService.editChannelMessage(dto.messageId, client.data.userId, dto.text);
+    this.server.to(`channel:${message.channel.toString()}`).emit('channelMessageEdited', message);
+    return { event: 'channelMessageEdited', messageId: message.id };
+  }
+
+  @SubscribeMessage('deleteChannelMessage')
+  async onDeleteChannelMessage(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() dto: { messageId: string; forEveryone: boolean },
+  ) {
+    const message = await this.groupsService.deleteChannelMessage(dto.messageId, client.data.userId, !!dto.forEveryone);
+    if (dto.forEveryone) {
+      this.server
+        .to(`channel:${message.channel.toString()}`)
+        .emit('channelMessageDeleted', { message, forEveryone: true });
+    } else {
+      client.emit('channelMessageDeleted', { message, forEveryone: false });
+    }
+    return { event: 'channelMessageDeleted', messageId: message.id };
+  }
+
+  @SubscribeMessage('reactToChannelMessage')
+  async onReactToChannelMessage(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() dto: { messageId: string } & ReactMessageDto,
+  ) {
+    if (this.rateLimited(client, 'reactToMessage', 30, 10_000)) return { event: 'channelMessageReacted' };
+    const message = await this.groupsService.reactToChannelMessage(dto.messageId, client.data.userId, dto.emoji);
+    this.server.to(`channel:${message.channel.toString()}`).emit('channelMessageReacted', message);
+    return { event: 'channelMessageReacted', messageId: message.id };
+  }
+
   @SubscribeMessage('channelTyping')
   onChannelTyping(@ConnectedSocket() client: AuthedSocket, @MessageBody() channelId: string) {
     if (this.rateLimited(client, 'typing', 20, 5_000)) return;
     client.to(`channel:${channelId}`).emit('userTypingChannel', {
+      channelId,
+      userId: client.data.userId,
+    });
+  }
+
+  @SubscribeMessage('channelStopTyping')
+  onChannelStopTyping(@ConnectedSocket() client: AuthedSocket, @MessageBody() channelId: string) {
+    if (this.rateLimited(client, 'typing', 20, 5_000)) return;
+    client.to(`channel:${channelId}`).emit('userStopTypingChannel', {
       channelId,
       userId: client.data.userId,
     });

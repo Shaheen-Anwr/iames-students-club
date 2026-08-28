@@ -39,6 +39,12 @@ export class Conversation {
   @Prop({ default: false })
   isGroup: boolean;
 
+  // 'private' = invite-only (default; only group admins add members). 'public' = any user
+  // sees it in their chat list and joins just by opening it; only admins remove members and
+  // members can't leave. Meaningful for isGroup === true only.
+  @Prop({ type: String, enum: ['private', 'public'], default: 'private', index: true })
+  visibility: 'private' | 'public';
+
   // Required for group chats, e.g. "CS101 - Section A"
   @Prop({ type: String, required: false, default: null, trim: true })
   name: string | null;
@@ -64,6 +70,11 @@ export class Conversation {
   // The group creator is seeded as the first admin at creation time.
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
   admins: Types.ObjectId[];
+
+  // Public groups only: users an admin has removed. They're blocked from re-joining and the
+  // group stops showing in their chat list. Cleared if an admin explicitly re-adds them.
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  blockedUsers: Types.ObjectId[];
 
   // --- Per-user conversation state (applies to both 1-to-1 and group chats) ---
 
