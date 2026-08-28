@@ -21,7 +21,10 @@ export default function OpengraphImage() {
           flexDirection: 'column',
           justifyContent: 'space-between',
           padding: '72px 80px',
-          background: `radial-gradient(1100px 700px at 88% -10%, ${BRAND.accent}22, transparent 60%), radial-gradient(900px 600px at -5% 110%, ${BRAND.accentWarm}1f, transparent 55%), linear-gradient(135deg, ${BRAND.navy}, ${BRAND.ink})`,
+          // next/og's gradient parser (Satori) only understands keyword-form radial gradients
+          // -- `radial-gradient(<px> <px> at <pos>, ...)` throws "Missing comma before color
+          // stops" and fails the whole build. Keep these as `circle at <pos>` with rgba stops.
+          background: `radial-gradient(circle at 90% 0%, rgba(139,124,255,0.13) 0%, transparent 60%), radial-gradient(circle at 0% 100%, rgba(247,183,51,0.12) 0%, transparent 55%), linear-gradient(135deg, ${BRAND.navy}, ${BRAND.ink})`,
           color: '#FFFFFF',
           fontFamily: 'sans-serif',
         }}
