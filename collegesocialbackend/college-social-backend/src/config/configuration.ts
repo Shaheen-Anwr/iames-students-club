@@ -5,6 +5,11 @@ export default () => ({
   // CORS is handled by src/common/cors-origin.ts (pattern-matches any *.vercel.app alias for
   // this project), not read from config -- see main.ts/chat.gateway.ts.
   mongodbUri: process.env.MONGODB_URI ?? 'mongodb://localhost:27017/college-social',
+  // Optional. When set, Socket.IO uses the Redis adapter so the chat gateway can run across
+  // multiple backend instances (horizontal scale under load). Left blank -> single-instance
+  // in-memory adapter, which is the default and works fine for one process. See
+  // src/common/redis-io.adapter.ts and main.ts.
+  redisUrl: process.env.REDIS_URL ?? '',
   // Where local (non-Cloudinary) uploads live and get served from. On Render this points at the mounted
   // persistent disk (see render.yaml) so files survive redeploys/restarts.
   uploadsDir: process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'),
@@ -56,5 +61,11 @@ export default () => ({
     publicKey: process.env.VAPID_PUBLIC_KEY ?? '',
     privateKey: process.env.VAPID_PRIVATE_KEY ?? '',
     subject: process.env.VAPID_SUBJECT ?? 'mailto:admin@example.com',
+  },
+  // Shared secret for the unauthenticated release-broadcast endpoint (POST /api/broadcast/release),
+  // called by the repo's post-commit git hook to push "a new update shipped" to every subscribed
+  // user. Left blank -> the endpoint returns 503 (feature off). Generate any long random string.
+  broadcast: {
+    apiKey: process.env.BROADCAST_API_KEY ?? '',
   },
 });

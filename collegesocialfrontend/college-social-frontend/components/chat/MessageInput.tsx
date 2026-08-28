@@ -7,7 +7,6 @@ import { MentionTextarea } from '@/components/shared/MentionTextarea';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { formatBytes } from '@/lib/utils';
-import { maybeCompressVideo } from '@/lib/video-compress';
 import type { Attachment, AttachmentType, Message } from '@/lib/types';
 import { EmojiPicker } from './EmojiPicker';
 
@@ -75,21 +74,12 @@ export function MessageInput({
       endpoint = '/upload/file';
     }
 
-    // Shrink large videos in the browser first (best-effort -- falls back to the original file,
-    // which the server then compresses). Keeps the upload small and the server request short.
-    let toUpload = file;
-    if (category === 'videos') {
-      setProgress({ label: 'جارٍ ضغط الفيديو…', pct: 0 });
-      const { file: prepared } = await maybeCompressVideo(file, {
-        onProgress: (f) => setProgress({ label: 'جارٍ ضغط الفيديو…', pct: Math.round(f * 100) }),
-      });
-      toUpload = prepared;
-    }
-
-    setProgress({ label: 'جارٍ الرفع…', pct: 0 });
+    // For video, api.upload re-encodes/segments in the browser and pushes the bytes straight to
+    // Cloudinary (see lib/cloudinary-upload.ts); the first stretch of progress is that prep step.
+    setProgress({ label: category === 'videos' ? 'جارٍ تجهيز الفيديو…' : 'جارٍ الرفع…', pct: 0 });
     const uploaded = await api.upload<{ url: string; size: number; mimeType: string; originalName?: string }>(
       endpoint,
-      toUpload,
+      file,
       (pct) => setProgress({ label: 'جارٍ الرفع…', pct: Math.round(pct) }),
     );
     return { url: uploaded.url, type, name: file.name, size: uploaded.size, mimeType: uploaded.mimeType };

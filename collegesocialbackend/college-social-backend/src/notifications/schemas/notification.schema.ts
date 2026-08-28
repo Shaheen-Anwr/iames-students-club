@@ -14,7 +14,15 @@ export type NotificationType =
   | 'qa_answer'
   | 'mention'
   | 'friend_request'
-  | 'friend_accept';
+  | 'friend_accept'
+  // Academia Reels (see src/reels) -- like/comment/reply on a reel, or an @mention in a reel
+  // caption or comment. All link to /reels/<reelId>.
+  | 'reel_like'
+  | 'reel_comment'
+  | 'reel_comment_reply'
+  | 'reel_mention'
+  // Platform-wide broadcast fanned out by AnnouncementsService -- one per recipient, no actor.
+  | 'system_announcement';
 
 @Schema({ timestamps: true })
 export class Notification {
@@ -38,9 +46,24 @@ export class Notification {
       'mention',
       'friend_request',
       'friend_accept',
+      'reel_like',
+      'reel_comment',
+      'reel_comment_reply',
+      'reel_mention',
+      'system_announcement',
     ],
   })
   type: NotificationType;
+
+  // Set only for actor-less notifications (system_announcement): the announcement title, shown
+  // as the notification's headline since there's no "<name> did X" phrase to render.
+  @Prop({ type: String, default: null })
+  title: string | null;
+
+  // Explicit click target for notifications whose destination isn't derivable from an id above
+  // (system_announcement -> the announcements page).
+  @Prop({ type: String, default: null })
+  link: string | null;
 
   @Prop({ type: String, default: null })
   conversationId: string | null;
@@ -53,6 +76,11 @@ export class Notification {
 
   @Prop({ type: String, default: null })
   postId: string | null;
+
+  // Set for reel_like / reel_comment / reel_comment_reply / reel_mention -- click target is
+  // /reels/<reelId>.
+  @Prop({ type: String, default: null })
+  reelId: string | null;
 
   @Prop({ type: String, default: null })
   questionId: string | null;

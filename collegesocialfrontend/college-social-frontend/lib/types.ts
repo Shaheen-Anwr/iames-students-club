@@ -657,6 +657,10 @@ export interface Message {
   readBy: string[];
   deliveredTo?: string[];
   createdAt: string;
+  /** Client-only: an optimistic message shown before the server has echoed it back. */
+  pending?: boolean;
+  /** Client-only: an optimistic message the server never acknowledged (tap to retry). */
+  failed?: boolean;
 }
 
 export interface LinkPreview {
@@ -742,21 +746,78 @@ export type NotificationType =
   | 'comment_reaction'
   | 'qa_answer'
   | 'friend_request'
-  | 'friend_accept';
+  | 'friend_accept'
+  // Academia Reels -- all link to /reels/<reelId>.
+  | 'reel_like'
+  | 'reel_comment'
+  | 'reel_comment_reply'
+  | 'reel_mention'
+  // Platform/department announcement broadcast -- actor-less; renders from `title`/`preview`.
+  | 'system_announcement';
 
 export interface Notification {
   _id: string;
   recipient: string;
-  // null when the actor's account has since been deleted.
+  // null when the actor's account has since been deleted, or for actor-less system broadcasts.
   actor: User | null;
   type: NotificationType;
   conversationId?: string | null;
   channelId?: string | null;
   groupId?: string | null;
   postId?: string | null;
+  reelId?: string | null;
   questionId?: string | null;
   preview?: string | null;
+  // Set for system_announcement: the announcement headline / explicit click target.
+  title?: string | null;
+  link?: string | null;
   read: boolean;
+  createdAt: string;
+}
+
+// --- Academia Reels (اكاديميا) ---
+
+export interface ReelAuthor {
+  id: string;
+  name: string;
+  photoUrl: string | null;
+  role: Role;
+  collegeId: string | null;
+}
+
+export interface Reel {
+  id: string;
+  author: ReelAuthor | null;
+  videoUrl: string;
+  thumbnailUrl: string;
+  caption: string;
+  durationSec: number;
+  hashtags: string[];
+  department: Department | null;
+  likeCount: number;
+  commentCount: number;
+  viewCount: number;
+  likedByMe: boolean;
+  savedByMe: boolean;
+  createdAt: string;
+}
+
+export interface ReelFeedPage {
+  data: Reel[];
+  page: number;
+  limit: number;
+  hasMore: boolean;
+}
+
+export interface ReelComment {
+  id: string;
+  author: ReelAuthor | null;
+  text: string;
+  edited: boolean;
+  parent: string | null;
+  replyCount: number;
+  likeCount: number;
+  likedByMe: boolean;
   createdAt: string;
 }
 

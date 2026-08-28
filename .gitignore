@@ -1,3 +1,6 @@
 # Local AI tool config, not part of the project
 .claude/
 .qodo/
+
+# Local secret for the release-broadcast git hook (see scripts/notify-release.env.example)
+scripts/notify-release.env

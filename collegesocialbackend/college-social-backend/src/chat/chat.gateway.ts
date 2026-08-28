@@ -9,6 +9,7 @@ import {
   SubscribeMessage,
   WebSocketGateway,
   WebSocketServer,
+  WsException,
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
@@ -24,7 +25,13 @@ import { Role } from '../common/enums/role.enum';
 import { corsOriginValidator } from '../common/cors-origin';
 
 interface AuthedSocket extends Socket {
-  data: { userId: string; collegeId: string; role: string };
+  data: {
+    userId: string;
+    collegeId: string;
+    role: string;
+    // Per-socket rate-limit buckets: action name -> recent hit timestamps. See rateLimited().
+    rl?: Map<string, number[]>;
+  };
 }
 
 interface CallSignalPayload {
@@ -40,12 +47,49 @@ interface CallSignalPayload {
 @WebSocketGateway({
   cors: { origin: corsOriginValidator, credentials: true },
   namespace: '/chat',
+  // WebSocket first -- skip the HTTP long-polling handshake + upgrade round-trips for clients
+  // that can go straight to WS (all modern browsers). Polling stays as a fallback.
+  transports: ['websocket', 'polling'],
+  // Heartbeat: detect a dead client within ~pingInterval+pingTimeout without being chatty.
+  pingInterval: 25000,
+  pingTimeout: 20000,
+  // Reject oversized frames early instead of buffering them (message bodies are small; large
+  // media goes through the HTTP upload API, never the socket).
+  maxHttpBufferSize: 1_000_000,
+  // Chat payloads are tiny; per-message deflate just burns CPU under load. Leave it off.
+  perMessageDeflate: false,
+  // A briefly-dropped client (tunnel, backgrounded tab, flaky mobile) resumes the same session
+  // -- rooms and missed events are restored automatically, so it skips re-auth + re-join and
+  // doesn't add to the connect-storm DB load. See the `client.recovered` fast path below.
+  connectionStateRecovery: {
+    maxDisconnectionDuration: 2 * 60 * 1000,
+    skipMiddlewares: true,
+  },
 })
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server: Server;
 
   private readonly logger = new Logger(ChatGateway.name);
+
+  // Live presence, tracked in-memory (no Mongo scan per connect/disconnect). Key = userId,
+  // value = number of that user's currently-connected sockets (tabs/devices). `.size` is the
+  // distinct-online-user count the admin dashboard shows.
+  // NOTE: this is per-process. If you scale to multiple instances via the Redis adapter, move
+  // this to a Redis set (SADD/SREM/SCARD) so the count is cluster-wide.
+  private readonly onlineSocketCount = new Map<string, number>();
+
+  // Throttle for the admin "online now" broadcast: coalesce bursts into at most one emit per
+  // window, always with a trailing emit so the final value is never missed.
+  private static readonly ONLINE_EMIT_WINDOW_MS = 3000;
+  private lastOnlineEmitAt = 0;
+  private onlineEmitTimer: NodeJS.Timeout | null = null;
+
+  // Deferred "mark offline" writes, keyed by userId. A disconnect schedules the DB write a few
+  // seconds out; a reconnect within that grace window cancels it. This collapses reconnect-storm
+  // flapping (deploy, wifi blip) from thousands of Mongo writes + presence broadcasts to ~zero.
+  private static readonly OFFLINE_GRACE_MS = 8000;
+  private readonly pendingOffline = new Map<string, NodeJS.Timeout>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -70,36 +114,52 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
       if (!token) throw new Error('Missing token');
 
-      const payload = this.jwtService.verify(token);
+      // Async verify -- keeps the event loop free during a reconnect storm.
+      const payload = await this.jwtService.verifyAsync(token);
       client.data.userId = payload.sub;
       client.data.collegeId = payload.collegeId;
       client.data.role = payload.role;
 
-      // Auto-join a room per conversation the user belongs to, so messages
-      // reach them even if they haven't explicitly called joinConversation yet.
-      const conversations = await this.chatService.listConversationsForUser(payload.sub);
-      conversations.forEach((c) => client.join(`conversation:${c._id}`));
+      const isFirstSocketForUser = this.trackOnline(payload.sub);
+      this.cancelPendingOffline(payload.sub);
 
-      // Same for group channels.
-      const channelIds = await this.groupsService.listMyChannelIds(payload.sub);
-      channelIds.forEach((id) => client.join(`channel:${id}`));
-
-      // Personal room -- lets RealtimeEmitterService reach this user's active socket(s) for
-      // notifications, regardless of which conversation/channel/page they're currently on.
-      client.join(`user:${payload.sub}`);
-
-      // Admin dashboard live signal: admins additionally join a shared room so
-      // RealtimeEmitterService.emitToAdmins() can push presence/activity updates to them.
-      if (payload.role === Role.ADMIN) {
-        client.join('admins');
+      // A recovered session (brief drop within connectionStateRecovery's window) already has its
+      // rooms + missed events restored by Socket.IO -- skip every DB round-trip below.
+      if (client.recovered) {
+        if (isFirstSocketForUser) {
+          void this.usersService.setOnline(payload.sub, true).catch(() => undefined);
+        }
+        this.scheduleOnlineCountBroadcast();
+        return;
       }
 
-      // Presence: mark online and tell everyone sharing a conversation with this user.
-      await this.usersService.setOnline(payload.sub, true);
-      conversations.forEach((c) =>
-        client.to(`conversation:${c._id}`).emit('presenceUpdate', { userId: payload.sub, isOnline: true }),
-      );
-      this.broadcastOnlineCountToAdmins();
+      // Auto-join one room per conversation / channel the user belongs to (IDs only -- see
+      // listConversationIdsForUser) so messages reach them without an explicit join first. The
+      // two lookups run in parallel; joins are applied in a single batched call.
+      const [conversationIds, channelIds] = await Promise.all([
+        this.chatService.listConversationIdsForUser(payload.sub),
+        this.groupsService.listMyChannelIds(payload.sub),
+      ]);
+      const rooms = [
+        ...conversationIds.map((id) => `conversation:${id}`),
+        ...channelIds.map((id) => `channel:${id}`),
+        // Personal room -- lets RealtimeEmitterService reach this user's socket(s) for
+        // notifications regardless of which page they're on.
+        `user:${payload.sub}`,
+      ];
+      // Admin dashboard live signal: admins also join a shared room for emitToAdmins().
+      if (payload.role === Role.ADMIN) rooms.push('admins');
+      client.join(rooms);
+
+      // Presence write is fire-and-forget (a stale flag is harmless; a blocked handshake isn't)
+      // and only needed when this is the user's first live socket.
+      if (isFirstSocketForUser) {
+        void this.usersService.setOnline(payload.sub, true).catch(() => undefined);
+        conversationIds.forEach((id) =>
+          client.to(`conversation:${id}`).emit('presenceUpdate', { userId: payload.sub, isOnline: true }),
+        );
+      }
+      this.scheduleOnlineCountBroadcast();
 
       this.logger.log(`Client connected: user=${payload.sub} socket=${client.id}`);
     } catch (err) {
@@ -108,32 +168,91 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
-  async handleDisconnect(client: AuthedSocket) {
-    this.logger.log(`Client disconnected: socket=${client.id}`);
+  handleDisconnect(client: AuthedSocket) {
     const userId = client.data?.userId;
     if (!userId) return;
 
-    // A user may have other tabs/devices still connected -- only announce "offline" if this
-    // was their last active socket in the room.
-    const remainingSockets = await this.server.in(`user:${userId}`).fetchSockets();
-    if (remainingSockets.length > 0) return;
+    const stillOnlineElsewhere = this.untrackOnline(userId);
+    if (stillOnlineElsewhere) return; // other tabs/devices remain -- nothing to announce
 
-    const lastSeenAt = new Date();
-    await this.usersService.setOnline(userId, false, lastSeenAt);
-    const conversations = await this.chatService.listConversationsForUser(userId);
-    conversations.forEach((c) =>
-      this.server.to(`conversation:${c._id}`).emit('presenceUpdate', { userId, isOnline: false, lastSeenAt }),
+    // Defer the "offline" write + presence broadcast. If the user reconnects within the grace
+    // window (the common case during a deploy or wifi blip) handleConnection cancels this and
+    // Mongo is never touched -- which is what keeps a mass reconnect from melting the DB.
+    const existing = this.pendingOffline.get(userId);
+    if (existing) clearTimeout(existing);
+    this.pendingOffline.set(
+      userId,
+      setTimeout(() => {
+        this.pendingOffline.delete(userId);
+        if ((this.onlineSocketCount.get(userId) ?? 0) > 0) return; // came back in the meantime
+        const lastSeenAt = new Date();
+        void this.usersService.setOnline(userId, false, lastSeenAt).catch(() => undefined);
+        void this.chatService
+          .listConversationIdsForUser(userId)
+          .then((ids) =>
+            ids.forEach((id) =>
+              this.server.to(`conversation:${id}`).emit('presenceUpdate', { userId, isOnline: false, lastSeenAt }),
+            ),
+          )
+          .catch(() => undefined);
+        this.scheduleOnlineCountBroadcast();
+      }, ChatGateway.OFFLINE_GRACE_MS),
     );
-    this.broadcastOnlineCountToAdmins();
   }
 
-  // Admin dashboard "online now" tile -- fired on every connect/disconnect so it stays live
-  // without polling. Fire-and-forget: a failed count read just means a stale tile, never a
-  // user-facing error.
-  private broadcastOnlineCountToAdmins(): void {
-    void this.usersService.countOnline().then((online) => {
-      this.realtimeEmitter.emitToAdmins('admin:presence', { online });
-    });
+  // --- presence bookkeeping (in-memory, no Mongo per connect/disconnect) ---
+
+  /** Records a new socket for the user; returns true if this is their first live socket. */
+  private trackOnline(userId: string): boolean {
+    const next = (this.onlineSocketCount.get(userId) ?? 0) + 1;
+    this.onlineSocketCount.set(userId, next);
+    return next === 1;
+  }
+
+  /** Drops a socket for the user; returns true if they still have another socket connected. */
+  private untrackOnline(userId: string): boolean {
+    const next = (this.onlineSocketCount.get(userId) ?? 1) - 1;
+    if (next <= 0) {
+      this.onlineSocketCount.delete(userId);
+      return false;
+    }
+    this.onlineSocketCount.set(userId, next);
+    return true;
+  }
+
+  private cancelPendingOffline(userId: string): void {
+    const t = this.pendingOffline.get(userId);
+    if (t) {
+      clearTimeout(t);
+      this.pendingOffline.delete(userId);
+    }
+  }
+
+  // Admin dashboard "online now" tile. Coalesces connect/disconnect bursts into at most one
+  // emit per window (trailing edge), reading the count straight from memory -- no Mongo scan.
+  private scheduleOnlineCountBroadcast(): void {
+    if (this.onlineEmitTimer) return;
+    const delay = Math.max(0, ChatGateway.ONLINE_EMIT_WINDOW_MS - (Date.now() - this.lastOnlineEmitAt));
+    this.onlineEmitTimer = setTimeout(() => {
+      this.onlineEmitTimer = null;
+      this.lastOnlineEmitAt = Date.now();
+      this.realtimeEmitter.emitToAdmins('admin:presence', { online: this.onlineSocketCount.size });
+    }, delay);
+  }
+
+  // Cheap per-socket sliding-window rate limit. Returns true when the caller is over budget and
+  // the event should be dropped -- shields the event loop from a client flooding an event.
+  private rateLimited(client: AuthedSocket, action: string, max: number, windowMs: number): boolean {
+    const now = Date.now();
+    const store = (client.data.rl ??= new Map<string, number[]>());
+    const hits = (store.get(action) ?? []).filter((t) => now - t < windowMs);
+    if (hits.length >= max) {
+      store.set(action, hits);
+      return true;
+    }
+    hits.push(now);
+    store.set(action, hits);
+    return false;
   }
 
   @SubscribeMessage('joinConversation')
@@ -145,6 +264,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('sendMessage')
   async onSendMessage(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: CreateMessageDto) {
+    if (this.rateLimited(client, 'sendMessage', 25, 10_000)) {
+      throw new WsException('أنت ترسل الرسائل بسرعة كبيرة. تمهّل قليلاً.');
+    }
     const message = await this.chatService.saveMessage(
       dto.conversationId,
       client.data.userId,
@@ -160,6 +282,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('typing')
   onTyping(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
+    // Silently drop floods -- typing indicators are best-effort and not worth an error toast.
+    if (this.rateLimited(client, 'typing', 20, 5_000)) return;
     client.to(`conversation:${conversationId}`).emit('userTyping', {
       conversationId,
       userId: client.data.userId,
@@ -168,6 +292,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('stopTyping')
   onStopTyping(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
+    if (this.rateLimited(client, 'typing', 20, 5_000)) return;
     client.to(`conversation:${conversationId}`).emit('userStopTyping', {
       conversationId,
       userId: client.data.userId,
@@ -205,6 +330,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() dto: { messageId: string } & ReactMessageDto,
   ) {
+    if (this.rateLimited(client, 'reactToMessage', 30, 10_000)) return { event: 'messageReacted' };
     const message = await this.chatService.reactToMessage(dto.messageId, client.data.userId, dto.emoji);
     this.server.to(`conversation:${message.conversation.toString()}`).emit('messageReacted', message);
     return { event: 'messageReacted', messageId: message.id };
@@ -215,6 +341,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() dto: { messageId: string } & ForwardMessageDto,
   ) {
+    if (this.rateLimited(client, 'forwardMessage', 10, 20_000)) {
+      throw new WsException('أنت تعيد التوجيه بسرعة كبيرة. تمهّل قليلاً.');
+    }
     const messages = await this.chatService.forwardMessage(dto.messageId, client.data.userId, dto.conversationIds);
     messages.forEach((message) => {
       this.server.to(`conversation:${message.conversation.toString()}`).emit('newMessage', message);
@@ -224,6 +353,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('markRead')
   async onMarkRead(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
+    if (this.rateLimited(client, 'markRead', 40, 10_000)) return { event: 'read', conversationId };
     const messageIds = await this.chatService.markRead(conversationId, client.data.userId);
     if (messageIds.length) {
       client.to(`conversation:${conversationId}`).emit('messagesRead', {
@@ -237,6 +367,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('markDelivered')
   async onMarkDelivered(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
+    if (this.rateLimited(client, 'markDelivered', 40, 10_000)) return { event: 'delivered', conversationId };
     const messageIds = await this.chatService.markDelivered(conversationId, client.data.userId);
     if (messageIds.length) {
       client.to(`conversation:${conversationId}`).emit('messagesDelivered', {
@@ -259,6 +390,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('sendChannelMessage')
   async onSendChannelMessage(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: CreateChannelMessageDto) {
+    if (this.rateLimited(client, 'sendChannelMessage', 25, 10_000)) {
+      throw new WsException('أنت ترسل الرسائل بسرعة كبيرة. تمهّل قليلاً.');
+    }
     const message = await this.groupsService.saveChannelMessage(
       dto.channelId,
       client.data.userId,
@@ -272,6 +406,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   @SubscribeMessage('channelTyping')
   onChannelTyping(@ConnectedSocket() client: AuthedSocket, @MessageBody() channelId: string) {
+    if (this.rateLimited(client, 'typing', 20, 5_000)) return;
     client.to(`channel:${channelId}`).emit('userTypingChannel', {
       channelId,
       userId: client.data.userId,

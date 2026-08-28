@@ -58,17 +58,86 @@ export class PushService {
     const user = await this.userModel.findById(userId).select('pushSubscriptions').exec();
     if (!user || user.pushSubscriptions.length === 0) return;
 
+    await this.dispatch(userId, user.pushSubscriptions, JSON.stringify(payload));
+  }
+
+  // Fan a single payload out to every subscribed device across many users (announcement
+  // broadcast). Loads only users who actually have a subscription, and sends in bounded
+  // batches so a large cohort doesn't open thousands of push requests at once. Never throws.
+  async sendToUsers(userIds: string[], payload: PushPayload): Promise<void> {
+    if (!this.enabled || userIds.length === 0) return;
+
+    const users = await this.userModel
+      .find({ _id: { $in: userIds }, 'pushSubscriptions.0': { $exists: true } })
+      .select('pushSubscriptions')
+      .exec();
+    if (users.length === 0) return;
+
     const body = JSON.stringify(payload);
+    const BATCH = 50;
+    for (let i = 0; i < users.length; i += BATCH) {
+      await Promise.allSettled(
+        users.slice(i, i + BATCH).map((u) => this.dispatch(u._id.toString(), u.pushSubscriptions, body)),
+      );
+    }
+  }
+
+  // Fan a payload out to EVERY user who has at least one push subscription -- used for
+  // platform-wide, author-less broadcasts (e.g. "a new update just shipped", fired from the
+  // release git hook). Streams users through a cursor in bounded batches so the whole user base
+  // never loads at once. Never throws; returns a delivery summary for the caller to log/return.
+  async broadcastToAll(payload: PushPayload): Promise<{ enabled: boolean; users: number; sent: number; failed: number }> {
+    if (!this.enabled) return { enabled: false, users: 0, sent: 0, failed: 0 };
+
+    const body = JSON.stringify(payload);
+    const cursor = this.userModel
+      .find({ 'pushSubscriptions.0': { $exists: true } })
+      .select('_id pushSubscriptions')
+      .batchSize(200)
+      .cursor();
+
+    let users = 0;
+    let sent = 0;
+    let failed = 0;
+    let batch: Array<Promise<{ sent: number; failed: number }>> = [];
+    const drain = async () => {
+      const settled = await Promise.all(batch);
+      for (const r of settled) {
+        sent += r.sent;
+        failed += r.failed;
+      }
+      batch = [];
+    };
+
+    for await (const user of cursor) {
+      users += 1;
+      batch.push(this.dispatch(user._id.toString(), user.pushSubscriptions, body));
+      if (batch.length >= 50) await drain();
+    }
+    await drain();
+
+    this.logger.log(`Broadcast push "${payload.title}" -> ${users} user(s): ${sent} delivered, ${failed} failed.`);
+    return { enabled: true, users, sent, failed };
+  }
+
+  // Sends `body` to one user's devices and prunes any endpoints the push service reports gone
+  // (404/410). Rejections are swallowed here; other status codes are logged, not thrown. Returns
+  // per-user delivered/failed counts (ignored by the per-user callers, summed by broadcastToAll).
+  private async dispatch(
+    userId: string,
+    subscriptions: { endpoint: string; keys: { p256dh: string; auth: string } }[],
+    body: string,
+  ): Promise<{ sent: number; failed: number }> {
     const results = await Promise.allSettled(
-      user.pushSubscriptions.map((sub) =>
+      subscriptions.map((sub) =>
         webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, body).catch((err) => {
           throw { statusCode: err?.statusCode, endpoint: sub.endpoint };
         }),
       ),
     );
 
-    const deadEndpoints = results
-      .filter((r): r is PromiseRejectedResult => r.status === 'rejected')
+    const rejected = results.filter((r): r is PromiseRejectedResult => r.status === 'rejected');
+    const deadEndpoints = rejected
       .filter((r) => r.reason?.statusCode === 404 || r.reason?.statusCode === 410)
       .map((r) => r.reason.endpoint as string);
 
@@ -76,11 +145,11 @@ export class PushService {
       await this.userModel.updateOne({ _id: userId }, { $pull: { pushSubscriptions: { endpoint: { $in: deadEndpoints } } } }).exec();
     }
 
-    const otherFailures = results.filter(
-      (r): r is PromiseRejectedResult => r.status === 'rejected' && r.reason?.statusCode !== 404 && r.reason?.statusCode !== 410,
-    );
+    const otherFailures = rejected.filter((r) => r.reason?.statusCode !== 404 && r.reason?.statusCode !== 410);
     if (otherFailures.length > 0) {
       this.logger.warn(`${otherFailures.length} push send(s) failed for user ${userId}: ${otherFailures.map((f) => f.reason?.statusCode).join(', ')}`);
     }
+
+    return { sent: results.length - rejected.length, failed: rejected.length };
   }
 }

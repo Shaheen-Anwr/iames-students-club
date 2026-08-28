@@ -1,10 +1,15 @@
-import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
+import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
 import { Announcement, AnnouncementDocument } from './schemas/announcement.schema';
 import { CreateAnnouncementDto } from './dto/create-announcement.dto';
 import { Department } from '../common/enums/department.enum';
 import { Role } from '../common/enums/role.enum';
+import { User, UserDocument } from '../users/schemas/user.schema';
+import { NotificationsService } from '../notifications/notifications.service';
+import { PushService } from '../push/push.service';
+import { buildAnnouncementPushPayload } from '../push/push-payload.util';
 
 export interface PaginatedAnnouncements {
   data: AnnouncementDocument[];
@@ -22,7 +27,15 @@ export interface AnnouncementStats {
 
 @Injectable()
 export class AnnouncementsService {
-  constructor(@InjectModel(Announcement.name) private announcementModel: Model<AnnouncementDocument>) {}
+  private readonly logger = new Logger(AnnouncementsService.name);
+
+  constructor(
+    @InjectModel(Announcement.name) private announcementModel: Model<AnnouncementDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    private readonly notificationsService: NotificationsService,
+    private readonly pushService: PushService,
+    private readonly config: ConfigService,
+  ) {}
 
   async create(authorId: string, authorDepartment: Department | null, dto: CreateAnnouncementDto): Promise<AnnouncementDocument> {
     // Omitted -> defaults to the author's own department (null for an author without one, which
@@ -37,7 +50,39 @@ export class AnnouncementsService {
       pinned: dto.pinned ?? false,
       eventDate: dto.eventDate ? new Date(dto.eventDate) : null,
     });
-    return announcement.save();
+    await announcement.save();
+
+    // Fan the announcement out to every user who can see it: an in-app notification each (so a
+    // missed push still leaves a record) plus a best-effort Web Push. The author is excluded --
+    // they just wrote it. Failures here must never fail the announcement itself.
+    void this.broadcast(announcement, authorId).catch((err) =>
+      this.logger.warn(`Announcement broadcast failed: ${(err as Error)?.message ?? err}`),
+    );
+
+    return announcement;
+  }
+
+  // Recipients: everyone for a platform-wide announcement (department: null), otherwise only
+  // users in that department -- the same visibility split as list().
+  private async broadcast(announcement: AnnouncementDocument, authorId: string): Promise<void> {
+    const recipientFilter: Record<string, unknown> = { _id: { $ne: new Types.ObjectId(authorId) } };
+    if (announcement.department !== null) recipientFilter.department = announcement.department;
+
+    const recipients = await this.userModel.find(recipientFilter).select('_id').lean().exec();
+    const ids = recipients.map((u) => u._id as Types.ObjectId);
+    if (ids.length === 0) return;
+
+    await this.notificationsService.createSystemBroadcast(ids, {
+      title: announcement.title,
+      preview: announcement.body.length > 200 ? `${announcement.body.slice(0, 199)}…` : announcement.body,
+      link: '/announcements',
+    });
+
+    const frontendUrl = this.config.get<string>('frontendUrl')!;
+    await this.pushService.sendToUsers(
+      ids.map((id) => id.toString()),
+      buildAnnouncementPushPayload(announcement, frontendUrl),
+    );
   }
 
   // Platform-wide (department: null) announcements are visible to everyone; department-scoped

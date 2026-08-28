@@ -1,3 +1,4 @@
+import { AnnouncementDocument } from '../announcements/schemas/announcement.schema';
 import { NotificationDocument, NotificationType } from '../notifications/schemas/notification.schema';
 
 export interface PushPayload {
@@ -23,6 +24,14 @@ const LABELS: Record<NotificationType, string> = {
   mention: 'أشار إليك',
   friend_request: 'أرسل لك طلب صداقة',
   friend_accept: 'قبل طلب صداقتك',
+  reel_like: 'أعجب بالريل الخاص بك',
+  reel_comment: 'علّق على الريل الخاص بك',
+  reel_comment_reply: 'رد على تعليقك',
+  reel_mention: 'أشار إليك في ريل',
+  // Never used to build a title -- system_announcement pushes go through
+  // buildAnnouncementPushPayload(), which uses the announcement's own title. Present only so
+  // this map stays exhaustive over NotificationType.
+  system_announcement: '',
 };
 
 // Mirrors notificationHref() in the frontend's NotificationBell.tsx, but returns an absolute
@@ -42,6 +51,11 @@ function relativeHref(notification: NotificationDocument): string {
       const actorId = (notification.actor as { _id?: { toString(): string } } | null)?._id;
       return actorId ? `/profile/${actorId.toString()}` : '/profile';
     }
+    case 'reel_like':
+    case 'reel_comment':
+    case 'reel_comment_reply':
+    case 'reel_mention':
+      return notification.reelId ? `/reels/${notification.reelId}` : '/reels';
     case 'post_comment':
     case 'post_reaction':
     case 'post_share':
@@ -61,5 +75,19 @@ export function buildPushPayload(notification: NotificationDocument, frontendUrl
     url: `${frontendUrl}${relativeHref(notification)}`,
     icon: `${frontendUrl}/icons/icon-192.png`,
     tag: notification.type,
+  };
+}
+
+// Push payload for a platform/department announcement broadcast. Uses the announcement's own
+// title/body rather than an actor phrase, and always lands on the announcements page. `tag` is
+// per-announcement so a device that somehow receives it twice collapses to one notification.
+export function buildAnnouncementPushPayload(announcement: AnnouncementDocument, frontendUrl: string): PushPayload {
+  const body = announcement.body.length > 140 ? `${announcement.body.slice(0, 139)}…` : announcement.body;
+  return {
+    title: `📢 ${announcement.title}`,
+    body,
+    url: `${frontendUrl}/announcements`,
+    icon: `${frontendUrl}/icons/icon-192.png`,
+    tag: `announcement-${announcement._id.toString()}`,
   };
 }

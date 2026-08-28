@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { FileText, HelpCircle, LogOut, Search, User as UserIcon, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { useChatUnread } from '@/lib/chat-unread-context';
 import { Avatar } from '@/components/ui/Avatar';
 import { RoleBadge } from '@/components/ui/Badge';
 import { LogoMark } from '@/components/ui/Logo';
@@ -23,6 +24,7 @@ export function TopNavbar() {
   const pathname = usePathname();
   const router = useRouter();
   const { user, logout } = useAuth();
+  const chatUnread = useChatUnread();
 
   const [menuOpen, setMenuOpen] = useState(false);
   const [query, setQuery] = useState('');
@@ -191,6 +193,7 @@ export function TopNavbar() {
       <nav className="hidden flex-1 items-center justify-center gap-1 md:flex">
         {getNavItems(user.role).map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
+          const badge = href === '/chat' ? chatUnread : 0;
           return (
             <Link
               key={href}
@@ -205,6 +208,11 @@ export function TopNavbar() {
                 <span className="absolute inset-0 rounded-xl bg-accent/10 shadow-[0_0_0_1px_rgb(var(--accent)/0.15)]" />
               )}
               <Icon className={cn('relative h-5.5 w-5.5 transition-transform group-hover:scale-110', active && 'drop-shadow-[0_0_6px_rgb(var(--accent)/0.5)]')} />
+              {badge > 0 && (
+                <span className="absolute end-4 top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-accent px-1 text-[10px] font-bold leading-none text-white ring-2 ring-surface">
+                  {badge > 9 ? '9+' : badge}
+                </span>
+              )}
               {active && <span className="absolute inset-x-5 bottom-1 h-0.5 rounded-full bg-gradient-accent" />}
             </Link>
           );

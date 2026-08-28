@@ -7,9 +7,11 @@ import { SocketProvider } from '@/lib/socket-context';
 import { ToastProvider } from '@/lib/toast-context';
 import { ThemeProvider } from '@/lib/theme-context';
 import { NotificationsProvider } from '@/lib/notifications-context';
+import { ChatUnreadProvider } from '@/lib/chat-unread-context';
 import { AiProvider } from '@/lib/ai-context';
 import { CallProvider } from '@/components/chat/CallProvider';
 import { PwaRegistrar } from '@/components/PwaRegistrar';
+import { Observability } from '@/components/Observability';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
@@ -23,13 +25,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <PwaRegistrar />
           <ToastProvider>
             <AuthProvider>
+              <Observability />
               <SocketProvider>
                 <NotificationsProvider>
-                  {/* Mounted app-wide (not just inside /chat) so an incoming call rings no
-                      matter which page the user is on, same as WhatsApp/Messenger. */}
-                  <CallProvider>
-                    <AiProvider>{children}</AiProvider>
-                  </CallProvider>
+                  {/* App-wide unread-chats count for the nav badge + installed-app icon badge. */}
+                  <ChatUnreadProvider>
+                    {/* Mounted app-wide (not just inside /chat) so an incoming call rings no
+                        matter which page the user is on, same as WhatsApp/Messenger. */}
+                    <CallProvider>
+                      <AiProvider>{children}</AiProvider>
+                    </CallProvider>
+                  </ChatUnreadProvider>
                 </NotificationsProvider>
               </SocketProvider>
             </AuthProvider>

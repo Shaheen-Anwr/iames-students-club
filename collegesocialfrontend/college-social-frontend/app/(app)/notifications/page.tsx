@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { Bell, Heart, HelpCircle, MessageCircle, MessageSquareText, Share2, Users, UserPlus, UserCheck } from 'lucide-react';
+import { Bell, Megaphone } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
@@ -10,57 +10,11 @@ import { api } from '@/lib/api';
 import { useNotifications } from '@/lib/notifications-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import type { Notification } from '@/lib/types';
-
-const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
-  chat_message: 'أرسل لك رسالة',
-  channel_message: 'أرسل رسالة في المجموعة',
-  post_comment: 'علّق على منشورك',
-  post_reaction: 'تفاعل مع منشورك',
-  post_share: 'شارك منشورك',
-  comment_reply: 'رد على تعليقك',
-  comment_reaction: 'تفاعل مع تعليقك',
-  qa_answer: 'أجاب على سؤالك',
-  friend_request: 'أرسل لك طلب صداقة',
-  friend_accept: 'قبل طلب صداقتك',
-};
-
-const NOTIFICATION_ICONS: Record<Notification['type'], React.ComponentType<{ className?: string }>> = {
-  chat_message: MessageCircle,
-  channel_message: Users,
-  post_comment: MessageSquareText,
-  post_reaction: Heart,
-  post_share: Share2,
-  comment_reply: MessageSquareText,
-  comment_reaction: Heart,
-  qa_answer: HelpCircle,
-  friend_request: UserPlus,
-  friend_accept: UserCheck,
-};
-
-function notificationHref(notification: Notification): string {
-  switch (notification.type) {
-    case 'chat_message':
-      return notification.conversationId ? `/chat/${notification.conversationId}` : '/chat';
-    case 'channel_message':
-      return notification.groupId && notification.channelId ? `/groups/${notification.groupId}/${notification.channelId}` : '/groups';
-    case 'qa_answer':
-      return notification.questionId ? `/study/qa/${notification.questionId}` : '/study/qa';
-    case 'friend_request':
-    case 'friend_accept':
-      return notification.actor ? `/profile/${notification.actor._id}` : '/feed';
-    // Comment-centric: land on the post with its comments already open.
-    case 'post_comment':
-    case 'comment_reply':
-    case 'comment_reaction':
-      return notification.postId ? `/posts/${notification.postId}?comments=1` : '/feed';
-    // Post-centric: land on the post itself.
-    case 'post_reaction':
-    case 'post_share':
-      return notification.postId ? `/posts/${notification.postId}` : '/feed';
-    default:
-      return '/feed';
-  }
-}
+import {
+  NOTIFICATION_LABELS,
+  NOTIFICATION_ICONS,
+  notificationHref,
+} from '@/components/layout/NotificationBell';
 
 /** Buckets a notification's timestamp into a coarse, human day-label for grouping. */
 function dayLabel(dateStr: string): string {
@@ -146,6 +100,7 @@ export default function NotificationsPage() {
                 <div className="space-y-2">
                   {groupItems.map((notification) => {
                     const Icon = NOTIFICATION_ICONS[notification.type];
+                    const isSystem = notification.type === 'system_announcement';
                     return (
                       <button
                         key={notification._id}
@@ -155,11 +110,23 @@ export default function NotificationsPage() {
                           !notification.read && 'bg-accent/5',
                         )}
                       >
-                        <Avatar src={assetUrl(notification.actor?.photoUrl)} name={notification.actor?.name ?? 'مستخدم'} size="md" />
+                        {isSystem ? (
+                          <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+                            <Megaphone className="h-5 w-5" />
+                          </span>
+                        ) : (
+                          <Avatar src={assetUrl(notification.actor?.photoUrl)} name={notification.actor?.name ?? 'مستخدم'} size="md" />
+                        )}
                         <div className="min-w-0 flex-1">
                           <p className="text-[15px] leading-relaxed text-foreground">
-                            <span className="font-semibold">{notification.actor?.name ?? 'مستخدم'}</span>{' '}
-                            {NOTIFICATION_LABELS[notification.type]}
+                            {isSystem ? (
+                              <span className="font-semibold">{notification.title ?? NOTIFICATION_LABELS.system_announcement}</span>
+                            ) : (
+                              <>
+                                <span className="font-semibold">{notification.actor?.name ?? 'مستخدم'}</span>{' '}
+                                {NOTIFICATION_LABELS[notification.type]}
+                              </>
+                            )}
                           </p>
                           {notification.preview && (
                             <p className="mt-0.5 truncate text-xs text-muted-foreground">{notification.preview}</p>

@@ -13,6 +13,7 @@ export type BadgeId = keyof typeof BADGES;
 
 export const POINTS = {
   POST_CREATED: 10,
+  REEL_CREATED: 12,
   REACTION_GIVEN: 1,
   COMMENT_ADDED: 3,
   REPLY_ADDED: 2,

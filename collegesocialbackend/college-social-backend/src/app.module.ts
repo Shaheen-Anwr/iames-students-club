@@ -14,6 +14,7 @@ import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { UploadModule } from './upload/upload.module';
 import { PostsModule } from './posts/posts.module';
+import { ReelsModule } from './reels/reels.module';
 import { ChatModule } from './chat/chat.module';
 import { AdminModule } from './admin/admin.module';
 import { ScheduleModule } from './schedule/schedule.module';
@@ -33,6 +34,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { SearchModule } from './search/search.module';
 import { AiModule } from './ai/ai.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { BroadcastModule } from './broadcast/broadcast.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -69,6 +71,7 @@ import { AppController } from './app.controller';
     UsersModule,
     UploadModule,
     PostsModule,
+    ReelsModule,
     ChatModule,
     AdminModule,
     ScheduleModule,
@@ -87,6 +90,7 @@ import { AppController } from './app.controller';
     SearchModule,
     AiModule,
     DashboardModule,
+    BroadcastModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

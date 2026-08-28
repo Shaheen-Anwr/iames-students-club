@@ -1,5 +1,6 @@
 import {
   BadRequestException,
+  Body,
   Controller,
   Delete,
   Post,
@@ -8,6 +9,7 @@ import {
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import { FileInterceptor, FilesInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -15,6 +17,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { UsersService } from '../users/users.service';
 import { buildMulterOptions } from './multer.config';
 import { StorageService } from './storage.service';
+import { ConfirmDirectUploadDto } from './dto/confirm-direct-upload.dto';
 
 // All endpoints require a valid JWT and expect multipart/form-data with a single field named "file".
 // Files are streamed to a temp file on disk (see multer.config.ts) and uploaded to cloud storage
@@ -94,6 +97,33 @@ export class UploadController {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
     const { url, chunkCount } = await this.storageService.upload(file, 'videos');
     return { url, chunkCount, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
+  }
+
+  // POST /api/upload/video/sign -> short-lived signature so the browser can upload a video's bytes
+  // straight to Cloudinary instead of streaming them through this server first. Returns the cloud
+  // name + api key (both public by design) and the exact params the signature covers. The api_secret
+  // never leaves the server. See StorageService.createDirectUploadTicket / confirmDirectUpload and
+  // the frontend lib/cloudinary-upload.ts.
+  @Post('video/sign')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  signVideoUpload() {
+    return this.storageService.createDirectUploadTicket('videos');
+  }
+
+  // POST /api/upload/video/confirm -> called by the browser once it has pushed every piece to
+  // Cloudinary. Validates the returned public_id(s) against Cloudinary's Admin API and hands back
+  // the canonical URL to store, in the same shape as POST /api/upload/video.
+  @Post('video/confirm')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  async confirmVideoUpload(@Body() body: ConfirmDirectUploadDto) {
+    const { url, chunkCount } = await this.storageService.confirmDirectUpload('videos', body.publicIds);
+    return {
+      url,
+      chunkCount,
+      originalName: body.originalName ?? 'video.mp4',
+      size: body.size ?? 0,
+      mimeType: body.mimeType ?? 'video/mp4',
+    };
   }
 
   // POST /api/upload/file -> anything else (zip, code, etc.)

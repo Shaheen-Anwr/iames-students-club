@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Fires AFTER a commit is recorded. If the commit message contains a line like
+#
+#   Notify-Users: Faster video uploads are live — try sending a long clip!
+#
+# it pushes that text as a Web Push notification to every subscribed user (via
+# scripts/notify-release.mjs -> POST /api/broadcast/release). No such line => does nothing.
+#
+# Enable once per clone:   git config core.hooksPath .githooks
+# Configure the target:    cp scripts/notify-release.env.example scripts/notify-release.env  (then edit)
+#
+# This hook never fails a commit -- it always exits 0.
+
+set -u
+
+msg="$(git log -1 --pretty=%B 2>/dev/null || true)"
+case "$msg" in
+  *[Nn]otify-[Uu]sers:*) ;;
+  *) exit 0 ;;
+esac
+
+repo_root="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+
+if command -v node >/dev/null 2>&1; then
+  node "$repo_root/scripts/notify-release.mjs" --from-head || true
+else
+  echo "[post-commit] node not found -- skipping release notification." >&2
+fi
+
+exit 0

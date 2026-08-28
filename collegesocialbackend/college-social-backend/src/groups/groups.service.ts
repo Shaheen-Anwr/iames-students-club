@@ -216,12 +216,17 @@ export class GroupsService {
   // Every channel ID across every group the user belongs to -- used once at socket connect to
   // auto-join rooms, mirroring ChatGateway's existing conversation auto-join.
   async listMyChannelIds(userId: string): Promise<string[]> {
-    const groups = await this.groupModel.find({ members: new Types.ObjectId(userId) }).select('_id').exec();
+    const groups = await this.groupModel
+      .find({ members: new Types.ObjectId(userId) })
+      .select('_id')
+      .lean()
+      .exec();
     const channels = await this.channelModel
       .find({ group: { $in: groups.map((g) => g._id) } })
       .select('_id')
+      .lean()
       .exec();
-    return channels.map((c) => c._id.toString());
+    return channels.map((c) => (c._id as Types.ObjectId).toString());
   }
 
   // --- Admin-only operations (guarded at the controller level) ---

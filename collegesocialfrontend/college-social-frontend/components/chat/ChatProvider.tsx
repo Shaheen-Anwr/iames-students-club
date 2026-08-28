@@ -1,7 +1,9 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
+import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import type { Conversation, Message } from '@/lib/types';
 
@@ -20,9 +22,24 @@ const TYPING_TIMEOUT_MS = 2500;
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { socket } = useSocket();
+  const { user } = useAuth();
+  const pathname = usePathname();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
   const [typingConversationIds, setTypingConversationIds] = useState<Set<string>>(new Set());
+
+  // The conversation the user is currently looking at (route: /chat/<id>). Messages that land
+  // here must NOT raise the unread badge -- the user is reading them in real time.
+  const activeConversationId =
+    pathname?.startsWith('/chat/') ? pathname.slice('/chat/'.length).split('/')[0] || null : null;
+  const activeIdRef = useRef<string | null>(null);
+  const userIdRef = useRef<string | undefined>(undefined);
+  useEffect(() => {
+    activeIdRef.current = activeConversationId;
+  }, [activeConversationId]);
+  useEffect(() => {
+    userIdRef.current = user?._id;
+  }, [user]);
 
   const refresh = useCallback(async () => {
     const data = await api.get<Conversation[]>('/chat/conversations');
@@ -59,13 +76,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
-    const bumpLocal = (conversationId: string, preview: string, at: string) => {
+    const bumpLocal = (conversationId: string, preview: string, at: string, incrementUnread: boolean) => {
       setConversations((prev) => {
         const idx = prev.findIndex((c) => c._id === conversationId);
         if (idx === -1) return prev;
         const next = [...prev];
         const [conv] = next.splice(idx, 1);
-        next.unshift({ ...conv, lastMessagePreview: preview || conv.lastMessagePreview, lastMessageAt: at });
+        next.unshift({
+          ...conv,
+          lastMessagePreview: preview || conv.lastMessagePreview,
+          lastMessageAt: at,
+          unreadCount: incrementUnread ? (conv.unreadCount ?? 0) + 1 : conv.unreadCount,
+        });
         return next;
       });
     };
@@ -73,7 +95,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const onNewMessage = (message: Message) => {
       if (!message?.conversation) return;
       ensureKnown(message.conversation);
-      bumpLocal(message.conversation, message.text || '📎', message.createdAt ?? new Date().toISOString());
+      // WhatsApp-style: raise the unread badge only for messages from someone else that land
+      // in a conversation the user isn't currently viewing.
+      const fromMe = !!userIdRef.current && message.sender?._id === userIdRef.current;
+      const isActive = message.conversation === activeIdRef.current;
+      bumpLocal(
+        message.conversation,
+        message.text || '📎',
+        message.createdAt ?? new Date().toISOString(),
+        !fromMe && !isActive,
+      );
     };
 
     const onNewNotification = (n: { type?: string; conversationId?: string | null }) => {
@@ -89,6 +120,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       socket.off('newNotification', onNewNotification);
     };
   }, [socket, refresh]);
+
+  // Opening a conversation clears its unread badge immediately (the server-side markRead is
+  // fired separately by ChatWindow over the socket). Re-runs when the list grows so a thread
+  // opened straight from a notification still gets cleared once it loads in.
+  useEffect(() => {
+    if (!activeConversationId) return;
+    setConversations((prev) => {
+      const idx = prev.findIndex((c) => c._id === activeConversationId);
+      if (idx === -1 || !(prev[idx].unreadCount ?? 0)) return prev;
+      const next = [...prev];
+      next[idx] = { ...next[idx], unreadCount: 0 };
+      return next;
+    });
+  }, [activeConversationId, conversations.length]);
 
   // Presence updates – only updates online status, no full reload.
   useEffect(() => {

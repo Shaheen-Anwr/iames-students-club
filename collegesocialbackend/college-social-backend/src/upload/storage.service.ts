@@ -65,6 +65,15 @@ const UPLOAD_TIMEOUT_MS = 10 * 60 * 1000;
 const CHUNK_UPLOAD_CONCURRENCY = 4;
 
 
+// Tag stamped on every asset created through the direct browser->Cloudinary path, so
+// confirmDirectUpload can tell "an asset our signed ticket produced" from an arbitrary public_id a
+// client might otherwise ask us to trust. Also part of the signed params (see storage service).
+const DIRECT_UPLOAD_TAG = 'direct';
+
+// Hard ceiling on how many segments one direct video upload may confirm -- ~2GB at the 95MB
+// per-piece cap, comfortably above any real lecture recording and a guard against an absurd request.
+const MAX_DIRECT_UPLOAD_PIECES = 24;
+
 // Margin below Cloudinary's actual per-asset cap when splitting an oversized upload into pieces --
 // leaves headroom against off-by-one edge cases (raw byte-splitting is exact, but better safe) and,
 // for video, against a segment landing slightly over its target due to keyframe-aligned cuts.
@@ -88,6 +97,10 @@ export interface UploadOutcome {
   // Meaningless for 'video' (the returned url is already a complete Cloudinary splice/concatenation
   // URL that plays every piece as one continuous video -- no further reconstruction needed).
   chunkCount: number;
+  // Total play length in seconds, only set for the direct-video confirm path (summed across
+  // segments). Cloudinary reports this on every video resource; used by ReelsService to enforce
+  // the 60s Academia Reels cap server-side. Undefined for image/raw/audio and the multipart route.
+  durationSec?: number;
 }
 
 @Injectable()
@@ -206,14 +219,172 @@ export class StorageService {
     // .mp4 (see chunked-upload.util.ts), and video format is auto-detected from bytes, not forced.
     const uploaded = await this.uploadPartsConcurrently(partPaths, category, 'video', 'segment.mp4', groupId);
 
-    const spliceUrl = cloudinary.url(uploaded[0].public_id, {
-      resource_type: 'video',
-      format: 'mp4',
-      transformation: uploaded.slice(1).map((part) => ({ overlay: { resource_type: 'video', public_id: part.public_id }, flags: 'splice' })),
-    });
+    const spliceUrl = this.buildVideoSpliceUrl(uploaded.map((part) => part.public_id));
 
     this.logger.log(`Split oversized "${category}" upload into ${uploaded.length} video segments spliced into one delivery URL (group ${groupId}).`);
     return { url: spliceUrl, chunkCount: uploaded.length };
+  }
+
+  // Given N ordered Cloudinary video public_ids, returns ONE delivery URL that plays every piece
+  // back-to-back as a single continuous video via Cloudinary's `fl_splice` overlay chain (verified
+  // against this account's free tier). The first id is the base; each subsequent id is spliced onto
+  // the end. A single-element list just returns that asset's plain mp4 URL.
+  private buildVideoSpliceUrl(publicIds: string[]): string {
+    return cloudinary.url(publicIds[0], {
+      resource_type: 'video',
+      format: 'mp4',
+      secure: true,
+      transformation: publicIds
+        .slice(1)
+        .map((publicId) => ({ overlay: { resource_type: 'video', public_id: publicId }, flags: 'splice' })),
+    });
+  }
+
+  // --- Direct browser -> Cloudinary upload (skips this server entirely for the byte transfer) ---
+  //
+  // For large videos the browser can upload straight to Cloudinary's ingest instead of streaming
+  // every byte through this box first (halving total transfer and removing this instance's CPU /
+  // bandwidth / request-timeout from the path). This server only (1) signs the upload params so the
+  // api_secret never reaches the client, and (2) validates the result afterwards so a client can't
+  // make us persist an arbitrary URL. Only the 'videos' category uses this path; raw/lecture files
+  // keep the server-side chunk-and-reassemble route (their read path depends on server-controlled
+  // part naming).
+
+  // Params the client MUST echo back verbatim in its upload request -- they're what the signature
+  // covers. Kept deliberately tiny (folder + a fixed tag + timestamp); everything else about the
+  // upload is fixed by the /video/upload endpoint path, not signable params.
+  private directUploadSignedParams(timestamp: number): Record<string, string | number> {
+    return { folder: 'videos', tags: DIRECT_UPLOAD_TAG, timestamp };
+  }
+
+  createDirectUploadTicket(category: UploadCategory): {
+    cloudName: string;
+    apiKey: string;
+    timestamp: number;
+    signature: string;
+    folder: string;
+    tags: string;
+    // Largest a single Cloudinary video asset may be on this plan -- the client splits anything
+    // bigger into <= this many bytes per segment before uploading (each segment becomes its own
+    // asset; confirmDirectUpload splices them back into one URL).
+    maxPieceBytes: number;
+    // Byte size of each PUT within a single (possibly multi-part) asset upload -- Content-Range'd.
+    chunkSize: number;
+  } {
+    if (!this.configured) {
+      throw new BadRequestException('رفع الملفات غير متاح حالياً');
+    }
+    if (category !== 'videos') {
+      throw new BadRequestException('الرفع المباشر مدعوم للفيديو فقط');
+    }
+    const apiSecret = this.config.get<string>('cloudinary.apiSecret') ?? '';
+    const timestamp = Math.floor(Date.now() / 1000);
+    const signature = cloudinary.utils.api_sign_request(this.directUploadSignedParams(timestamp), apiSecret);
+
+    return {
+      cloudName: this.config.get<string>('cloudinary.cloudName') ?? '',
+      apiKey: this.config.get<string>('cloudinary.apiKey') ?? '',
+      timestamp,
+      signature,
+      folder: 'videos',
+      tags: DIRECT_UPLOAD_TAG,
+      maxPieceBytes: Math.floor(CLOUDINARY_ASSET_CAP_MB.videos * 1_000_000 * CHUNK_SAFETY_FACTOR),
+      chunkSize: UPLOAD_CHUNK_SIZE_BYTES,
+    };
+  }
+
+  // Validates that every public_id the client claims to have uploaded really is an asset in our
+  // cloud, of the right resource type, tagged by us (the `direct` tag is a signed param), and within
+  // the plan's size cap -- then returns the canonical URL to persist (a plain secure_url for one
+  // piece, a splice URL for several). Throws if anything doesn't check out, so a forged or
+  // mismatched id can't be stored.
+  async confirmDirectUpload(category: UploadCategory, publicIds: string[]): Promise<UploadOutcome> {
+    if (!this.configured) throw new BadRequestException('رفع الملفات غير متاح حالياً');
+    if (category !== 'videos') throw new BadRequestException('الرفع المباشر مدعوم للفيديو فقط');
+    if (!Array.isArray(publicIds) || publicIds.length === 0 || publicIds.length > MAX_DIRECT_UPLOAD_PIECES) {
+      throw new BadRequestException('طلب تأكيد الرفع غير صالح');
+    }
+
+    const capBytes = CLOUDINARY_ASSET_CAP_MB.videos * 1_000_000;
+    const resources = await Promise.all(
+      publicIds.map(async (publicId) => {
+        // Reject obviously-hostile ids up front; the real check is the Admin API lookup below (the
+        // asset must exist in *our* cloud) plus the `direct` tag (only our signed ticket sets it).
+        if (typeof publicId !== 'string' || publicId.length > 255 || /[\s?#]/.test(publicId)) {
+          throw new BadRequestException('معرّف ملف غير صالح');
+        }
+        try {
+          return await cloudinary.api.resource(publicId, { resource_type: 'video', tags: true });
+        } catch {
+          throw new BadRequestException('تعذّر التحقق من الملف المرفوع');
+        }
+      }),
+    );
+
+    for (const resource of resources) {
+      const tags: string[] = resource.tags ?? [];
+      // The `direct` tag is the hard gate -- it's one of the signed params, so an asset can only
+      // carry it if it was created through a ticket this server issued. Folder placement varies by
+      // account mode (fixed vs dynamic folders), so it isn't relied on here.
+      if (resource.resource_type !== 'video' || !tags.includes(DIRECT_UPLOAD_TAG)) {
+        throw new BadRequestException('الملف المرفوع غير مطابق للمتوقع');
+      }
+      // A little headroom over the exact decimal cap: Cloudinary itself accepted it, and a re-muxed
+      // browser segment can land a hair above the client's own target.
+      if (typeof resource.bytes === 'number' && resource.bytes > capBytes * 1.05) {
+        throw new BadRequestException('حجم أحد أجزاء الفيديو أكبر من الحد المسموح به');
+      }
+    }
+
+    // Sum of every piece's play length -- Cloudinary returns `duration` (seconds, float) on each
+    // video resource. Used by ReelsService to reject anything over the 60s Academia Reels cap.
+    const durationSec = resources.reduce(
+      (total, r) => total + (typeof r.duration === 'number' ? r.duration : 0),
+      0,
+    );
+
+    // Use Cloudinary's own canonical public_ids (not the raw client strings) from here on.
+    const canonicalIds = resources.map((r) => r.public_id as string);
+    if (canonicalIds.length === 1) {
+      this.logger.log(`Confirmed direct video upload (${canonicalIds[0]}).`);
+      return { url: resources[0].secure_url, chunkCount: 1, durationSec };
+    }
+    this.logger.log(`Confirmed direct video upload of ${canonicalIds.length} segments spliced into one URL.`);
+    return { url: this.buildVideoSpliceUrl(canonicalIds), chunkCount: canonicalIds.length, durationSec };
+  }
+
+  // Best-effort teardown of the Cloudinary asset(s) behind a stored video URL -- called when a
+  // reel is deleted so the free-tier storage quota isn't held by orphaned clips. Parses the
+  // public_id out of a normal secure_url and, for a spliced multi-segment URL, also the overlaid
+  // segment ids (l_video:<id> transformation parts). Never throws.
+  async destroyVideoByUrl(url: string): Promise<void> {
+    if (!this.configured || !url.includes('res.cloudinary.com')) return;
+    const publicIds = new Set<string>();
+    try {
+      const afterUpload = url.split('/upload/')[1];
+      if (afterUpload) {
+        // Strip a leading transformation segment + version, keep the rest, drop the extension.
+        const parts = afterUpload.split('/');
+        while (parts.length && (/^[a-z]{1,3}_/.test(parts[0]) || /^v\d+$/.test(parts[0]))) {
+          // Also pull segment ids spliced in via l_video:<id>
+          const m = parts[0].match(/l_video:([^,/]+)/);
+          if (m) publicIds.add(m[1].replace(/:/g, '/'));
+          parts.shift();
+        }
+        const idWithExt = parts.join('/');
+        publicIds.add(idWithExt.replace(/\.[a-z0-9]+$/i, ''));
+      }
+    } catch {
+      return;
+    }
+    await Promise.all(
+      [...publicIds].map(
+        (id) =>
+          new Promise<void>((resolve) =>
+            cloudinary.uploader.destroy(id, { resource_type: 'video' }, () => resolve()),
+          ),
+      ),
+    );
   }
 
   private async cleanupPartialUpload(uploaded: UploadApiResponse[], resourceType: 'raw' | 'video'): Promise<void> {

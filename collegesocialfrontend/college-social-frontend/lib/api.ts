@@ -1,5 +1,6 @@
 import Cookies from 'js-cookie';
 import { compressImage, compressImages, type CompressImageOptions } from './compress-image';
+import { uploadVideoDirect, DirectUploadUnavailableError, type DirectUploadTicket } from './cloudinary-upload';
 
 // Relative by default -- see next.config.js's rewrites(), which proxies /api/* to the real
 // backend so the refresh-token cookie stays same-site instead of a droppable cross-site one.
@@ -318,6 +319,13 @@ function compressOptsFor(path: string): CompressImageOptions | null {
   return IMAGE_UPLOAD_COMPRESS_OPTS[path.replace(/^\/?upload\//, '')] ?? null;
 }
 
+// The direct browser -> Cloudinary video path (see lib/cloudinary-upload.ts) is on by default;
+// NEXT_PUBLIC_DIRECT_UPLOAD=0 is a kill switch that reverts to the plain server multipart route
+// (e.g. if Cloudinary CORS ever misbehaves in production).
+function directVideoUploadEnabled(): boolean {
+  return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DIRECT_UPLOAD !== '0';
+}
+
 export const api = {
   get: <T>(path: string) => request<T>(path, { method: 'GET' }),
   post: <T>(path: string, data?: unknown) =>
@@ -328,6 +336,28 @@ export const api = {
     request<T>(path, { method: 'PUT', body: data !== undefined ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
   upload: async <T>(path: string, file: File, onProgress?: UploadProgressHandler) => {
+    const category = path.replace(/^\/?upload\//, '');
+
+    // Video: upload the bytes straight from the browser to Cloudinary (segmenting oversized files
+    // in-browser first), skipping the server hop entirely. Any failure that isn't a user abort
+    // falls through to the plain server multipart route below.
+    if (category === 'video' && directVideoUploadEnabled()) {
+      assertWithinSizeLimit(path, file);
+      try {
+        return await uploadVideoDirect<T>(file, {
+          sign: () => api.post<DirectUploadTicket>('/upload/video/sign'),
+          confirm: (publicIds, meta) => api.post<T>('/upload/video/confirm', { publicIds, ...meta }),
+          onProgress,
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (!(err instanceof DirectUploadUnavailableError)) {
+          // eslint-disable-next-line no-console
+          console.warn('[upload] direct video upload failed, falling back to server route:', err);
+        }
+      }
+    }
+
     const opts = compressOptsFor(path);
     const prepared = opts ? await compressImage(file, opts) : file;
     assertWithinSizeLimit(path, prepared);

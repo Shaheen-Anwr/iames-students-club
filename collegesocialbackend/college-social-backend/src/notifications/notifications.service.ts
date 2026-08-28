@@ -22,6 +22,7 @@ interface CreateNotificationInput {
   channelId?: string | null;
   groupId?: string | null;
   postId?: string | null;
+  reelId?: string | null;
   questionId?: string | null;
   preview?: string | null;
 }
@@ -46,6 +47,7 @@ export class NotificationsService {
       channelId: input.channelId ?? null,
       groupId: input.groupId ?? null,
       postId: input.postId ?? null,
+      reelId: input.reelId ?? null,
       questionId: input.questionId ?? null,
       preview: input.preview ?? null,
     }).save();
@@ -60,6 +62,36 @@ export class NotificationsService {
       .catch((err) => this.logger.warn(`Push send failed: ${err?.message ?? err}`));
 
     return populated;
+  }
+
+  // Fans a single platform/department announcement out to one notification per recipient. Kept
+  // separate from create() because these carry no actor and are written in bulk (insertMany)
+  // rather than one save() per row. Never throws -- a broadcast must not fail the announcement.
+  async createSystemBroadcast(
+    recipientIds: Types.ObjectId[],
+    data: { title: string; preview: string; link: string },
+  ): Promise<void> {
+    if (recipientIds.length === 0) return;
+
+    const rows = recipientIds.map((recipient) => ({
+      recipient,
+      actor: null,
+      type: 'system_announcement' as const,
+      title: data.title,
+      preview: data.preview,
+      link: data.link,
+      read: false,
+    }));
+
+    try {
+      // ordered: false -- one bad row (e.g. a since-deleted user) shouldn't abort the rest.
+      const inserted = await this.notificationModel.insertMany(rows, { ordered: false });
+      for (const doc of inserted) {
+        this.realtimeEmitter.emitToUser(doc.recipient.toString(), 'newNotification', doc);
+      }
+    } catch (err) {
+      this.logger.warn(`System broadcast insert partially failed: ${(err as Error)?.message ?? err}`);
+    }
   }
 
   async listForUser(userId: string, page = 1, limit = 20): Promise<NotificationDocument[]> {

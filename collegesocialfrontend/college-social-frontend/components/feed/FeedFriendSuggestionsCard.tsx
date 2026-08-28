@@ -8,6 +8,7 @@ import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { FriendActionButton } from '@/components/profile/FriendActionButton';
 import { api } from '@/lib/api';
+import { useQuery } from '@/lib/use-query';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { assetUrl } from '@/lib/utils';
@@ -33,25 +34,17 @@ function readDismissed(userId: string): Set<string> {
 // without needing a backend endpoint for it.
 export function useFriendSuggestions() {
   const { user } = useAuth();
-  const [suggestions, setSuggestions] = useState<User[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Cached + deduped: the desktop sidebar card, the mobile carousel and FriendsPage all call
+  // this hook, and navigating feed -> profile -> back no longer refetches within staleTime.
+  const { data, isLoading } = useQuery<User[]>(
+    user ? 'users/suggestions' : null,
+    () => api.get<User[]>('/users/suggestions'),
+    { staleTime: 60_000 },
+  );
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 
   useEffect(() => {
-    if (!user) return;
-    setDismissed(readDismissed(user._id));
-    let cancelled = false;
-    api
-      .get<User[]>('/users/suggestions')
-      .then((data) => {
-        if (!cancelled) setSuggestions(data);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    if (user) setDismissed(readDismissed(user._id));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?._id]);
 
@@ -72,9 +65,12 @@ export function useFriendSuggestions() {
   // change the data -- callers (FriendsPage) depend on it in a useEffect, and a fresh array
   // identity every render (plain .filter() with no memo) would re-fire that effect every render,
   // which sets state, which re-renders, which... an infinite loop that pegs the tab's JS thread.
-  const filtered = useMemo(() => suggestions.filter((s) => !dismissed.has(s._id)), [suggestions, dismissed]);
+  const filtered = useMemo(
+    () => (data ?? []).filter((s) => !dismissed.has(s._id)),
+    [data, dismissed],
+  );
 
-  return { suggestions: filtered, loading, dismiss };
+  return { suggestions: filtered, loading: isLoading, dismiss };
 }
 
 function SuggestionRowSkeleton() {

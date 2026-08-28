@@ -19,6 +19,7 @@ setDefaultResultOrder('ipv4first');
 import { AppModule } from './app.module';
 import { HttpExceptionFilter } from './common/filters/http-exception.filter';
 import { corsOriginValidator } from './common/cors-origin';
+import { RedisIoAdapter } from './common/redis-io.adapter';
 import { User, UserDocument } from './users/schemas/user.schema';
 import { SELECTABLE_DEPARTMENTS } from './common/enums/department.enum';
 import { ACADEMIC_YEARS } from './common/enums/academic-year.enum';
@@ -56,6 +57,21 @@ async function bootstrap() {
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
   await runStartupMigrations(app.get<Model<UserDocument>>(getModelToken(User.name)));
+
+  // Multi-instance chat: if REDIS_URL is configured, route Socket.IO through the Redis adapter so
+  // several backend processes share rooms/presence. No REDIS_URL -> keep the default in-memory
+  // adapter (single instance). A failed Redis connect is non-fatal: log and fall back.
+  const redisUrl = config.get<string>('redisUrl');
+  if (redisUrl) {
+    try {
+      const redisAdapter = new RedisIoAdapter(app);
+      await redisAdapter.connectToRedis(redisUrl);
+      app.useWebSocketAdapter(redisAdapter);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn(`Redis adapter unavailable, using in-memory Socket.IO adapter: ${(err as Error).message}`);
+    }
+  }
 
   app.use(cookieParser());
 

@@ -514,9 +514,11 @@ export class UsersService {
     if (!user) throw new NotFoundException('المستخدم غير موجود');
   }
 
+  // Called fire-and-forget from ChatGateway on socket connect/disconnect -- uses updateOne (no
+  // document fetched back) since the result is never read, keeping connection churn cheap.
   async setOnline(id: string, isOnline: boolean, lastSeenAt?: Date): Promise<void> {
     await this.userModel
-      .findByIdAndUpdate(id, { isOnline, ...(lastSeenAt ? { lastSeenAt } : {}) })
+      .updateOne({ _id: id }, { isOnline, ...(lastSeenAt ? { lastSeenAt } : {}) })
       .exec();
   }
 

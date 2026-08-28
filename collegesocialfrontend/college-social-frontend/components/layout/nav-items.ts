@@ -1,9 +1,10 @@
-import { Home, MessageCircle, User, ShieldCheck, GraduationCap, Users, UsersRound, ListChecks, FileText, Video, Newspaper } from 'lucide-react';
+import { Home, MessageCircle, User, ShieldCheck, GraduationCap, Users, UsersRound, ListChecks, FileText, Video, Newspaper, Clapperboard } from 'lucide-react';
 import type { Role } from '@/lib/types';
 
 export const NAV_ITEMS = [
   { href: '/home', label: 'الرئيسية', icon: Home },
   { href: '/feed', label: 'المنشورات', icon: Newspaper },
+  { href: '/reels', label: 'اكاديميا', icon: Clapperboard },
   { href: '/study', label: 'الدراسة', icon: GraduationCap },
   { href: '/quizzes', label: 'الاختبارات', icon: ListChecks },
   { href: '/lectures/pdf', label: 'محاضرات PDF', icon: FileText },

@@ -1,0 +1,50 @@
+# Keeps the Render free-tier backend from cold-starting.
+#
+# Render spins a free web service down after ~15 min with no inbound HTTP traffic; the next
+# request then pays ~30-50s while it boots. A cron *inside* the backend can't fix this (it
+# stops when the process is spun down), so the ping has to come from outside -- here, GitHub's
+# scheduled runners.
+#
+# GET https://iames-students-club.onrender.com/api -> {"status":"ok"} (no DB work; see
+# collegesocialbackend/.../src/app.controller.ts).
+#
+# Schedule: every 10 min, 05:00-23:59 UTC only (roughly 07:00-02:00 at GMT+2). That's ~114
+# runs/day -> ~3.4k/month, which stays inside the 2,000-min free allowance for private repos
+# (each run is a few seconds) and is free for public repos. Widen to "*/10 * * * *" if the
+# repo is public or on a paid plan. Note: GitHub pauses scheduled workflows after 60 days
+# with no repo activity, and may delay runs under load -- fine for keep-warm.
+#
+# Lower-maintenance alternative: point a free uptime monitor (uptimerobot.com,
+# cron-job.org) at the same URL and delete this file.
+
+name: keep-warm
+
+on:
+  schedule:
+    - cron: '*/10 5-23 * * *'
+  workflow_dispatch: {}
+
+concurrency:
+  group: keep-warm
+  cancel-in-progress: true
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    steps:
+      - name: Ping backend health endpoint
+        run: |
+          for attempt in 1 2 3; do
+            code=$(curl -sS -o /tmp/body -w '%{http_code}' --max-time 60 \
+              https://iames-students-club.onrender.com/api || echo 000)
+            echo "attempt $attempt -> HTTP $code"
+            cat /tmp/body || true
+            echo
+            if [ "$code" = "200" ]; then
+              exit 0
+            fi
+            sleep 30
+          done
+          echo "backend did not return 200 after 3 attempts"
+          exit 1

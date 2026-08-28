@@ -29,6 +29,12 @@ const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   qa_answer: 'أجاب على سؤالك',
   friend_request: 'أرسل لك طلب صداقة',
   friend_accept: 'قبل طلب صداقتك',
+  reel_like: 'أعجب بالريل الخاص بك',
+  reel_comment: 'علّق على الريل الخاص بك',
+  reel_comment_reply: 'رد على تعليقك',
+  reel_mention: 'أشار إليك في ريل',
+  // Actor-less -- the toast below shows the announcement title instead of "<name> <label>".
+  system_announcement: 'إعلان جديد',
 };
 
 // Mounted globally (in Providers.tsx) rather than scoped like ChatProvider/GroupsProvider --
@@ -66,6 +72,10 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
     const onNewNotification = (notification: Notification) => {
       setNotifications((prev) => [notification, ...prev]);
       setUnreadCount((prev) => prev + 1);
+      if (notification.type === 'system_announcement') {
+        showToast(`📢 ${notification.title ?? NOTIFICATION_LABELS.system_announcement}`, 'info');
+        return;
+      }
       const actorName = notification.actor?.name ?? 'مستخدم';
       showToast(`${actorName} ${NOTIFICATION_LABELS[notification.type]}`, 'info');
     };

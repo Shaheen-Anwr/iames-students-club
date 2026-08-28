@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import {
+  ArrowDown,
   ArrowRight,
   Image as ImageIcon,
   MessageCircle,
@@ -261,6 +262,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   } | null>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [atBottom, setAtBottom] = useState(true);
+  const [newCount, setNewCount] = useState(0);
+  // Optimistic sends: temp id -> "mark as failed" timer, cleared when the server echoes back.
+  const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { background, setBackground } = useChatBackground(conversationId);
 
   // ========== ULTRA BRUTE‑FORCE PHOTO CORRECTION ==========
@@ -336,10 +342,29 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     const onNewMessage = (message: Message) => {
       if (message.conversation !== conversationId) return;
       const corrected = correctSenderPhoto(message, conversation);
-      setMessages((prev) =>
-        prev.some((m) => m._id === corrected._id) ? prev : [...prev, corrected]
-      );
-      if (corrected.sender?._id !== user?._id) {
+      const mine = corrected.sender?._id === user?._id;
+      setMessages((prev) => {
+        if (prev.some((m) => m._id === corrected._id)) return prev;
+        let next = prev;
+        if (mine) {
+          // Replace the matching optimistic placeholder with the real, server-issued message.
+          let dropped = false;
+          next = prev.filter((m) => {
+            if (dropped || !m.pending) return true;
+            const match =
+              m.text === corrected.text ||
+              (!corrected.text && (m.attachments?.length ?? 0) > 0);
+            if (!match) return true;
+            dropped = true;
+            const t = pendingTimers.current.get(m._id);
+            if (t) clearTimeout(t);
+            pendingTimers.current.delete(m._id);
+            return false;
+          });
+        }
+        return [...next, corrected];
+      });
+      if (!mine) {
         socket.emit('markRead', conversationId);
         socket.emit('markDelivered', conversationId);
       }
@@ -421,10 +446,67 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
   }, [socket, conversationId, user, conversation]);
 
-  // ========== SCROLL TO BOTTOM ==========
+  // ========== SCROLL / "NEW MESSAGES" PILL ==========
+  // WhatsApp behaviour: keep the newest message in view while the user is already at the
+  // bottom (or just sent one themselves). If they've scrolled up to read history, don't yank
+  // them down -- count the arrivals and show a "N new messages" pill instead; only jump when
+  // they tap it (or scroll back down on their own).
+  const didInitialScroll = useRef(false);
+  const prevCountRef = useRef(0);
+
+  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
+    bottomRef.current?.scrollIntoView({ behavior });
+    setNewCount(0);
+  };
+
+  const handleScroll = () => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    setAtBottom(bottom);
+    if (bottom) setNewCount(0);
+  };
+
   useEffect(() => {
-    if (!searchOpen) bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, searchOpen]);
+    didInitialScroll.current = false;
+    prevCountRef.current = 0;
+    setNewCount(0);
+    setAtBottom(true);
+  }, [conversationId]);
+
+  // Don't leave optimistic-send fail-timers running after leaving / switching a thread.
+  useEffect(() => {
+    const timers = pendingTimers.current;
+    return () => {
+      timers.forEach((t) => clearTimeout(t));
+      timers.clear();
+    };
+  }, [conversationId]);
+
+  useEffect(() => {
+    if (loading || searchOpen) return;
+
+    const prev = prevCountRef.current;
+    prevCountRef.current = messages.length;
+
+    // First paint of a thread -> jump straight to the newest message, no animation.
+    if (!didInitialScroll.current) {
+      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
+      didInitialScroll.current = true;
+      return;
+    }
+
+    const added = messages.length - prev;
+    if (added <= 0) return; // edit / reaction / delete / read-receipt -- not a new message
+
+    const lastFromMe = messages[messages.length - 1]?.sender?._id === user?._id;
+    if (lastFromMe || atBottom) {
+      scrollToBottom('smooth');
+    } else {
+      setNewCount((n) => n + added);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, loading, searchOpen, atBottom, user?._id]);
 
   // ========== SEARCH ==========
   useEffect(() => {
@@ -442,10 +524,54 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   }, [searchQuery, conversationId]);
 
   // ========== HANDLERS ==========
-  function handleSend(text: string, attachments?: Attachment[], replyTo?: string) {
+  // Optimistic send: the message shows instantly with a "sending" clock, then either the server
+  // echoes it back (onNewMessage swaps in the real one) or the fail-timer flips it to a
+  // tap-to-retry state. No server change needed -- reconciliation matches on sender + text.
+  const SEND_TIMEOUT_MS = 12_000;
+
+  function armFailTimer(tempId: string) {
+    const t = setTimeout(() => {
+      pendingTimers.current.delete(tempId);
+      setMessages((prev) =>
+        prev.map((m) => (m._id === tempId ? { ...m, pending: false, failed: true } : m)),
+      );
+    }, SEND_TIMEOUT_MS);
+    pendingTimers.current.set(tempId, t);
+  }
+
+  function emitSend(
+    payload: { text: string; attachments?: Attachment[]; replyTo?: string },
+    tempId: string,
+  ) {
     if (!socket) return;
-    socket.emit('sendMessage', { conversationId, text, attachments, replyTo });
+    socket.emit('sendMessage', { conversationId, ...payload });
     socket.emit('stopTyping', conversationId);
+    armFailTimer(tempId);
+  }
+
+  function handleSend(text: string, attachments?: Attachment[], replyTo?: string) {
+    if (!socket || !user) return;
+    const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const optimistic: Message = {
+      _id: tempId,
+      conversation: conversationId,
+      sender: user,
+      text,
+      attachments,
+      readBy: [],
+      createdAt: new Date().toISOString(),
+      pending: true,
+    };
+    setMessages((prev) => [...prev, optimistic]);
+    emitSend({ text, attachments, replyTo }, tempId);
+  }
+
+  function handleRetry(message: Message) {
+    if (!message.failed) return;
+    setMessages((prev) =>
+      prev.map((m) => (m._id === message._id ? { ...m, failed: false, pending: true } : m)),
+    );
+    emitSend({ text: message.text, attachments: message.attachments }, message._id);
   }
 
   function handleTyping() {
@@ -456,16 +582,29 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     socket?.emit('stopTyping', conversationId);
   }
 
+  // An optimistic message has no server id yet -- edit/react/star/delete would 404, so ignore them.
+  const isPlaceholder = (id: string) => id.startsWith('tmp_');
+
   function handleReact(message: Message, emoji: string) {
+    if (isPlaceholder(message._id)) return;
     socket?.emit('reactToMessage', { messageId: message._id, emoji });
   }
 
   function handleSubmitEdit(messageId: string, text: string) {
+    if (isPlaceholder(messageId)) return;
     socket?.emit('editMessage', { messageId, text });
     setEditingMessage(null);
   }
 
   async function handleDelete(message: Message, forEveryone: boolean) {
+    if (isPlaceholder(message._id)) {
+      // Purely local: just drop the placeholder and cancel its fail-timer.
+      const t = pendingTimers.current.get(message._id);
+      if (t) clearTimeout(t);
+      pendingTimers.current.delete(message._id);
+      setMessages((prev) => prev.filter((m) => m._id !== message._id));
+      return;
+    }
     socket?.emit('deleteMessage', { messageId: message._id, forEveryone });
   }
 
@@ -476,6 +615,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   }
 
   async function handleToggleStar(message: Message) {
+    if (isPlaceholder(message._id)) return;
     const isStarred = message.starredBy?.includes(user!._id);
     const updated = isStarred
       ? await api.delete<Message>(`/chat/messages/${message._id}/star`)
@@ -618,7 +758,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       )}
 
       {/* Messages */}
+      <div className="relative flex min-h-0 flex-1 flex-col">
       <div
+        ref={scrollRef}
+        onScroll={handleScroll}
         className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-surface-2 px-4 py-5 scrollbar-thin sm:px-6"
         style={chatBackgroundStyle(background)}
       >
@@ -656,6 +799,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                   onForward={setForwardTarget}
                   onToggleStar={handleToggleStar}
                   onJumpToReply={jumpToReply}
+                  onRetry={handleRetry}
                   onImageClick={(url, name, msg) => setImagePreview({ url, name, message: msg, isOwn })}
                 />
               </div>
@@ -663,6 +807,17 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           })
         )}
         <div ref={bottomRef} />
+      </div>
+
+        {newCount > 0 && (
+          <button
+            onClick={() => scrollToBottom('smooth')}
+            className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white shadow-elev-2 transition-transform hover:scale-105 active:scale-95"
+          >
+            <ArrowDown className="h-4 w-4" />
+            {newCount > 99 ? '+99' : newCount} رسائل جديدة
+          </button>
+        )}
       </div>
 
       {/* Input */}

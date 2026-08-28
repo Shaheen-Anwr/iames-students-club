@@ -4,11 +4,13 @@ import { useEffect, useRef, useState } from 'react';
 import {
   Check,
   CheckCheck,
+  Clock,
   Copy,
   FileText,
   Forward,
   Pencil,
   Reply,
+  RotateCw,
   SmilePlus,
   Star,
   Trash2,
@@ -40,6 +42,7 @@ interface MessageBubbleProps {
   onForward: (message: Message) => void;
   onToggleStar: (message: Message) => void;
   onJumpToReply: (messageId: string) => void;
+  onRetry?: (message: Message) => void;
   onImageClick?: (url: string, name: string, message: Message) => void;
 }
 
@@ -70,6 +73,7 @@ export function MessageBubble({
   onForward,
   onToggleStar,
   onJumpToReply,
+  onRetry,
   onImageClick,
 }: MessageBubbleProps) {
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
@@ -553,7 +557,19 @@ export function MessageBubble({
             <span className="mt-1 flex items-center gap-1 px-1 text-xs text-muted-foreground">
               {message.edited && <span className="italic">مُعدَّلة ·</span>}
               {timeAgo(message.createdAt)}
-              {isOwn && <ReadTicks status={status} />}
+              {isOwn && message.failed ? (
+                <button
+                  type="button"
+                  onClick={() => onRetry?.(message)}
+                  className="flex items-center gap-1 font-medium text-red-200 underline"
+                >
+                  <RotateCw className="h-3 w-3" /> لم تُرسل — إعادة المحاولة
+                </button>
+              ) : isOwn && message.pending ? (
+                <Clock className="h-3 w-3 text-white/60" />
+              ) : isOwn ? (
+                <ReadTicks status={status} />
+              ) : null}
             </span>
           </div>
 

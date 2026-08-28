@@ -109,6 +109,20 @@ export class ChatService {
     );
   }
 
+  // Lightweight variant of listConversationsForUser used by ChatGateway on every socket
+  // connect/disconnect: it only needs the conversation IDs to join/emit to `conversation:<id>`
+  // rooms, so it skips the participant populate + the unread-count aggregation entirely. Those
+  // two extra round-trips per connection are what fall over during a reconnect storm.
+  async listConversationIdsForUser(userId: string): Promise<string[]> {
+    const uid = new Types.ObjectId(userId);
+    const rows = await this.conversationModel
+      .find({ participants: uid, deletedBy: { $ne: uid } })
+      .select('_id')
+      .lean()
+      .exec();
+    return rows.map((r) => (r._id as Types.ObjectId).toString());
+  }
+
   async assertParticipant(conversationId: string, userId: string): Promise<ConversationDocument> {
     const conversation = await this.conversationModel.findById(conversationId).exec();
     if (!conversation) throw new NotFoundException('المحادثة غير موجودة');

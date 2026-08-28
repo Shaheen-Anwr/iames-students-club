@@ -8,13 +8,14 @@ import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { transitions } from '@/lib/motion';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
+import { useChatUnread } from '@/lib/chat-unread-context';
 import { Sheet } from '@/components/ui/Sheet';
 import { getNavItems } from './nav-items';
 
 // Only the handful of destinations a student jumps to constantly live in the bar itself --
 // everything else (quizzes, lectures, groups, profile, admin) opens from "المزيد", since
 // cramming all ~9-10 nav-items.ts routes into one row is what made this bar overflow/wrap before.
-const PRIMARY_HREFS = ['/home', '/feed', '/study', '/chat'];
+const PRIMARY_HREFS = ['/home', '/feed', '/reels', '/chat'];
 
 const isActive = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
@@ -22,6 +23,7 @@ const isActive = (pathname: string, href: string) =>
 export function MobileNav() {
   const pathname = usePathname();
   const { user } = useAuth();
+  const chatUnread = useChatUnread();
   const [moreOpen, setMoreOpen] = useState(false);
 
   const items = getNavItems(user?.role);
@@ -41,6 +43,7 @@ export function MobileNav() {
           <LayoutGroup id="mobilenav">
             {primary.map(({ href, label, icon: Icon }) => {
               const active = isActive(pathname, href);
+              const badge = href === '/chat' ? chatUnread : 0;
               return (
                 <Link
                   key={href}
@@ -63,7 +66,19 @@ export function MobileNav() {
                       active ? 'text-white' : 'text-muted-foreground',
                     )}
                   >
-                    <Icon className="h-5 w-5 shrink-0" />
+                    <span className="relative shrink-0">
+                      <Icon className="h-5 w-5 shrink-0" />
+                      {badge > 0 && (
+                        <span
+                          className={cn(
+                            'absolute -end-1.5 -top-1.5 flex h-4 min-w-4 items-center justify-center rounded-full px-1 text-[10px] font-bold leading-none ring-2',
+                            active ? 'bg-white text-accent ring-accent' : 'bg-accent text-white ring-background',
+                          )}
+                        >
+                          {badge > 9 ? '9+' : badge}
+                        </span>
+                      )}
+                    </span>
                     {/* Active item expands to show its label; the width change animates. Hidden
                         below 360px, where five items + an expanded label would overflow the pill. */}
                     <AnimatePresence initial={false}>

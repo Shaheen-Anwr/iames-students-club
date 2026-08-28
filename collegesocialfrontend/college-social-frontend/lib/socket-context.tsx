@@ -33,7 +33,16 @@ export function SocketProvider({ children }: { children: React.ReactNode }) {
 
     const instance = io(`${SOCKET_URL}/chat`, {
       auth: { token },
+      // Go straight to WebSocket -- skip the long-polling handshake + upgrade round-trips.
+      // Socket.IO still falls back to polling on its own if the WS upgrade fails.
       transports: ['websocket', 'polling'],
+      // Reconnect fast but back off so a server blip doesn't turn into a stampede.
+      reconnection: true,
+      reconnectionAttempts: Infinity,
+      reconnectionDelay: 500,
+      reconnectionDelayMax: 5000,
+      randomizationFactor: 0.5,
+      timeout: 10000,
     });
 
     instance.on('connect', () => setConnected(true));
