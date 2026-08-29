@@ -354,6 +354,109 @@ export class StorageService {
     return { url: this.buildVideoSpliceUrl(canonicalIds), chunkCount: canonicalIds.length, durationSec };
   }
 
+  // --- Direct browser -> Cloudinary upload for large "files" (PDF/PPT/scanned book/zip/etc) ---
+  //
+  // Same motivation as video's direct path above (skip streaming every byte through this server
+  // twice), but raw files have no splice transform to reassemble pieces at read time -- the
+  // existing chunked-upload read path (PostsController's GET :id/attachment) instead reconstructs
+  // a file by string-replacing "-part-0" with "-part-<i>" in the stored URL, which only works
+  // because every part carries a server-chosen "<group>-part-<i>" public_id. Video's ticket signs
+  // one shared {folder, tags, timestamp} because Cloudinary auto-assigns each piece's public_id;
+  // here every part needs its own signature over its own fixed public_id, so the ticket is a list
+  // of per-part signatures instead of one shared one.
+
+  private directFileUploadSignedParams(publicId: string, timestamp: number, ext: string): Record<string, string | number> {
+    const params: Record<string, string | number> = { folder: 'files', tags: DIRECT_UPLOAD_TAG, public_id: publicId, timestamp };
+    // Raw uploads skip Cloudinary's content-based format detection (see uploadSingleAsset's own
+    // comment on this) -- without it, the delivered file loses its extension.
+    if (ext) params.format = ext;
+    return params;
+  }
+
+  createDirectFileUploadTicket(
+    category: UploadCategory,
+    fileSize: number,
+    originalName: string,
+  ): {
+    cloudName: string;
+    apiKey: string;
+    folder: string;
+    tags: string;
+    groupId: string;
+    maxPieceBytes: number;
+    parts: { publicId: string; timestamp: number; signature: string; format: string }[];
+  } {
+    if (!this.configured) throw new BadRequestException('رفع الملفات غير متاح حالياً');
+    if (category !== 'files') throw new BadRequestException('الرفع المباشر مدعوم لقسم الملفات فقط حالياً');
+    if (!(fileSize > 0)) throw new BadRequestException('حجم الملف غير صالح');
+
+    const maxPieceBytes = chunkThresholdBytes(category);
+    const partCount = Math.max(1, Math.ceil(fileSize / maxPieceBytes));
+    if (partCount > MAX_DIRECT_UPLOAD_PIECES) {
+      throw new BadRequestException('حجم الملف أكبر من الحد المسموح به للرفع المباشر');
+    }
+
+    const apiSecret = this.config.get<string>('cloudinary.apiSecret') ?? '';
+    const groupId = uuid();
+    const ext = extname(originalName).replace('.', '').toLowerCase();
+    const timestamp = Math.floor(Date.now() / 1000);
+
+    const parts = Array.from({ length: partCount }, (_, i) => {
+      const publicId = `${groupId}-part-${i}`;
+      const signature = cloudinary.utils.api_sign_request(
+        this.directFileUploadSignedParams(publicId, timestamp, ext),
+        apiSecret,
+      );
+      return { publicId, timestamp, signature, format: ext };
+    });
+
+    return {
+      cloudName: this.config.get<string>('cloudinary.cloudName') ?? '',
+      apiKey: this.config.get<string>('cloudinary.apiKey') ?? '',
+      folder: 'files',
+      tags: DIRECT_UPLOAD_TAG,
+      groupId,
+      maxPieceBytes,
+      parts,
+    };
+  }
+
+  // Verifies every "<groupId>-part-<i>" the client claims to have uploaded really exists in our
+  // cloud, as a 'raw' asset, tagged by us, within the size cap -- mirroring confirmDirectUpload's
+  // checks for video. Doesn't need the client to echo back public_ids (unlike video, where
+  // Cloudinary auto-assigned them): every part's id is deterministic from groupId + its index.
+  async confirmDirectFileUpload(category: UploadCategory, groupId: string, partCount: number): Promise<UploadOutcome> {
+    if (!this.configured) throw new BadRequestException('رفع الملفات غير متاح حالياً');
+    if (category !== 'files') throw new BadRequestException('الرفع المباشر مدعوم لقسم الملفات فقط حالياً');
+    if (partCount < 1 || partCount > MAX_DIRECT_UPLOAD_PIECES) {
+      throw new BadRequestException('طلب تأكيد الرفع غير صالح');
+    }
+
+    const capBytes = CLOUDINARY_ASSET_CAP_MB[category] * 1_000_000;
+    const resources = await Promise.all(
+      Array.from({ length: partCount }, async (_, i) => {
+        try {
+          return await cloudinary.api.resource(`${groupId}-part-${i}`, { resource_type: 'raw', tags: true });
+        } catch {
+          throw new BadRequestException('تعذّر التحقق من الملف المرفوع');
+        }
+      }),
+    );
+
+    for (const resource of resources) {
+      const tags: string[] = resource.tags ?? [];
+      if (resource.resource_type !== 'raw' || !tags.includes(DIRECT_UPLOAD_TAG)) {
+        throw new BadRequestException('الملف المرفوع غير مطابق للمتوقع');
+      }
+      if (typeof resource.bytes === 'number' && resource.bytes > capBytes * 1.05) {
+        throw new BadRequestException('حجم أحد أجزاء الملف أكبر من الحد المسموح به');
+      }
+    }
+
+    this.logger.log(`Confirmed direct file upload of ${partCount} part(s) (group ${groupId}).`);
+    return { url: resources[0].secure_url, chunkCount: partCount };
+  }
+
   // Best-effort teardown of the Cloudinary asset(s) behind a stored video URL -- called when a
   // reel is deleted so the free-tier storage quota isn't held by orphaned clips. Parses the
   // public_id out of a normal secure_url and, for a spliced multi-segment URL, also the overlaid

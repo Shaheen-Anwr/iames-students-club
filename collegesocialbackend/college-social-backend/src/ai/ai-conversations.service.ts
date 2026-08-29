@@ -51,6 +51,7 @@ function wrapUntrusted(label: string, text: string): string {
 export class AiConversationsService {
   private readonly visionModel: string;
   private readonly dailyMessageQuota: number;
+  private readonly historyWindowMessages: number;
 
   constructor(
     @InjectModel(AiConversation.name) private conversationModel: Model<AiConversationDocument>,
@@ -67,6 +68,7 @@ export class AiConversationsService {
   ) {
     this.visionModel = config.get<string>('ai.visionModel') ?? '';
     this.dailyMessageQuota = config.get<number>('ai.dailyMessageQuota') ?? 40;
+    this.historyWindowMessages = config.get<number>('ai.historyWindowMessages') ?? 30;
   }
 
   // Counts this student's 'user' messages sent since local midnight, across all their
@@ -110,6 +112,7 @@ export class AiConversationsService {
     text: string,
     attachment?: AiMessageAttachmentInput,
     sharedPostId?: string,
+    signal?: AbortSignal,
   ): AsyncGenerator<AiStreamEvent> {
     const conversation = await this.findOwned(conversationId, ownerId);
 
@@ -132,6 +135,61 @@ export class AiConversationsService {
       sharedPostId,
     }).save();
 
+    yield* this.runTurn(conversation, ownerId, ownerDepartment, text, attachment, sharedPostId, signal);
+  }
+
+  // Re-answers the student's last question: deletes the previous assistant reply and re-runs the
+  // same turn from scratch (fresh context search, fresh tool calls). Does NOT save a new 'user'
+  // message -- the prior one is reused as-is -- so a regenerate never counts against the daily quota.
+  async *regenerateLastReply(
+    conversationId: string,
+    ownerId: string,
+    ownerDepartment: Department | null,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AiStreamEvent> {
+    const conversation = await this.findOwned(conversationId, ownerId);
+
+    const [lastMessage, previousMessage] = await this.messageModel
+      .find({ conversation: conversation._id })
+      .sort({ createdAt: -1 })
+      .limit(2)
+      .exec();
+
+    if (!lastMessage || lastMessage.role !== 'assistant' || !previousMessage || previousMessage.role !== 'user') {
+      yield { type: 'error', message: 'لا يمكن إعادة توليد هذا الرد.' };
+      return;
+    }
+
+    await this.messageModel.findByIdAndDelete(lastMessage._id).exec();
+
+    const attachment: AiMessageAttachmentInput | undefined = previousMessage.attachmentUrl
+      ? { url: previousMessage.attachmentUrl, type: previousMessage.attachmentType ?? 'document' }
+      : undefined;
+
+    yield* this.runTurn(
+      conversation,
+      ownerId,
+      ownerDepartment,
+      previousMessage.text,
+      attachment,
+      previousMessage.sharedPostId,
+      signal,
+    );
+  }
+
+  // Shared by sendMessageStream (after saving the new user message) and regenerateLastReply
+  // (reusing the existing one): gathers context, runs the tool-calling loop, saves the assistant
+  // reply. `text`/`attachment`/`sharedPostId` describe the user turn being answered, already
+  // persisted by the caller -- this method itself never writes a 'user' message.
+  private async *runTurn(
+    conversation: AiConversationDocument,
+    ownerId: string,
+    ownerDepartment: Department | null,
+    text: string,
+    attachment: AiMessageAttachmentInput | undefined,
+    sharedPostId: string | undefined,
+    signal?: AbortSignal,
+  ): AsyncGenerator<AiStreamEvent> {
     if (!conversation.title) {
       conversation.title = text.slice(0, TITLE_MAX_LENGTH);
     }
@@ -188,7 +246,13 @@ export class AiConversationsService {
       sources.push({ label: 'تعليق طالب', ref: comment.id });
     }
 
-    for (const m of history) {
+    // Only replay the most recent messages into the model's context -- an unbounded history would
+    // make every turn in a long-running conversation slower and costlier, and eventually exceed
+    // the model's context window. The just-saved user message is always included: `history` is
+    // fetched after it's persisted (above), so it's never the part sliced away.
+    const windowedHistory =
+      history.length > this.historyWindowMessages ? history.slice(-this.historyWindowMessages) : history;
+    for (const m of windowedHistory) {
       openAiMessages.push({ role: m.role, content: m.text });
     }
 
@@ -206,7 +270,7 @@ export class AiConversationsService {
       const offerTools = round < MAX_TOOL_ROUNDS - 1;
       const modelForRound = attachment?.type === 'image' && this.visionModel ? this.visionModel : undefined;
 
-      for await (const chunk of this.aiService.streamCompletion(openAiMessages, offerTools ? tools : [], modelForRound)) {
+      for await (const chunk of this.aiService.streamCompletion(openAiMessages, offerTools ? tools : [], modelForRound, signal)) {
         if (chunk.type === 'text') {
           roundText += chunk.delta;
           replyText += chunk.delta;

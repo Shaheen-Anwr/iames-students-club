@@ -54,6 +54,11 @@ export default () => ({
     // their conversations -- protects the provider quota/bill from a single runaway user. See
     // AiConversationsService.sendMessageStream.
     dailyMessageQuota: parseInt(process.env.AI_DAILY_MESSAGE_QUOTA ?? '40', 10),
+    // Only the last N persisted messages are replayed into the model's context per turn -- keeps
+    // long-running conversations fast and cheap instead of the prompt growing forever. Durable
+    // facts survive independently via the remember_about_me/forget_my_memory tools, so this is a
+    // safe truncation, not a lossy one.
+    historyWindowMessages: parseInt(process.env.AI_HISTORY_WINDOW_MESSAGES ?? '30', 10),
   },
   // Web Push (VAPID). Generate a pair with `npx web-push generate-vapid-keys`. Until both keys
   // are set, PushService no-ops (logs a warning once) instead of throwing -- see PushService.

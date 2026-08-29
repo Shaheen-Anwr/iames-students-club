@@ -37,26 +37,56 @@ export class AiController {
     @Body() dto: SendAiMessageDto,
     @Res() res: Response,
   ) {
-    res.setHeader('Content-Type', 'text/event-stream');
-    res.setHeader('Cache-Control', 'no-cache');
-    res.setHeader('Connection', 'keep-alive');
-    res.flushHeaders();
-
-    try {
-      for await (const event of this.aiConversationsService.sendMessageStream(
+    await this.streamSse(res, (signal) =>
+      this.aiConversationsService.sendMessageStream(
         id,
         user.userId,
         user.department,
         dto.text,
         dto.attachment,
         dto.sharedPostId,
-      )) {
-        res.write(`data: ${JSON.stringify(event)}\n\n`);
+        signal,
+      ),
+    );
+  }
+
+  // Deletes the last assistant reply and re-answers the same question fresh. Same SSE contract as
+  // sendMessage above, and does not count against the daily message quota (see
+  // AiConversationsService.regenerateLastReply).
+  @Post('conversations/:id/regenerate')
+  async regenerate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser, @Res() res: Response) {
+    await this.streamSse(res, (signal) =>
+      this.aiConversationsService.regenerateLastReply(id, user.userId, user.department, signal),
+    );
+  }
+
+  // Shared SSE plumbing for both streaming routes above. Aborts the underlying generation as soon
+  // as the client disconnects (stop-generation button, or the browser tab closing) via an
+  // AbortSignal threaded down to the OpenAI call -- but keeps draining the generator afterwards
+  // rather than breaking out of the loop: breaking early would call the generator's .return() and
+  // skip its final `await message.save()`, losing whatever partial reply was already generated.
+  // Draining is cheap once the signal fires, since the abort already cancels the expensive LLM call.
+  private async streamSse(res: Response, run: (signal: AbortSignal) => AsyncGenerator<unknown>) {
+    res.setHeader('Content-Type', 'text/event-stream');
+    res.setHeader('Cache-Control', 'no-cache');
+    res.setHeader('Connection', 'keep-alive');
+    res.flushHeaders();
+
+    const controller = new AbortController();
+    let clientGone = false;
+    res.on('close', () => {
+      clientGone = true;
+      controller.abort();
+    });
+
+    try {
+      for await (const event of run(controller.signal)) {
+        if (!clientGone) res.write(`data: ${JSON.stringify(event)}\n\n`);
       }
     } catch {
       // Must never rethrow here -- headers are already sent, so letting this escape to the global
       // HttpExceptionFilter would crash on "headers already sent" instead of closing gracefully.
-      res.write(`data: ${JSON.stringify({ type: 'error', message: 'حدث خطأ أثناء المحادثة' })}\n\n`);
+      if (!clientGone) res.write(`data: ${JSON.stringify({ type: 'error', message: 'حدث خطأ أثناء المحادثة' })}\n\n`);
     } finally {
       res.end();
     }

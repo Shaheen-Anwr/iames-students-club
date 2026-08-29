@@ -18,6 +18,8 @@ import { UsersService } from '../users/users.service';
 import { buildMulterOptions } from './multer.config';
 import { StorageService } from './storage.service';
 import { ConfirmDirectUploadDto } from './dto/confirm-direct-upload.dto';
+import { SignDirectFileUploadDto } from './dto/sign-direct-file-upload.dto';
+import { ConfirmDirectFileUploadDto } from './dto/confirm-direct-file-upload.dto';
 
 // All endpoints require a valid JWT and expect multipart/form-data with a single field named "file".
 // Files are streamed to a temp file on disk (see multer.config.ts) and uploaded to cloud storage
@@ -133,6 +135,30 @@ export class UploadController {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
     const { url, chunkCount } = await this.storageService.upload(file, 'files');
     return { url, chunkCount, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
+  }
+
+  // POST /api/upload/file/sign -> one signed ticket per part a large "files"-category upload will
+  // need, so the browser can push its bytes straight to Cloudinary instead of through this server
+  // twice. See StorageService.createDirectFileUploadTicket and the frontend's uploadFileDirect.
+  @Post('file/sign')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  signFileUpload(@Body() dto: SignDirectFileUploadDto) {
+    return this.storageService.createDirectFileUploadTicket('files', dto.fileSize, dto.originalName ?? '');
+  }
+
+  // POST /api/upload/file/confirm -> called once every part has landed on Cloudinary directly.
+  // Same response shape as POST /api/upload/file so callers don't need to know which path ran.
+  @Post('file/confirm')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  async confirmFileUpload(@Body() dto: ConfirmDirectFileUploadDto) {
+    const { url, chunkCount } = await this.storageService.confirmDirectFileUpload('files', dto.groupId, dto.partCount);
+    return {
+      url,
+      chunkCount,
+      originalName: dto.originalName ?? 'file',
+      size: dto.size ?? 0,
+      mimeType: dto.mimeType ?? 'application/octet-stream',
+    };
   }
 
   // POST /api/upload/audio -> chat voice notes + shared audio clips

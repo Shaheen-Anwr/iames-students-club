@@ -134,7 +134,10 @@ export function MessageInput({
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
       recordedChunksRef.current = [];
-      const recorder = new MediaRecorder(stream);
+      // 32kbps is more than enough for spoken voice and shrinks the recorded blob several-fold
+      // vs. the browser's default bitrate -- omit mimeType here so the browser still picks
+      // whatever format it actually supports (forcing one can throw on browsers without it).
+      const recorder = new MediaRecorder(stream, { audioBitsPerSecond: 32000 });
       recorder.ondataavailable = (e) => {
         if (e.data.size > 0) recordedChunksRef.current.push(e.data);
       };

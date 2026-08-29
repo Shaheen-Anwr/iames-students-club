@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Check, Copy, RefreshCw, AlertCircle, AlertTriangle, Paperclip, FileStack } from 'lucide-react';
 import { cn, timeAgo } from '@/lib/utils';
 import { cldOptimize } from '@/lib/images';
@@ -14,18 +14,26 @@ import { AiMarkdown } from './AiMarkdown';
 const REVEAL_DURATION = 700;
 const REVEAL_TICK = 16;
 
-export function AiMessageBubble({
+// Memoized so a parent re-render (e.g. AiChatPanel's streaming state changing per token) doesn't
+// re-run every prior bubble's render logic -- only the bubble whose own props actually changed
+// re-renders. Requires callback props (onRetry/onRegenerate) to be stable references; see
+// AiChatPanel's useCallback-wrapped handlers.
+export const AiMessageBubble = memo(function AiMessageBubble({
   message,
   live,
   onLiveDone,
   failed,
   onRetry,
+  canRegenerate,
+  onRegenerate,
 }: {
   message: AiMessage;
   live?: boolean;
   onLiveDone?: () => void;
   failed?: boolean;
   onRetry?: () => void;
+  canRegenerate?: boolean;
+  onRegenerate?: () => void;
 }) {
   const isUser = message.role === 'user';
   const isStub = !isUser && !!message.stub;
@@ -184,9 +192,22 @@ export function AiMessageBubble({
             <RefreshCw className="h-3 w-3" />
           </button>
         ) : (
-          <span className="px-1 text-[10px] text-muted-foreground">{timeAgo(message.createdAt)}</span>
+          <div className="flex items-center gap-2 px-1">
+            <span className="text-[10px] text-muted-foreground">{timeAgo(message.createdAt)}</span>
+            {canRegenerate && (
+              <button
+                type="button"
+                onClick={onRegenerate}
+                title="إعادة توليد الرد"
+                className="flex items-center gap-1 text-[10px] text-muted-foreground transition-colors hover:text-accent"
+              >
+                <RefreshCw className="h-3 w-3" />
+                إعادة التوليد
+              </button>
+            )}
+          </div>
         )}
       </div>
     </div>
   );
-}
+});

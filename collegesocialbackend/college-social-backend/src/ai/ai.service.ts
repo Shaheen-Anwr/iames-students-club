@@ -44,7 +44,10 @@ export class AiService {
       this.logger.warn('AI_API_KEY is not set -- the AI assistant will reply with a stub message until it is.');
       this.client = null;
     } else {
-      this.client = new OpenAI({ apiKey, baseURL: baseUrl, timeout: REQUEST_TIMEOUT_MS });
+      // maxRetries: 0 -- the SDK retries 429/5xx/timeouts itself by default (up to 2x), which
+      // would stack invisibly with streamCompletion's own retry loop below. Pinning it to 0 keeps
+      // exactly one retry layer, fully under this code's control.
+      this.client = new OpenAI({ apiKey, baseURL: baseUrl, timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 });
     }
   }
 
@@ -54,56 +57,89 @@ export class AiService {
   // argument deltas arrive fragmented across many chunks (standard OpenAI streaming protocol,
   // indexed per call) and are only yielded once fully accumulated, at `finish_reason:
   // 'tool_calls'`; text deltas are yielded immediately as they arrive.
+  //
+  // Retries a transient failure (timeout/connection/rate-limit/5xx) up to MAX_RETRIES times, but
+  // only while nothing has streamed to the caller yet for this attempt -- once text has started
+  // rendering in the chat, retrying would duplicate/confuse it, so a mid-stream failure falls
+  // straight to the stub instead. A client-initiated abort (see `signal`) is never retried and
+  // never yields a stub -- it just ends the generator, since the caller already knows it cancelled.
   async *streamCompletion(
     messages: OpenAI.Chat.ChatCompletionMessageParam[],
     tools: OpenAI.Chat.ChatCompletionTool[],
     modelOverride?: string,
+    signal?: AbortSignal,
   ): AsyncGenerator<AiStreamChunk> {
     if (!this.client) {
       yield { type: 'text', delta: this.stubResponse(messages), stub: true };
       return;
     }
 
-    try {
-      const stream = await this.client.chat.completions.create({
-        model: modelOverride || this.model,
-        messages,
-        tools: tools.length ? tools : undefined,
-        tool_choice: tools.length ? 'auto' : undefined,
-        temperature: 0.6,
-        stream: true,
-      });
+    const MAX_RETRIES = 2;
 
-      const pendingCalls = new Map<number, { id: string; name: string; args: string }>();
-      let sawToolCalls = false;
+    for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+      let yieldedContent = false;
+      try {
+        const stream = await this.client.chat.completions.create(
+          {
+            model: modelOverride || this.model,
+            messages,
+            tools: tools.length ? tools : undefined,
+            tool_choice: tools.length ? 'auto' : undefined,
+            temperature: 0.6,
+            stream: true,
+          },
+          { signal },
+        );
 
-      for await (const chunk of stream) {
-        const delta = chunk.choices[0]?.delta;
-        if (delta?.content) {
-          yield { type: 'text', delta: delta.content };
-        }
-        if (delta?.tool_calls) {
-          sawToolCalls = true;
-          for (const tc of delta.tool_calls) {
-            const existing = pendingCalls.get(tc.index) ?? { id: tc.id ?? '', name: '', args: '' };
-            if (tc.id) existing.id = tc.id;
-            if (tc.function?.name) existing.name += tc.function.name;
-            if (tc.function?.arguments) existing.args += tc.function.arguments;
-            pendingCalls.set(tc.index, existing);
+        const pendingCalls = new Map<number, { id: string; name: string; args: string }>();
+        let sawToolCalls = false;
+
+        for await (const chunk of stream) {
+          const delta = chunk.choices[0]?.delta;
+          if (delta?.content) {
+            yieldedContent = true;
+            yield { type: 'text', delta: delta.content };
+          }
+          if (delta?.tool_calls) {
+            sawToolCalls = true;
+            for (const tc of delta.tool_calls) {
+              const existing = pendingCalls.get(tc.index) ?? { id: tc.id ?? '', name: '', args: '' };
+              if (tc.id) existing.id = tc.id;
+              if (tc.function?.name) existing.name += tc.function.name;
+              if (tc.function?.arguments) existing.args += tc.function.arguments;
+              pendingCalls.set(tc.index, existing);
+            }
           }
         }
-      }
 
-      if (sawToolCalls && pendingCalls.size) {
-        yield {
-          type: 'tool_calls',
-          calls: Array.from(pendingCalls.values()).map((c) => ({ id: c.id, name: c.name, argsJson: c.args })),
-        };
+        if (sawToolCalls && pendingCalls.size) {
+          yield {
+            type: 'tool_calls',
+            calls: Array.from(pendingCalls.values()).map((c) => ({ id: c.id, name: c.name, argsJson: c.args })),
+          };
+        }
+        return;
+      } catch (err) {
+        if (err instanceof OpenAI.APIUserAbortError) return;
+
+        const retryable = !yieldedContent && attempt < MAX_RETRIES && this.isRetryableError(err);
+        this.logger.warn(`AI request failed (attempt ${attempt + 1}/${MAX_RETRIES + 1}): ${(err as Error).message}`);
+        if (!retryable) {
+          yield { type: 'text', delta: this.stubResponse(messages), stub: true };
+          return;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
       }
-    } catch (err) {
-      this.logger.warn(`AI request failed: ${(err as Error).message}`);
-      yield { type: 'text', delta: this.stubResponse(messages), stub: true };
     }
+  }
+
+  private isRetryableError(err: unknown): boolean {
+    return (
+      err instanceof OpenAI.APIConnectionError ||
+      err instanceof OpenAI.RateLimitError ||
+      err instanceof OpenAI.InternalServerError ||
+      (err instanceof OpenAI.APIError && (err.status ?? 0) >= 500)
+    );
   }
 
   private stubResponse(messages: OpenAI.Chat.ChatCompletionMessageParam[]): string {

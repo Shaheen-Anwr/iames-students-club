@@ -1,9 +1,20 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import { AlertTriangle, ArrowDown, BookOpen, ClipboardList, FileText, Paperclip, Send, Sparkles, X } from 'lucide-react';
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import {
+  AlertTriangle,
+  ArrowDown,
+  BookOpen,
+  ClipboardList,
+  FileText,
+  Paperclip,
+  Send,
+  Sparkles,
+  StopCircle,
+  X,
+} from 'lucide-react';
 import { Spinner } from '@/components/ui/Spinner';
-import { api, ApiError, streamAiMessage, type AiMessageAttachment } from '@/lib/api';
+import { api, ApiError, regenerateAiMessage, streamAiMessage, type AiMessageAttachment, type AiStreamEvent } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { useAi } from '@/lib/ai-context';
 import { cn } from '@/lib/utils';
@@ -43,6 +54,108 @@ const NEAR_BOTTOM_THRESHOLD = 120;
 
 type PendingAttachment = AiMessageAttachment & { name: string };
 
+interface StreamingState {
+  text: string;
+  status: string | null;
+  stub: boolean;
+}
+
+const EMPTY_STREAMING_STATE: StreamingState = { text: '', status: null, stub: false };
+
+// Holds the in-flight reply's text/status outside of React state entirely. A streamed reply can
+// arrive at dozens of tokens/second -- routing each one through AiChatPanel's own state would
+// re-render the whole panel (and every prior message bubble) per token. Writers (sendText,
+// handleRegenerate) mutate this store directly; only AiStreamingBubble subscribes to it via
+// useSyncExternalStore below, so it's the only thing that re-renders per token.
+function createStreamingStore() {
+  let state = EMPTY_STREAMING_STATE;
+  const listeners = new Set<() => void>();
+  const notify = () => listeners.forEach((l) => l());
+  return {
+    reset() {
+      state = EMPTY_STREAMING_STATE;
+      notify();
+    },
+    appendDelta(delta: string, stub?: boolean) {
+      state = { text: state.text + delta, status: state.status, stub: state.stub || !!stub };
+      notify();
+    },
+    setStatus(status: string | null) {
+      state = { ...state, status };
+      notify();
+    },
+    getSnapshot() {
+      return state;
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => listeners.delete(listener);
+    },
+  };
+}
+
+type StreamingStore = ReturnType<typeof createStreamingStore>;
+
+// Renders the "assistant is replying" block. Subscribes directly to the streaming store instead
+// of receiving text/status as props, so it re-renders on every token without AiChatPanel (or any
+// message bubble) re-rendering at all.
+function AiStreamingBubble({ store, onTextChange }: { store: StreamingStore; onTextChange: () => void }) {
+  const { text, status, stub } = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+
+  useEffect(() => {
+    onTextChange();
+    // Only scroll when new text actually arrives, not on every render of this component.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
+
+  return (
+    <div className="flex items-end gap-2 animate-slide-up">
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white">
+        <AiAvatar size={18} />
+      </div>
+      {text ? (
+        <div className="flex max-w-[80%] flex-col gap-1 items-start">
+          {stub && (
+            <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
+              <AlertTriangle className="h-3 w-3" />
+              المساعد الذكي غير مُفعّل بعد على الخادم
+            </span>
+          )}
+          <div
+            className={cn(
+              'relative rounded-2xl rounded-br-md border px-4 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm',
+              stub
+                ? 'border-amber-500/30 border-s-2 border-s-amber-500/60 bg-amber-500/10 text-foreground'
+                : 'border-border border-s-2 border-s-accent/50 bg-surface-2/60 text-foreground',
+            )}
+          >
+            <AiMarkdown text={text} />
+            <span
+              className={cn(
+                'ms-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse align-middle',
+                stub ? 'bg-amber-500' : 'bg-accent',
+              )}
+            />
+          </div>
+          {status && (
+            <span className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
+              <Sparkles className="h-3 w-3 text-accent" />
+              {status}
+            </span>
+          )}
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 rounded-2xl rounded-br-md border border-border bg-surface-2/60 px-3.5 py-2.5 backdrop-blur-sm">
+          <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
+          <span className="bg-gradient-to-r from-muted-foreground via-foreground to-muted-foreground bg-[length:200%_100%] bg-clip-text text-sm text-transparent motion-safe:animate-shimmer">
+            {status || 'المساعد يفكر...'}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 export function AiChatPanel({
   conversationId,
   onConversationCreated,
@@ -57,9 +170,6 @@ export function AiChatPanel({
   const [loading, setLoading] = useState(!!conversationId);
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [streamingText, setStreamingText] = useState('');
-  const [streamingStatus, setStreamingStatus] = useState<string | null>(null);
-  const [streamingStub, setStreamingStub] = useState(false);
   const [failedId, setFailedId] = useState<string | null>(null);
   const [pendingAttachment, setPendingAttachment] = useState<PendingAttachment | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -71,14 +181,31 @@ export function AiChatPanel({
   const lastFailedText = useRef('');
   const lastFailedAttachment = useRef<AiMessageAttachment | undefined>(undefined);
   const lastFailedSharedPostId = useRef<string | undefined>(undefined);
+  const streamingStoreRef = useRef<StreamingStore | null>(null);
+  if (!streamingStoreRef.current) streamingStoreRef.current = createStreamingStore();
+  const streamingStore = streamingStoreRef.current;
+  const abortRef = useRef<AbortController | null>(null);
 
-  useEffect(() => {
+  const loadMessages = useCallback(() => {
     if (!conversationId) {
       setMessages([]);
       setLoading(false);
       return;
     }
+    setLoading(true);
+    api.get<AiMessage[]>(`/ai/conversations/${conversationId}/messages`).then((data) => {
+      setMessages(data);
+      setLoading(false);
+    });
+  }, [conversationId]);
+
+  useEffect(() => {
     let cancelled = false;
+    if (!conversationId) {
+      setMessages([]);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     api.get<AiMessage[]>(`/ai/conversations/${conversationId}/messages`).then((data) => {
       if (cancelled) return;
@@ -92,7 +219,7 @@ export function AiChatPanel({
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages.length, sending, streamingText]);
+  }, [messages.length, sending]);
 
   useEffect(() => {
     textareaRef.current!.style.height = 'auto';
@@ -130,13 +257,34 @@ export function AiChatPanel({
     }
   }
 
+  // Shared by sendText and handleRegenerate: writes streamed events into the external store
+  // (not React state -- see createStreamingStore) so a token doesn't re-render the whole panel.
+  function makeStreamEventHandler(): (event: AiStreamEvent) => void {
+    return (event) => {
+      if (event.type === 'delta') {
+        streamingStore.appendDelta(event.text, event.stub);
+      } else if (event.type === 'tool_call') {
+        streamingStore.setStatus(`🔧 ${toolStatusLabel(event.name)}`);
+      } else if (event.type === 'tool_result') {
+        streamingStore.setStatus(event.summary);
+      } else if (event.type === 'done') {
+        setMessages((prev) => [...prev, event.message]);
+        streamingStore.reset();
+      } else if (event.type === 'error') {
+        throw new ApiError(0, event.message);
+      }
+    };
+  }
+
+  function isAbortError(err: unknown): boolean {
+    return err instanceof DOMException && err.name === 'AbortError';
+  }
+
   async function sendText(trimmed: string, attachment?: PendingAttachment, sharedPostId?: string) {
     if (!trimmed || sending) return;
     setSending(true);
     setFailedId(null);
-    setStreamingText('');
-    setStreamingStatus(null);
-    setStreamingStub(false);
+    streamingStore.reset();
 
     // Backend streams the assistant's reply live (the user message is persisted server-side too,
     // so a future refetch shows both) -- echo it optimistically here for instant feedback.
@@ -155,6 +303,9 @@ export function AiChatPanel({
     setPendingAttachment(null);
     if (sharedPostId) clearPendingShare();
 
+    const controller = new AbortController();
+    abortRef.current = controller;
+
     try {
       let activeId = conversationId;
       if (!activeId) {
@@ -167,46 +318,72 @@ export function AiChatPanel({
       await streamAiMessage(
         activeId,
         trimmed,
-        (event) => {
-          if (event.type === 'delta') {
-            setStreamingText((prev) => prev + event.text);
-            if (event.stub) setStreamingStub(true);
-          } else if (event.type === 'tool_call') {
-            setStreamingStatus(`🔧 ${toolStatusLabel(event.name)}`);
-          } else if (event.type === 'tool_result') {
-            setStreamingStatus(event.summary);
-          } else if (event.type === 'done') {
-            setMessages((prev) => [...prev, event.message]);
-            setStreamingText('');
-            setStreamingStatus(null);
-            setStreamingStub(false);
-          } else if (event.type === 'error') {
-            throw new ApiError(0, event.message);
-          }
-        },
+        makeStreamEventHandler(),
         attachment ? { url: attachment.url, type: attachment.type, mimeType: attachment.mimeType } : undefined,
         sharedPostId,
+        controller.signal,
       );
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر التواصل مع المساعد الذكي', 'error');
-      lastFailedText.current = trimmed;
-      lastFailedAttachment.current = attachment ? { url: attachment.url, type: attachment.type, mimeType: attachment.mimeType } : undefined;
-      lastFailedSharedPostId.current = sharedPostId;
-      setFailedId(optimisticId);
-      setStreamingText('');
-      setStreamingStatus(null);
-      setStreamingStub(false);
+      streamingStore.reset();
+      if (isAbortError(err)) {
+        // The backend still saves whatever partial reply it had generated when the connection
+        // dropped -- give that save a moment to land, then refetch the authoritative list instead
+        // of guessing at what the partial reply looked like.
+        setTimeout(loadMessages, 450);
+      } else {
+        showToast(err instanceof ApiError ? err.message : 'تعذّر التواصل مع المساعد الذكي', 'error');
+        lastFailedText.current = trimmed;
+        lastFailedAttachment.current = attachment ? { url: attachment.url, type: attachment.type, mimeType: attachment.mimeType } : undefined;
+        lastFailedSharedPostId.current = sharedPostId;
+        setFailedId(optimisticId);
+      }
     } finally {
       setSending(false);
+      abortRef.current = null;
     }
   }
 
-  function handleRetry() {
-    setMessages((prev) => prev.filter((m) => m._id !== failedId));
-    setFailedId(null);
+  // Deletes the last assistant reply and asks for a fresh one to the same question. Only valid
+  // while the conversation's last message is a non-stub assistant reply -- see canRegenerateLast.
+  async function handleRegenerate() {
+    if (sending || !conversationId) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== 'assistant') return;
+
+    setSending(true);
+    streamingStore.reset();
+    setMessages((prev) => prev.slice(0, -1));
+
+    const controller = new AbortController();
+    abortRef.current = controller;
+
+    try {
+      await regenerateAiMessage(conversationId, makeStreamEventHandler(), controller.signal);
+    } catch (err) {
+      streamingStore.reset();
+      if (isAbortError(err)) {
+        setTimeout(loadMessages, 450);
+      } else {
+        showToast(err instanceof ApiError ? err.message : 'تعذّر إعادة توليد الرد', 'error');
+        setMessages((prev) => [...prev, last]);
+      }
+    } finally {
+      setSending(false);
+      abortRef.current = null;
+    }
+  }
+
+  const handleRetry = useCallback(() => {
+    setFailedId((currentFailedId) => {
+      setMessages((prev) => prev.filter((m) => m._id !== currentFailedId));
+      return null;
+    });
     const attachment = lastFailedAttachment.current;
     sendText(lastFailedText.current, attachment ? { ...attachment, name: '' } : undefined, lastFailedSharedPostId.current);
-  }
+    // sendText/setMessages are stable enough in practice (refs + functional updates); re-created
+    // only when failedId itself changes, which is exactly when this handler's behavior must change.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -251,57 +428,23 @@ export function AiChatPanel({
             </div>
           </div>
         ) : (
-          messages.map((message) => (
-            <AiMessageBubble key={message._id} message={message} failed={message._id === failedId} onRetry={handleRetry} />
-          ))
+          messages.map((message, i) => {
+            const isLast = i === messages.length - 1;
+            const canRegenerate = isLast && !sending && message.role === 'assistant' && !message.stub;
+            return (
+              <AiMessageBubble
+                key={message._id}
+                message={message}
+                failed={message._id === failedId}
+                onRetry={handleRetry}
+                canRegenerate={canRegenerate}
+                onRegenerate={canRegenerate ? handleRegenerate : undefined}
+              />
+            );
+          })
         )}
 
-        {sending && (
-          <div className="flex items-end gap-2 animate-slide-up">
-            <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white">
-              <AiAvatar size={18} />
-            </div>
-            {streamingText ? (
-              <div className="flex max-w-[80%] flex-col gap-1 items-start">
-                {streamingStub && (
-                  <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
-                    <AlertTriangle className="h-3 w-3" />
-                    المساعد الذكي غير مُفعّل بعد على الخادم
-                  </span>
-                )}
-                <div
-                  className={cn(
-                    'relative rounded-2xl rounded-br-md border px-4 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm',
-                    streamingStub
-                      ? 'border-amber-500/30 border-s-2 border-s-amber-500/60 bg-amber-500/10 text-foreground'
-                      : 'border-border border-s-2 border-s-accent/50 bg-surface-2/60 text-foreground',
-                  )}
-                >
-                  <AiMarkdown text={streamingText} />
-                  <span
-                    className={cn(
-                      'ms-0.5 inline-block h-4 w-[2px] translate-y-0.5 animate-pulse align-middle',
-                      streamingStub ? 'bg-amber-500' : 'bg-accent',
-                    )}
-                  />
-                </div>
-                {streamingStatus && (
-                  <span className="flex items-center gap-1 px-1 text-[11px] text-muted-foreground">
-                    <Sparkles className="h-3 w-3 text-accent" />
-                    {streamingStatus}
-                  </span>
-                )}
-              </div>
-            ) : (
-              <div className="flex items-center gap-2 rounded-2xl rounded-br-md border border-border bg-surface-2/60 px-3.5 py-2.5 backdrop-blur-sm">
-                <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
-                <span className="bg-gradient-to-r from-muted-foreground via-foreground to-muted-foreground bg-[length:200%_100%] bg-clip-text text-sm text-transparent motion-safe:animate-shimmer">
-                  {streamingStatus || 'المساعد يفكر...'}
-                </span>
-              </div>
-            )}
-          </div>
-        )}
+        {sending && <AiStreamingBubble store={streamingStore} onTextChange={scrollToBottom} />}
         <div ref={bottomRef} />
       </div>
 
@@ -366,16 +509,27 @@ export function AiChatPanel({
             placeholder="اسأل عن واجب أو محاضرة..."
             className="max-h-32 flex-1 resize-none rounded-2xl border border-transparent bg-surface-2/70 px-4 py-2.5 text-sm leading-relaxed transition-colors focus:border-accent/40 focus:bg-surface focus:outline-none"
           />
-          <button
-            type="submit"
-            disabled={!text.trim() || sending}
-            className={cn(
-              'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:scale-110 hover:shadow-glow active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:hover:shadow-soft',
-              !!text.trim() && !sending && 'motion-safe:animate-breathe',
-            )}
-          >
-            <Send className="h-4 w-4" />
-          </button>
+          {sending ? (
+            <button
+              type="button"
+              onClick={() => abortRef.current?.abort()}
+              title="إيقاف التوليد"
+              className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-2 text-foreground shadow-soft transition-transform hover:scale-110 active:scale-95"
+            >
+              <StopCircle className="h-4 w-4" />
+            </button>
+          ) : (
+            <button
+              type="submit"
+              disabled={!text.trim()}
+              className={cn(
+                'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:scale-110 hover:shadow-glow active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:hover:shadow-soft',
+                !!text.trim() && 'motion-safe:animate-breathe',
+              )}
+            >
+              <Send className="h-4 w-4" />
+            </button>
+          )}
         </div>
       </form>
     </div>

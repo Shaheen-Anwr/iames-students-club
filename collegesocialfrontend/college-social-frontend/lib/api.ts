@@ -1,6 +1,12 @@
 import Cookies from 'js-cookie';
 import { compressImage, compressImages, type CompressImageOptions } from './compress-image';
-import { uploadVideoDirect, DirectUploadUnavailableError, type DirectUploadTicket } from './cloudinary-upload';
+import {
+  uploadVideoDirect,
+  uploadFileDirect,
+  DirectUploadUnavailableError,
+  type DirectUploadTicket,
+  type DirectFileUploadTicket,
+} from './cloudinary-upload';
 
 // Relative by default -- see next.config.js's rewrites(), which proxies /api/* to the real
 // backend so the refresh-token cookie stays same-site instead of a droppable cross-site one.
@@ -160,15 +166,14 @@ export interface AiMessageAttachment {
   mimeType?: string;
 }
 
-// Consumes the AI assistant's streamed reply (see AiController.sendMessage's SSE response).
-// Native EventSource can't do POST + a custom Authorization header, so this is a manual fetch() +
+// Shared by streamAiMessage and regenerateAiMessage: posts to an SSE route (see
+// AiController.streamSse) and dispatches each `data: ` frame to onEvent as it arrives. Native
+// EventSource can't do POST + a custom Authorization header, so this is a manual fetch() +
 // ReadableStream reader instead, reusing the same token/refresh-on-401 logic as request() above.
-export async function streamAiMessage(
-  conversationId: string,
-  text: string,
+async function streamSseRequest(
+  path: string,
+  body: unknown,
   onEvent: (event: AiStreamEvent) => void,
-  attachment?: AiMessageAttachment,
-  sharedPostId?: string,
   signal?: AbortSignal,
 ): Promise<void> {
   async function attempt(isRetry: boolean): Promise<void> {
@@ -176,11 +181,11 @@ export async function streamAiMessage(
     const headers = new Headers({ 'Content-Type': 'application/json' });
     if (token) headers.set('Authorization', `Bearer ${token}`);
 
-    const res = await fetch(`${API_URL}/ai/conversations/${conversationId}/messages`, {
+    const res = await fetch(`${API_URL}${path}`, {
       method: 'POST',
       headers,
       credentials: 'include',
-      body: JSON.stringify({ text, ...(attachment ? { attachment } : {}), ...(sharedPostId ? { sharedPostId } : {}) }),
+      body: JSON.stringify(body),
       signal,
     });
 
@@ -190,13 +195,13 @@ export async function streamAiMessage(
     }
     if (!res.ok || !res.body) {
       const raw = await res.text().catch(() => '');
-      let body: unknown = null;
+      let parsed: unknown = null;
       try {
-        body = JSON.parse(raw);
+        parsed = JSON.parse(raw);
       } catch {
         /* not json */
       }
-      throw new ApiError(res.status, extractMessage(body, `فشل الطلب (${res.status})`));
+      throw new ApiError(res.status, extractMessage(parsed, `فشل الطلب (${res.status})`));
     }
 
     const reader = res.body.getReader();
@@ -223,6 +228,32 @@ export async function streamAiMessage(
   }
 
   return attempt(false);
+}
+
+export async function streamAiMessage(
+  conversationId: string,
+  text: string,
+  onEvent: (event: AiStreamEvent) => void,
+  attachment?: AiMessageAttachment,
+  sharedPostId?: string,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamSseRequest(
+    `/ai/conversations/${conversationId}/messages`,
+    { text, ...(attachment ? { attachment } : {}), ...(sharedPostId ? { sharedPostId } : {}) },
+    onEvent,
+    signal,
+  );
+}
+
+// Deletes the last assistant reply server-side and re-answers the same question fresh. Doesn't
+// count against the daily message quota (see AiConversationsService.regenerateLastReply).
+export async function regenerateAiMessage(
+  conversationId: string,
+  onEvent: (event: AiStreamEvent) => void,
+  signal?: AbortSignal,
+): Promise<void> {
+  return streamSseRequest(`/ai/conversations/${conversationId}/regenerate`, {}, onEvent, signal);
 }
 
 // 0-100. fetch() has no upload-progress event at all, so a real progress bar needs
@@ -319,10 +350,11 @@ function compressOptsFor(path: string): CompressImageOptions | null {
   return IMAGE_UPLOAD_COMPRESS_OPTS[path.replace(/^\/?upload\//, '')] ?? null;
 }
 
-// The direct browser -> Cloudinary video path (see lib/cloudinary-upload.ts) is on by default;
-// NEXT_PUBLIC_DIRECT_UPLOAD=0 is a kill switch that reverts to the plain server multipart route
-// (e.g. if Cloudinary CORS ever misbehaves in production).
-function directVideoUploadEnabled(): boolean {
+// The direct browser -> Cloudinary paths (video, and large generic files -- see
+// lib/cloudinary-upload.ts) are on by default; NEXT_PUBLIC_DIRECT_UPLOAD=0 is a kill switch that
+// reverts both to their plain server multipart route (e.g. if Cloudinary CORS ever misbehaves in
+// production).
+function directUploadEnabled(): boolean {
   return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DIRECT_UPLOAD !== '0';
 }
 
@@ -341,7 +373,7 @@ export const api = {
     // Video: upload the bytes straight from the browser to Cloudinary (segmenting oversized files
     // in-browser first), skipping the server hop entirely. Any failure that isn't a user abort
     // falls through to the plain server multipart route below.
-    if (category === 'video' && directVideoUploadEnabled()) {
+    if (category === 'video' && directUploadEnabled()) {
       assertWithinSizeLimit(path, file);
       try {
         return await uploadVideoDirect<T>(file, {
@@ -354,6 +386,27 @@ export const api = {
         if (!(err instanceof DirectUploadUnavailableError)) {
           // eslint-disable-next-line no-console
           console.warn('[upload] direct video upload failed, falling back to server route:', err);
+        }
+      }
+    }
+
+    // Large generic files (PDFs, scanned books, zips, etc.): same idea as video above, but split
+    // by plain byte-range slicing (no re-encoding needed for opaque bytes) -- only worth the extra
+    // round trip once a file is big enough to need splitting at all.
+    const FILE_DIRECT_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024;
+    if (category === 'file' && directUploadEnabled() && file.size > FILE_DIRECT_UPLOAD_THRESHOLD_BYTES) {
+      assertWithinSizeLimit(path, file);
+      try {
+        return await uploadFileDirect<T>(file, {
+          sign: (fileSize, originalName) => api.post<DirectFileUploadTicket>('/upload/file/sign', { fileSize, originalName }),
+          confirm: (groupId, partCount, meta) => api.post<T>('/upload/file/confirm', { groupId, partCount, ...meta }),
+          onProgress,
+        });
+      } catch (err) {
+        if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        if (!(err instanceof DirectUploadUnavailableError)) {
+          // eslint-disable-next-line no-console
+          console.warn('[upload] direct file upload failed, falling back to server route:', err);
         }
       }
     }
