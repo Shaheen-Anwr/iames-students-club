@@ -65,11 +65,19 @@ export class ChatService {
       if (await this.usersService.areBlocked(a, b)) {
         throw new ForbiddenException('لا يمكن بدء محادثة مع هذا المستخدم');
       }
+      // $all/$size on an array path isn't reliably cast by Mongoose the way plain equality
+      // is -- passing raw ID strings here silently matches nothing even when a conversation
+      // already exists, so every repeat "مراسلة" click spawned a brand-new duplicate chat
+      // instead of reusing the old one. Casting explicitly sidesteps that.
+      // Older duplicate conversations from before this fix may still exist for some pairs --
+      // sort so the one actually in use (most recent message, else most recently created)
+      // wins over a stray empty duplicate.
       const existing = await this.conversationModel
         .findOne({
           isGroup: false,
-          participants: { $all: participantIds, $size: 2 },
+          participants: { $all: participantIds.map((id) => new Types.ObjectId(id)), $size: 2 },
         })
+        .sort({ lastMessageAt: -1, createdAt: -1 })
         .populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt')
         .exec();
       if (existing) return existing;
