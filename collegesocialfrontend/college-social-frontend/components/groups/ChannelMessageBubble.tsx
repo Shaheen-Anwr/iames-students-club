@@ -364,14 +364,23 @@ export function ChannelMessageBubble({
               }
 
               return (
-                <a
+                <button
                   key={i}
-                  href={url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={(event) => event.stopPropagation()}
+                  type="button"
+                  // A plain <a href> always navigates on tap and swallows the click before it
+                  // reaches handleMessageClick, so a file message could never open the actions
+                  // sheet on mobile (no hover toolbar there). Mirrors the image attachment's
+                  // long-press-for-actions / tap-to-open pattern instead.
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    if (!isLongPress.current) window.open(url, '_blank', 'noopener,noreferrer');
+                    isLongPress.current = false;
+                  }}
+                  onTouchStart={handleTouchStart}
+                  onTouchEnd={clearLongPress}
+                  onTouchMove={clearLongPress}
                   className={cn(
-                    'flex max-w-full items-center gap-2.5 rounded-2xl px-4 py-3 text-[15px] transition-colors',
+                    'flex w-full max-w-full items-center gap-2.5 rounded-2xl px-4 py-3 text-start text-[15px] transition-colors',
                     isOwn ? 'bg-gradient-accent text-white' : 'bg-surface-2/70 text-foreground hover:bg-surface-2',
                   )}
                 >
@@ -384,7 +393,7 @@ export function ChannelMessageBubble({
                       </span>
                     )}
                   </span>
-                </a>
+                </button>
               );
             })}
 
