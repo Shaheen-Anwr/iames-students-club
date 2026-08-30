@@ -40,6 +40,7 @@ import { ConvertModule } from './convert/convert.module';
 import { WallModule } from './wall/wall.module';
 import { EventsModule } from './events/events.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
+import { RoomsModule } from './rooms/rooms.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -101,6 +102,7 @@ import { AppController } from './app.controller';
     WallModule,
     EventsModule,
     MarketplaceModule,
+    RoomsModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

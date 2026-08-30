@@ -5,6 +5,7 @@ import { Calculator, GraduationCap, Plus, Trash2 } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
@@ -175,8 +176,12 @@ export function GpaCalculator() {
       </form>
 
       {terms.length === 0 ? (
-        <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40 py-12 text-center text-sm text-muted-foreground">
-          أضف فصلًا دراسيًا لتبدأ بإدخال مقرراتك ودرجاتها.
+        <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+          <EmptyState
+            icon={GraduationCap}
+            title="لا فصول بعد"
+            description="أضف فصلًا دراسيًا لتبدأ بإدخال مقرراتك ودرجاتها."
+          />
         </div>
       ) : (
         terms.map(({ term, list, gpa, credits }) => (

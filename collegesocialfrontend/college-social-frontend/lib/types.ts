@@ -1082,6 +1082,41 @@ export interface MarketplaceListing {
   createdAt: string;
 }
 
+// --- غرف المذاكرة (study-together rooms) -- شعبة-scoped, shared Pomodoro (src/rooms) ---
+
+export interface RoomMemberLite {
+  _id: string;
+  name: string;
+  photoUrl: string | null;
+}
+
+export interface RoomTimerState {
+  phase: 'focus' | 'break';
+  running: boolean;
+  endsAt: string | null;
+  remainingMs: number | null;
+  focusMin: number;
+  breakMin: number;
+}
+
+export interface StudyRoomListItem {
+  _id: string;
+  name: string;
+  topic: string;
+  department: Department | null;
+  memberCount: number;
+  members: RoomMemberLite[];
+  timerPhase: 'focus' | 'break';
+  timerRunning: boolean;
+  mine: boolean;
+  joined: boolean;
+  createdAt: string;
+}
+
+export interface StudyRoomDetail extends StudyRoomListItem {
+  timer: RoomTimerState;
+}
+
 // --- الفعاليات (campus events & clubs) -- شعبة-scoped, RSVP (src/events) ---
 
 export interface CampusEvent {
@@ -1112,7 +1147,16 @@ export interface WallPost {
   body: string;
   likeCount: number;
   liked: boolean;
+  commentCount: number;
   // True when the signed-in user is this post's (anonymous) author.
+  mine: boolean;
+  createdAt: string;
+}
+
+export interface WallComment {
+  _id: string;
+  authorHash: string;
+  body: string;
   mine: boolean;
   createdAt: string;
 }

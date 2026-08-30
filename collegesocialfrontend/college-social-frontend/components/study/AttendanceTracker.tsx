@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarCheck, ChevronLeft, ChevronRight, Clock, MapPin } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -116,12 +117,12 @@ export function AttendanceTracker() {
 
   if (!isStudent) {
     return (
-      <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-        <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
-          <CalendarCheck className="h-7 w-7" />
-        </div>
-        <p className="text-sm font-medium text-foreground">تتبّع الحضور أداة خاصة بالطلاب</p>
-        <p className="text-xs text-muted-foreground">يعتمد على الجدول الدراسي المنشور لفئة الطالب.</p>
+      <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+        <EmptyState
+          icon={CalendarCheck}
+          title="تتبّع الحضور أداة خاصة بالطلاب"
+          description="يعتمد على الجدول الدراسي المنشور لفئة الطالب."
+        />
       </div>
     );
   }
@@ -164,7 +165,7 @@ export function AttendanceTracker() {
                   <div
                     className={cn(
                       'h-full rounded-full',
-                      c.percent >= 75 ? 'bg-emerald-500' : c.percent >= 50 ? 'bg-amber-500' : 'bg-red-500',
+                      c.percent >= 75 ? 'bg-success' : c.percent >= 50 ? 'bg-warning' : 'bg-danger',
                     )}
                     style={{ width: `${c.percent}%` }}
                   />
@@ -195,16 +196,12 @@ export function AttendanceTracker() {
       </div>
 
       {!hasSessions ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <CalendarCheck className="h-7 w-7" />
-          </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">لا محاضرات في هذا الأسبوع</p>
-            <p className="text-xs text-muted-foreground">
-              يظهر هنا كل موعد من جدولك الدراسي المنشور، لتحدّد حضورك فيه.
-            </p>
-          </div>
+        <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+          <EmptyState
+            icon={CalendarCheck}
+            title="لا محاضرات في هذا الأسبوع"
+            description="يظهر هنا كل موعد من جدولك الدراسي المنشور، لتحدّد حضورك فيه."
+          />
         </div>
       ) : (
         <div className="space-y-4">

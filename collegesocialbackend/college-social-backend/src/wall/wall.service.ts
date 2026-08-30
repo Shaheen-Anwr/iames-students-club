@@ -10,6 +10,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { createHash } from 'crypto';
 import { WallPost, WallPostDocument } from './schemas/wall-post.schema';
+import { WallComment, WallCommentDocument } from './schemas/wall-comment.schema';
 import { AiService } from '../ai/ai.service';
 import { Department } from '../common/enums/department.enum';
 import { Role } from '../common/enums/role.enum';
@@ -36,6 +37,15 @@ export interface WallPostView {
   body: string;
   likeCount: number;
   liked: boolean;
+  commentCount: number;
+  mine: boolean;
+  createdAt: Date;
+}
+
+export interface WallCommentView {
+  _id: string;
+  authorHash: string;
+  body: string;
   mine: boolean;
   createdAt: Date;
 }
@@ -47,6 +57,7 @@ export class WallService {
 
   constructor(
     @InjectModel(WallPost.name) private readonly model: Model<WallPostDocument>,
+    @InjectModel(WallComment.name) private readonly commentModel: Model<WallCommentDocument>,
     private readonly ai: AiService,
     config: ConfigService,
   ) {
@@ -67,6 +78,7 @@ export class WallService {
       body: doc.body,
       likeCount: doc.likes.length,
       liked: doc.likes.some((l) => l.toString() === viewerId),
+      commentCount: doc.commentCount ?? 0,
       mine: doc.authorHash === viewerHash,
       createdAt: (doc as unknown as { createdAt: Date }).createdAt,
     };
@@ -167,7 +179,67 @@ export class WallService {
     if (doc.authorId.toString() !== user.userId && user.role !== Role.ADMIN) {
       throw new ForbiddenException('لا تملك صلاحية حذف هذا المنشور');
     }
+    await Promise.all([doc.deleteOne(), this.commentModel.deleteMany({ post: doc._id }).exec()]);
+  }
+
+  /* --------------------------------- comments -------------------------------- */
+
+  async listComments(user: AuthenticatedUser, postId: string): Promise<WallCommentView[]> {
+    if (!Types.ObjectId.isValid(postId)) throw new NotFoundException('المنشور غير موجود');
+    const docs = await this.commentModel
+      .find({ post: new Types.ObjectId(postId) })
+      .sort({ createdAt: 1 })
+      .limit(200)
+      .exec();
+    const hash = this.hashFor(user.userId);
+    return docs.map((c) => ({
+      _id: c._id.toString(),
+      authorHash: c.authorHash,
+      body: c.body,
+      mine: c.authorHash === hash,
+      createdAt: (c as unknown as { createdAt: Date }).createdAt,
+    }));
+  }
+
+  async addComment(user: AuthenticatedUser, postId: string, bodyRaw: string): Promise<WallCommentView> {
+    if (!Types.ObjectId.isValid(postId)) throw new NotFoundException('المنشور غير موجود');
+    const post = await this.model.findById(postId).exec();
+    if (!post || post.hidden) throw new NotFoundException('المنشور غير موجود');
+
+    const body = (bodyRaw ?? '').trim();
+    if (body.length < 1) throw new BadRequestException('التعليق فارغ');
+    if (body.length > 400) throw new BadRequestException('الحد الأقصى 400 حرفًا');
+    if (this.keywordReject(body)) {
+      throw new BadRequestException('لا تنشر أرقام هواتف أو بريدًا إلكترونيًا.');
+    }
+
+    const hash = this.hashFor(user.userId);
+    const doc = await this.commentModel.create({
+      post: post._id,
+      authorId: new Types.ObjectId(user.userId),
+      authorHash: hash,
+      body,
+    });
+    await this.model.updateOne({ _id: post._id }, { $inc: { commentCount: 1 } }).exec();
+
+    return {
+      _id: doc._id.toString(),
+      authorHash: hash,
+      body,
+      mine: true,
+      createdAt: (doc as unknown as { createdAt: Date }).createdAt,
+    };
+  }
+
+  async removeComment(user: AuthenticatedUser, commentId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(commentId)) throw new NotFoundException('التعليق غير موجود');
+    const doc = await this.commentModel.findById(commentId).exec();
+    if (!doc) throw new NotFoundException('التعليق غير موجود');
+    if (doc.authorId.toString() !== user.userId && user.role !== Role.ADMIN) {
+      throw new ForbiddenException('لا تملك صلاحية حذف هذا التعليق');
+    }
     await doc.deleteOne();
+    await this.model.updateOne({ _id: doc.post }, { $inc: { commentCount: -1 } }).exec();
   }
 
   // A student flags a post. Idempotent per user. Auto-hides at AUTO_HIDE_REPORTS distinct

@@ -42,6 +42,23 @@ export class WallController {
     return this.wall.report(user, id);
   }
 
+  @Get(':id/comments')
+  listComments(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.wall.listComments(user, id);
+  }
+
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @Post(':id/comments')
+  addComment(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string, @Body('body') body: string) {
+    return this.wall.addComment(user, id, body);
+  }
+
+  @Delete('comments/:commentId')
+  async removeComment(@CurrentUser() user: AuthenticatedUser, @Param('commentId') commentId: string) {
+    await this.wall.removeComment(user, commentId);
+    return { success: true };
+  }
+
   // Admin moderation: PATCH /api/wall/:id/hidden { hidden: boolean }
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN)

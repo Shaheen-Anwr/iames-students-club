@@ -317,7 +317,7 @@ export function MilitaryHub() {
             <ChevronDown className={cn('ms-auto h-4 w-4 transition-transform', rosterOpen && 'rotate-180')} />
           </button>
           {rosterOpen && (
-            <div className="border-t border-border px-2 pb-2">
+            <div className="border-t border-border/70 px-2 pb-2">
               {roster && roster.rosterCount > 0 && (
                 <p className="px-2 pt-2 text-xs text-muted-foreground">
                   الكشف المرفوع: {roster.rosterCount} اسمًا · مطابَق {roster.students.length}
@@ -354,7 +354,7 @@ export function MilitaryHub() {
                     </thead>
                     <tbody>
                       {roster.students.map((row) => (
-                        <tr key={row.user._id} className="border-t border-border">
+                        <tr key={row.user._id} className="border-t border-border/70">
                           <td className="p-2">
                             <div className="flex items-center gap-2">
                               <Avatar src={assetUrl(row.user.photoUrl)} name={row.user.name} size="xs" />

@@ -27,6 +27,10 @@ export class WallPost {
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
   likes: Types.ObjectId[];
 
+  // Denormalised WallComment count so list() doesn't need an aggregate per post.
+  @Prop({ type: Number, default: 0 })
+  commentCount: number;
+
   // Distinct users who reported this post. At WALL_AUTO_HIDE_REPORTS the post auto-hides
   // (moderationNote records it) until an admin reviews.
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })

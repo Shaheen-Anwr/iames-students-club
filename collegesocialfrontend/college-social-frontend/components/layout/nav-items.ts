@@ -1,4 +1,4 @@
-import { Home, MessageCircle, User, ShieldCheck, GraduationCap, Users, UsersRound, ListChecks, FileText, Video, Newspaper, Clapperboard, FileCog, MessagesSquare, CalendarHeart, Store, SquarePen } from 'lucide-react';
+import { Home, MessageCircle, User, ShieldCheck, GraduationCap, Users, UsersRound, ListChecks, FileText, Video, Newspaper, Clapperboard, FileCog, MessagesSquare, CalendarHeart, Store, SquarePen, Timer } from 'lucide-react';
 import type { Role } from '@/lib/types';
 
 export const NAV_ITEMS = [
@@ -7,6 +7,7 @@ export const NAV_ITEMS = [
   { href: '/wall', label: 'الجدار', icon: MessagesSquare },
   { href: '/events', label: 'الفعاليات', icon: CalendarHeart },
   { href: '/marketplace', label: 'السوق', icon: Store },
+  { href: '/rooms', label: 'غرف المذاكرة', icon: Timer },
   { href: '/reels', label: 'اكاديميا', icon: Clapperboard },
   { href: '/study', label: 'الدراسة', icon: GraduationCap },
   { href: '/quizzes', label: 'الاختبارات', icon: ListChecks },

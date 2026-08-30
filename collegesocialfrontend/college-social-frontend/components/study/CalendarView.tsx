@@ -178,7 +178,7 @@ export function CalendarView() {
                     'flex h-16 flex-col items-center gap-1 rounded-xl border p-1 text-xs transition-colors sm:h-20',
                     inMonth ? 'border-border bg-surface' : 'border-transparent bg-transparent text-muted-foreground/50',
                     today && !selected && 'border-accent/30 bg-accent/10 ring-1 ring-inset ring-accent/20',
-                    selected && 'border-accent bg-accent/5 shadow-soft',
+                    selected && 'border-accent bg-accent/5 shadow-elev-1',
                   )}
                 >
                   <span

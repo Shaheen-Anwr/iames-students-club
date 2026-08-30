@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Flag, Heart, MessagesSquare, Send, Trash2 } from 'lucide-react';
+import { Flag, Heart, MessageCircle, MessagesSquare, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -10,10 +10,11 @@ import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { cn, timeAgo } from '@/lib/utils';
-import type { WallPost } from '@/lib/types';
+import type { WallComment, WallPost } from '@/lib/types';
 
 const PAGE = 20;
 const MAX = 600;
+const COMMENT_MAX = 400;
 type Sort = 'new' | 'top';
 
 // Deterministic anonymous identity from the 8-hex authorHash -- same author, same face + colour
@@ -70,13 +71,16 @@ export function WallFeed() {
     }
   }
 
+  const patch = (id: string, fields: Partial<WallPost>) =>
+    setPosts((p) => p.map((x) => (x._id === id ? { ...x, ...fields } : x)));
+
   async function submit() {
     const text = body.trim();
     if (text.length < 2 || posting) return;
     setPosting(true);
     try {
       const created = await api.post<WallPost>('/wall', { body: text });
-      setPosts((p) => (sort === 'new' ? [created, ...p] : [created, ...p]));
+      setPosts((p) => [created, ...p]);
       setBody('');
       showToast('نُشر على الجدار', 'success');
     } catch (err) {
@@ -87,25 +91,12 @@ export function WallFeed() {
   }
 
   async function toggleLike(post: WallPost) {
-    // optimistic
-    setPosts((p) =>
-      p.map((x) =>
-        x._id === post._id
-          ? { ...x, liked: !x.liked, likeCount: x.likeCount + (x.liked ? -1 : 1) }
-          : x,
-      ),
-    );
+    patch(post._id, { liked: !post.liked, likeCount: post.likeCount + (post.liked ? -1 : 1) });
     try {
       const res = await api.post<{ liked: boolean; likeCount: number }>(`/wall/${post._id}/like`);
-      setPosts((p) => p.map((x) => (x._id === post._id ? { ...x, ...res } : x)));
+      patch(post._id, res);
     } catch {
-      setPosts((p) =>
-        p.map((x) =>
-          x._id === post._id
-            ? { ...x, liked: post.liked, likeCount: post.likeCount }
-            : x,
-        ),
-      );
+      patch(post._id, { liked: post.liked, likeCount: post.likeCount });
     }
   }
 
@@ -182,61 +173,16 @@ export function WallFeed() {
         <EmptyState icon={MessagesSquare} title="الجدار فارغ" description="كن أول من يكتب شيئًا." />
       ) : (
         <div className="space-y-3">
-          {posts.map((post) => {
-            const { face, ring } = identity(post.authorHash);
-            return (
-              <Card key={post._id} className="p-4">
-                <div className="flex items-start gap-3">
-                  <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base', ring)}>
-                    {face}
-                  </span>
-                  <div className="min-w-0 flex-1">
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <span className="font-medium text-foreground">
-                        {post.mine ? 'أنت (مجهول)' : 'طالب مجهول'}
-                      </span>
-                      <span>{timeAgo(post.createdAt)}</span>
-                    </div>
-                    <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground text-pretty">
-                      {post.body}
-                    </p>
-                    <div className="mt-2.5 flex items-center gap-3">
-                      <button
-                        type="button"
-                        onClick={() => toggleLike(post)}
-                        className={cn(
-                          'flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors',
-                          post.liked ? 'bg-danger/10 text-danger' : 'text-muted-foreground hover:bg-surface-2',
-                        )}
-                      >
-                        <Heart className={cn('h-3.5 w-3.5', post.liked && 'fill-current')} />
-                        {post.likeCount > 0 && post.likeCount}
-                      </button>
-                      {post.mine ? (
-                        <button
-                          type="button"
-                          onClick={() => remove(post._id)}
-                          className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          حذف
-                        </button>
-                      ) : (
-                        <button
-                          type="button"
-                          onClick={() => report(post._id)}
-                          className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-warning/10 hover:text-warning"
-                        >
-                          <Flag className="h-3.5 w-3.5" />
-                          إبلاغ
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                </div>
-              </Card>
-            );
-          })}
+          {posts.map((post) => (
+            <WallPostCard
+              key={post._id}
+              post={post}
+              onLike={() => toggleLike(post)}
+              onReport={() => report(post._id)}
+              onRemove={() => remove(post._id)}
+              onCommentCount={(n) => patch(post._id, { commentCount: n })}
+            />
+          ))}
 
           {hasMore && (
             <div className="flex justify-center pt-1">
@@ -248,5 +194,188 @@ export function WallFeed() {
         </div>
       )}
     </div>
+  );
+}
+
+function WallPostCard({
+  post,
+  onLike,
+  onReport,
+  onRemove,
+  onCommentCount,
+}: {
+  post: WallPost;
+  onLike: () => void;
+  onReport: () => void;
+  onRemove: () => void;
+  onCommentCount: (n: number) => void;
+}) {
+  const { showToast } = useToast();
+  const { face, ring } = identity(post.authorHash);
+
+  const [open, setOpen] = useState(false);
+  const [comments, setComments] = useState<WallComment[] | null>(null);
+  const [loadingComments, setLoadingComments] = useState(false);
+  const [draft, setDraft] = useState('');
+  const [sending, setSending] = useState(false);
+
+  async function toggleThread() {
+    const next = !open;
+    setOpen(next);
+    if (next && comments === null) {
+      setLoadingComments(true);
+      try {
+        setComments(await api.get<WallComment[]>(`/wall/${post._id}/comments`));
+      } catch {
+        setComments([]);
+      } finally {
+        setLoadingComments(false);
+      }
+    }
+  }
+
+  async function sendComment() {
+    const text = draft.trim();
+    if (!text || sending) return;
+    setSending(true);
+    try {
+      const c = await api.post<WallComment>(`/wall/${post._id}/comments`, { body: text });
+      setComments((list) => [...(list ?? []), c]);
+      setDraft('');
+      onCommentCount(post.commentCount + 1);
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال التعليق', 'error');
+    } finally {
+      setSending(false);
+    }
+  }
+
+  async function deleteComment(id: string) {
+    const before = comments;
+    setComments((list) => (list ?? []).filter((c) => c._id !== id));
+    onCommentCount(Math.max(0, post.commentCount - 1));
+    try {
+      await api.delete(`/wall/comments/${id}`);
+    } catch {
+      setComments(before);
+      onCommentCount(post.commentCount);
+    }
+  }
+
+  return (
+    <Card className="p-4">
+      <div className="flex items-start gap-3">
+        <span className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-base', ring)}>
+          {face}
+        </span>
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">{post.mine ? 'أنت (مجهول)' : 'طالب مجهول'}</span>
+            <span>{timeAgo(post.createdAt)}</span>
+          </div>
+          <p className="mt-1.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground text-pretty">{post.body}</p>
+
+          <div className="mt-2.5 flex items-center gap-3">
+            <button
+              type="button"
+              onClick={onLike}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors',
+                post.liked ? 'bg-danger/10 text-danger' : 'text-muted-foreground hover:bg-surface-2',
+              )}
+            >
+              <Heart className={cn('h-3.5 w-3.5', post.liked && 'fill-current')} />
+              {post.likeCount > 0 && post.likeCount}
+            </button>
+
+            <button
+              type="button"
+              onClick={toggleThread}
+              className={cn(
+                'flex items-center gap-1.5 rounded-full px-2 py-1 text-xs font-medium transition-colors',
+                open ? 'bg-accent/10 text-accent' : 'text-muted-foreground hover:bg-surface-2',
+              )}
+            >
+              <MessageCircle className="h-3.5 w-3.5" />
+              {post.commentCount > 0 ? post.commentCount : 'تعليق'}
+            </button>
+
+            {post.mine ? (
+              <button
+                type="button"
+                onClick={onRemove}
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-danger/10 hover:text-danger"
+              >
+                <Trash2 className="h-3.5 w-3.5" />
+                حذف
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={onReport}
+                className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-warning/10 hover:text-warning"
+              >
+                <Flag className="h-3.5 w-3.5" />
+                إبلاغ
+              </button>
+            )}
+          </div>
+
+          {open && (
+            <div className="mt-3 space-y-2 border-t border-border/70 pt-3">
+              {loadingComments ? (
+                <div className="flex justify-center py-3">
+                  <Spinner className="h-4 w-4" />
+                </div>
+              ) : (
+                (comments ?? []).map((c) => {
+                  const ci = identity(c.authorHash);
+                  return (
+                    <div key={c._id} className="flex items-start gap-2">
+                      <span className={cn('flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-xs', ci.ring)}>
+                        {ci.face}
+                      </span>
+                      <div className="min-w-0 flex-1 rounded-xl bg-surface-2/50 px-2.5 py-1.5">
+                        <p className="whitespace-pre-wrap text-xs leading-relaxed text-foreground">{c.body}</p>
+                        <div className="mt-0.5 flex items-center gap-2 text-[10px] text-muted-foreground">
+                          <span>{timeAgo(c.createdAt)}</span>
+                          {c.mine && (
+                            <button type="button" onClick={() => deleteComment(c._id)} className="hover:text-danger">
+                              حذف
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })
+              )}
+
+              {!loadingComments && (comments ?? []).length === 0 && (
+                <p className="py-1 text-center text-xs text-muted-foreground">لا تعليقات بعد.</p>
+              )}
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  value={draft}
+                  onChange={(e) => setDraft(e.target.value.slice(0, COMMENT_MAX))}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      void sendComment();
+                    }
+                  }}
+                  placeholder="أضف تعليقًا…"
+                  className="h-9 min-w-0 flex-1 rounded-full bg-surface-2/60 px-3 text-xs text-foreground outline-none ring-1 ring-inset ring-transparent placeholder:text-muted-foreground focus:ring-accent/30"
+                />
+                <Button size="xs" onClick={sendComment} disabled={!draft.trim()} loading={sending}>
+                  إرسال
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
+      </div>
+    </Card>
   );
 }
