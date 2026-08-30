@@ -18,6 +18,8 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 const MAX_BODY = 600;
 const DAILY_LIMIT = 5;
 const DAY_MS = 24 * 60 * 60 * 1000;
+// Distinct reporters at which a post auto-hides pending admin review.
+const AUTO_HIDE_REPORTS = 3;
 
 // A tiny, unambiguous floor that runs even when the AI moderator is off -- it only targets
 // doxxing (contact details posted on an anonymous wall). Everything subjective (bullying, hate,
@@ -166,5 +168,36 @@ export class WallService {
       throw new ForbiddenException('لا تملك صلاحية حذف هذا المنشور');
     }
     await doc.deleteOne();
+  }
+
+  // A student flags a post. Idempotent per user. Auto-hides at AUTO_HIDE_REPORTS distinct
+  // reporters -- the post stays out of every feed until an admin restores or deletes it.
+  async report(user: AuthenticatedUser, id: string): Promise<{ reported: true; hidden: boolean }> {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('المنشور غير موجود');
+    const doc = await this.model.findById(id).exec();
+    if (!doc) throw new NotFoundException('المنشور غير موجود');
+    if (doc.authorId.toString() === user.userId) {
+      throw new BadRequestException('لا يمكنك الإبلاغ عن منشورك');
+    }
+    const uid = new Types.ObjectId(user.userId);
+    if (!doc.reports.some((r) => r.toString() === user.userId)) doc.reports.push(uid);
+    if (!doc.hidden && doc.reports.length >= AUTO_HIDE_REPORTS) {
+      doc.hidden = true;
+      doc.moderationNote = `إخفاء تلقائي بعد ${doc.reports.length} بلاغات`;
+    }
+    await doc.save();
+    return { reported: true, hidden: doc.hidden };
+  }
+
+  // Admin-only (guarded at the controller). Hide/restore a post.
+  async setHidden(id: string, hidden: boolean): Promise<{ hidden: boolean }> {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('المنشور غير موجود');
+    const doc = await this.model.findByIdAndUpdate(
+      id,
+      { hidden, moderationNote: hidden ? 'إخفاء من مشرف' : null },
+      { new: true },
+    );
+    if (!doc) throw new NotFoundException('المنشور غير موجود');
+    return { hidden: doc.hidden };
   }
 }

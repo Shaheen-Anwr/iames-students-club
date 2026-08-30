@@ -2,6 +2,7 @@ import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
+import { Department } from '../common/enums/department.enum';
 import { BADGES, BadgeId, POINTS, REFERRAL_TARGET } from './badges';
 
 export interface GamificationStats {
@@ -67,8 +68,17 @@ export class GamificationService {
     await this.userModel.findByIdAndUpdate(userId, { $addToSet: { badges: badgeId } }).exec();
   }
 
-  async getLeaderboard(limit = 20): Promise<UserDocument[]> {
-    return this.userModel.find().select('name photoUrl role points streakCount').sort({ points: -1 }).limit(limit).exec();
+  // `department` (when passed and non-null) narrows the board to one شعبة -- a "leaderboard I can
+  // actually top" is far more motivating than a whole-college one. A null/undefined department
+  // keeps the college-wide board (admin panel, and students without a شعبة set).
+  async getLeaderboard(limit = 20, department?: Department | null): Promise<UserDocument[]> {
+    const filter = department ? { department } : {};
+    return this.userModel
+      .find(filter)
+      .select('name photoUrl role points streakCount department')
+      .sort({ points: -1 })
+      .limit(limit)
+      .exec();
   }
 
   // --- Admin-only operations (guarded at the controller level) ---

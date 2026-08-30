@@ -37,10 +37,16 @@ export class UsersController {
     return this.usersService.search(q ?? '');
   }
 
-  // GET /api/users/leaderboard -- NOTE: must stay above @Get(':id') or it gets swallowed as an id lookup.
+  // GET /api/users/leaderboard?scope=dept -- NOTE: must stay above @Get(':id') or it gets swallowed
+  // as an id lookup. `scope=dept` narrows the board to the caller's own شعبة.
   @Get('leaderboard')
-  async leaderboard(@Query('limit') limit?: string) {
-    return this.gamificationService.getLeaderboard(Number(limit) || 20);
+  async leaderboard(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('limit') limit?: string,
+    @Query('scope') scope?: string,
+  ) {
+    const department = scope === 'dept' ? user.department : undefined;
+    return this.gamificationService.getLeaderboard(Number(limit) || 20, department);
   }
 
   // GET /api/users/suggestions -- same reason as leaderboard above: must stay above @Get(':id').

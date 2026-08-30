@@ -1,6 +1,9 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
+import { Role } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { WallService } from './wall.service';
@@ -32,6 +35,19 @@ export class WallController {
   @Post(':id/like')
   like(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.wall.toggleLike(user, id);
+  }
+
+  @Post(':id/report')
+  report(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
+    return this.wall.report(user, id);
+  }
+
+  // Admin moderation: PATCH /api/wall/:id/hidden { hidden: boolean }
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN)
+  @Patch(':id/hidden')
+  setHidden(@Param('id') id: string, @Body('hidden') hidden: boolean) {
+    return this.wall.setHidden(id, hidden !== false);
   }
 
   @Delete(':id')

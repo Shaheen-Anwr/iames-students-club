@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Heart, MessagesSquare, Send, Trash2 } from 'lucide-react';
+import { Flag, Heart, MessagesSquare, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -109,6 +109,17 @@ export function WallFeed() {
     }
   }
 
+  async function report(id: string) {
+    if (!confirm('الإبلاغ عن هذا المنشور كمخالف؟')) return;
+    try {
+      const res = await api.post<{ reported: true; hidden: boolean }>(`/wall/${id}/report`);
+      if (res.hidden) setPosts((p) => p.filter((x) => x._id !== id));
+      showToast(res.hidden ? 'تم إخفاء المنشور بعد بلاغات كافية' : 'تم إرسال البلاغ، شكرًا', 'success');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال البلاغ', 'error');
+    }
+  }
+
   async function remove(id: string) {
     if (!confirm('حذف هذا المنشور؟')) return;
     const before = posts;
@@ -201,7 +212,7 @@ export function WallFeed() {
                         <Heart className={cn('h-3.5 w-3.5', post.liked && 'fill-current')} />
                         {post.likeCount > 0 && post.likeCount}
                       </button>
-                      {post.mine && (
+                      {post.mine ? (
                         <button
                           type="button"
                           onClick={() => remove(post._id)}
@@ -209,6 +220,15 @@ export function WallFeed() {
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                           حذف
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => report(post._id)}
+                          className="flex items-center gap-1 rounded-full px-2 py-1 text-xs text-muted-foreground transition-colors hover:bg-warning/10 hover:text-warning"
+                        >
+                          <Flag className="h-3.5 w-3.5" />
+                          إبلاغ
                         </button>
                       )}
                     </div>

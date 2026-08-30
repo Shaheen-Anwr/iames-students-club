@@ -45,7 +45,9 @@ export class DashboardService {
       this.scheduleService.findForUser(user.userId),
       this.plannerService.findAllForOwner(user.userId),
       this.assignmentsService.findAll(1, 10, undefined, true, user.userId),
-      this.gamificationService.getLeaderboard(5),
+      // شعبة-scoped so the home leaderboard shows classmates the student is actually competing
+      // with (falls back to college-wide for a student with no شعبة set).
+      this.gamificationService.getLeaderboard(5, user.department),
       this.announcementsService.list(1, 3, user.department),
     ]);
 

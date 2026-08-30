@@ -27,8 +27,13 @@ export class WallPost {
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
   likes: Types.ObjectId[];
 
-  // Set when an admin hides a reported post -- hidden rows are dropped from every list() but kept
-  // for audit. `moderationNote` is admin-facing only.
+  // Distinct users who reported this post. At WALL_AUTO_HIDE_REPORTS the post auto-hides
+  // (moderationNote records it) until an admin reviews.
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  reports: Types.ObjectId[];
+
+  // Set on auto-hide (enough reports) or an explicit admin hide -- hidden rows are dropped from
+  // every list() but kept for audit. `moderationNote` is admin-facing only.
   @Prop({ type: Boolean, default: false, index: true })
   hidden: boolean;
 

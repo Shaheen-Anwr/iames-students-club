@@ -39,6 +39,16 @@ interface DigestUser {
   department: Department | null;
   academicYear: UserDocument['academicYear'];
   specialization: UserDocument['specialization'];
+  streakCount: number;
+  lastActiveDate: Date | null;
+}
+
+function isSameUtcDay(a: Date, b: Date): boolean {
+  return (
+    a.getUTCFullYear() === b.getUTCFullYear() &&
+    a.getUTCMonth() === b.getUTCMonth() &&
+    a.getUTCDate() === b.getUTCDate()
+  );
 }
 
 export interface DigestRunSummary {
@@ -82,7 +92,7 @@ export class DigestService {
         dailyDigestOptOut: { $ne: true },
         'pushSubscriptions.0': { $exists: true },
       })
-      .select('_id name department academicYear specialization')
+      .select('_id name department academicYear specialization streakCount lastActiveDate')
       .batchSize(200)
       .cursor();
 
@@ -98,6 +108,8 @@ export class DigestService {
         department: doc.department,
         academicYear: doc.academicYear,
         specialization: doc.specialization,
+        streakCount: doc.streakCount ?? 0,
+        lastActiveDate: doc.lastActiveDate ?? null,
       };
       try {
         const payload = await this.buildDigest(user, todayDow, frontendUrl, scheduleCache, announcementCache);
@@ -124,7 +136,7 @@ export class DigestService {
   async sendNow(userId: string): Promise<boolean> {
     const doc = await this.userModel
       .findById(userId)
-      .select('_id name department academicYear specialization')
+      .select('_id name department academicYear specialization streakCount lastActiveDate')
       .exec();
     if (!doc) return false;
 
@@ -134,6 +146,8 @@ export class DigestService {
       department: doc.department,
       academicYear: doc.academicYear,
       specialization: doc.specialization,
+      streakCount: doc.streakCount ?? 0,
+      lastActiveDate: doc.lastActiveDate ?? null,
     };
     const frontendUrl = this.config.get<string>('frontendUrl') ?? '';
     const payload = await this.buildDigest(user, new Date().getDay(), frontendUrl, new Map(), new Map());
@@ -156,7 +170,14 @@ export class DigestService {
       this.newAnnouncementsCountFor(user.department, announcementCache),
     ]);
 
-    if (todayClasses.length === 0 && dueSoon.count === 0 && newAnnouncements === 0) return null;
+    // Streak-at-risk: a running streak that hasn't been extended today. Worth a nudge on its own
+    // even when nothing else is on -- keeping the streak alive is the strongest daily-return hook.
+    const streakAtRisk =
+      user.streakCount > 0 && (!user.lastActiveDate || !isSameUtcDay(user.lastActiveDate, new Date()));
+
+    if (todayClasses.length === 0 && dueSoon.count === 0 && newAnnouncements === 0 && !streakAtRisk) {
+      return null;
+    }
 
     const firstName = user.name.split(' ')[0] || user.name;
     const parts: string[] = [];
@@ -183,6 +204,10 @@ export class DigestService {
 
     if (newAnnouncements > 0) {
       parts.push(newAnnouncements === 1 ? 'إعلان جديد' : `${newAnnouncements} إعلانات جديدة`);
+    }
+
+    if (streakAtRisk) {
+      parts.push(`🔥 سلسلتك ${user.streakCount} يومًا — سجّل نشاطًا اليوم للحفاظ عليها`);
     }
 
     return {
