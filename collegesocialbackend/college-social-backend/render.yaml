@@ -17,6 +17,11 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
+      # jsdom@30 (file converter) pulls undici@8, whose CacheStorage crashes on Node 20 with
+      # "webidl.util.markAsUncloneable is not a function". Pin Node 22 -- also set via
+      # .node-version and package.json "engines"; this is the explicit belt-and-braces for Render.
+      - key: NODE_VERSION
+        value: "22"
       - key: UPLOADS_DIR
         value: /var/data/uploads
       # Everything below must be filled in on the Render dashboard (Environment tab) --

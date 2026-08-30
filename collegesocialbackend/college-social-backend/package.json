@@ -4,7 +4,7 @@
   "description": "NestJS + MongoDB backend for a college-only social network (auth by college ID, chat, lecture/file/video sharing)",
   "private": true,
   "engines": {
-    "node": "20.x"
+    "node": "22.x"
   },
   "scripts": {
     "build": "nest build",
