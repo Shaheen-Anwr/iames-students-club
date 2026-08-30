@@ -63,6 +63,41 @@ export async function fetchAttachmentObjectUrl(postId: string, isRetry = false):
   return URL.createObjectURL(await res.blob());
 }
 
+// Fetches a converted file (see the backend's src/convert) and returns a short-lived blob: object
+// URL plus the server-set download filename. Same auth + refresh-on-401 discipline as
+// fetchAttachmentObjectUrl(); the caller owns the URL and must URL.revokeObjectURL() it.
+export async function fetchConversionObjectUrl(
+  id: string,
+  isRetry = false,
+): Promise<{ url: string; filename: string }> {
+  const token = getToken();
+  const headers = new Headers();
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+
+  const res = await fetch(`${API_URL}/convert/${id}/download`, { headers, credentials: 'include' });
+
+  if (res.status === 401 && !isRetry) {
+    try {
+      await refreshAccessToken();
+      return fetchConversionObjectUrl(id, true);
+    } catch {
+      clearToken();
+      // fall through -- report the original 401 below
+    }
+  }
+
+  if (!res.ok) {
+    throw new ApiError(res.status, `فشل تنزيل الملف المحوّل (${res.status})`);
+  }
+
+  const disposition = res.headers.get('Content-Disposition') ?? '';
+  const star = /filename\*=UTF-8''([^;]+)/i.exec(disposition);
+  const plain = /filename="?([^";]+)"?/i.exec(disposition);
+  const filename = star ? decodeURIComponent(star[1]) : plain ? plain[1] : 'converted';
+
+  return { url: URL.createObjectURL(await res.blob()), filename };
+}
+
 export class ApiError extends Error {
   status: number;
   constructor(status: number, message: string) {
@@ -426,4 +461,36 @@ export const api = {
     for (const file of prepared) formData.append('files', file);
     return uploadWithProgress<T>(path, formData, onProgress);
   },
+  // Uploads one or more documents to POST /api/convert. Returns { jobs: [{ id, cached, sourceName }] }
+  // immediately -- the conversion runs in the background; poll api.get('/convert/jobs?ids=...').
+  convert: async <T>(files: File[], target: string, onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f);
+    formData.append('target', target);
+    return uploadWithProgress<T>('/convert', formData, onProgress);
+  },
 };
+
+// Fetches a ZIP of several finished conversions and returns a blob: URL for it (auth +
+// refresh-on-401). The caller owns the URL and must URL.revokeObjectURL() it.
+export async function fetchConversionsZip(ids: string[], isRetry = false): Promise<string> {
+  const token = getToken();
+  const headers = new Headers({ 'Content-Type': 'application/json' });
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  const res = await fetch(`${API_URL}/convert/download-zip`, {
+    method: 'POST',
+    headers,
+    credentials: 'include',
+    body: JSON.stringify({ ids }),
+  });
+  if (res.status === 401 && !isRetry) {
+    try {
+      await refreshAccessToken();
+      return fetchConversionsZip(ids, true);
+    } catch {
+      clearToken();
+    }
+  }
+  if (!res.ok) throw new ApiError(res.status, `فشل تجهيز الملف المضغوط (${res.status})`);
+  return URL.createObjectURL(await res.blob());
+}

@@ -170,6 +170,39 @@ export interface LectureFolder {
   createdAt: string;
 }
 
+export interface LectureFlashcard {
+  front: string;
+  back: string;
+}
+
+export interface LectureQuizItem {
+  question: string;
+  options: string[];
+  answerIndex: number;
+  explanation: string;
+}
+
+export interface LectureGlossaryEntry {
+  term: string;
+  definition: string;
+}
+
+// AI-generated study aids for one lecture PDF -- see the backend's LectureStudyToolsService.
+// Generated once on demand, then cached + shared for everyone who opens that lecture.
+export interface LectureStudyKit {
+  _id: string;
+  post: string;
+  courseCode: string | null;
+  overview: string;
+  keyPoints: string[];
+  glossary: LectureGlossaryEntry[];
+  flashcards: LectureFlashcard[];
+  quiz: LectureQuizItem[];
+  model: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface PaginatedPosts {
   data: Post[];
   total: number;
@@ -796,13 +829,14 @@ export type NotificationType =
   | 'reel_comment'
   | 'reel_comment_reply'
   | 'reel_mention'
-  // Platform/department announcement broadcast -- actor-less; renders from `title`/`preview`.
+  // Platform/department announcement broadcast -- `actor` is the announcement's author,
+  // `title` the headline. Legacy rows predating the author carry a null actor.
   | 'system_announcement';
 
 export interface Notification {
   _id: string;
   recipient: string;
-  // null when the actor's account has since been deleted, or for actor-less system broadcasts.
+  // null when the actor's account has since been deleted, or for legacy actor-less system broadcasts.
   actor: User | null;
   type: NotificationType;
   conversationId?: string | null;
@@ -990,4 +1024,95 @@ export interface AttendanceCourseSummary {
 export interface AttendanceSummary {
   courses: AttendanceCourseSummary[];
   overall: AttendanceCourseSummary;
+}
+
+// --- File converter / محوّل الملفات (src/convert) -- PDF / Word / PowerPoint / Excel only ---
+
+export type ConvertExt = 'pdf' | 'docx' | 'pptx' | 'xlsx';
+
+export interface ConvertFormatMeta {
+  ext: ConvertExt;
+  label: string; // "PDF" | "Word" | "PowerPoint" | "Excel"
+}
+
+export interface ConvertCapabilities {
+  maxSizeMb: number;
+  historyTtlHours: number;
+  maxParallel: number;
+  targets: ConvertExt[];
+  // source extension -> list of extensions it can be converted to
+  matrix: Record<string, ConvertExt[]>;
+  formats: ConvertFormatMeta[];
+}
+
+export type ConversionStatus = 'queued' | 'processing' | 'done' | 'failed';
+
+// A conversion job (POST /convert returns these; GET /convert/jobs + /history poll them).
+export interface ConversionRecord {
+  id: string;
+  sourceName: string;
+  sourceFormat: string;
+  targetFormat: string;
+  filename: string;
+  status: ConversionStatus;
+  progress: number; // 0-100
+  stage: string;
+  cached: boolean;
+  sizeBytes: number;
+  error: string | null;
+  createdAt: string;
+  expiresAt: string;
+}
+
+// --- السوق (student marketplace) -- شعبة-scoped listings (src/marketplace) ---
+
+export type ListingCategory = 'books' | 'electronics' | 'notes' | 'supplies' | 'other';
+export type ListingStatus = 'available' | 'reserved' | 'sold';
+
+export interface MarketplaceListing {
+  _id: string;
+  title: string;
+  description: string;
+  price: number;
+  category: ListingCategory;
+  status: ListingStatus;
+  department: Department | null;
+  mine: boolean;
+  seller: { _id: string; name: string; photoUrl: string | null } | null;
+  createdAt: string;
+}
+
+// --- الفعاليات (campus events & clubs) -- شعبة-scoped, RSVP (src/events) ---
+
+export interface CampusEvent {
+  _id: string;
+  title: string;
+  description: string;
+  location: string;
+  organizer: string;
+  startsAt: string;
+  endsAt: string | null;
+  department: Department | null;
+  capacity: number | null;
+  attendeeCount: number;
+  going: boolean;
+  mine: boolean;
+  full: boolean;
+  createdBy: { _id: string; name: string; photoUrl: string | null; role: string } | null;
+  createdAt: string;
+}
+
+// --- الجدار (campus wall) -- anonymous, AI-moderated, شعبة-scoped (src/wall) ---
+
+export interface WallPost {
+  _id: string;
+  // Stable one-way pseudonym -- same author always maps to the same hash, never reversible.
+  authorHash: string;
+  department: Department | null;
+  body: string;
+  likeCount: number;
+  liked: boolean;
+  // True when the signed-in user is this post's (anonymous) author.
+  mine: boolean;
+  createdAt: string;
 }

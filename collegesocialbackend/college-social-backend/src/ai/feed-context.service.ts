@@ -18,13 +18,28 @@ export class FeedContextService {
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
   ) {}
 
-  // Same visibility rule as PostsService.search(): a department-scoped post never surfaces to a
-  // viewer outside that department.
+  // A viewer WITH a شعبة only sees a public post carrying their own شعبة tag or none at all
+  // (college-wide); a viewer with no department sees every public post. Mirrors
+  // PostsService.feed()/search()'s "عام" scoping so the AI assistant never surfaces another
+  // شعبة's post the user themselves can't see. 'department' posts stay strictly own-شعبة.
+  private publicVisibleToViewer(
+    postDepartment: Department | null | undefined,
+    viewerDepartment?: Department | null,
+  ): boolean {
+    return !viewerDepartment || postDepartment == null || postDepartment === viewerDepartment;
+  }
+
+  // Same visibility rule as PostsService.search().
   async searchPosts(query: string, viewerDepartment?: Department | null): Promise<PostDocument[]> {
     return this.postModel
       .find({
         $text: { $search: query },
-        $or: [{ scope: PostScope.PUBLIC }, { scope: PostScope.DEPARTMENT, department: viewerDepartment ?? null }],
+        $or: [
+          viewerDepartment
+            ? { scope: PostScope.PUBLIC, department: { $in: [viewerDepartment, null] } }
+            : { scope: PostScope.PUBLIC },
+          { scope: PostScope.DEPARTMENT, department: viewerDepartment ?? null },
+        ],
       })
       .limit(MAX_MATCHES)
       .exec();
@@ -38,7 +53,9 @@ export class FeedContextService {
   async getThread(postId: string, viewerDepartment?: Department | null): Promise<{ post: PostDocument; comments: CommentDocument[] } | null> {
     const post = await this.postModel.findById(postId).exec();
     if (!post) return null;
-    const visible = post.scope === PostScope.PUBLIC || (post.scope === PostScope.DEPARTMENT && post.department === (viewerDepartment ?? null));
+    const visible =
+      (post.scope === PostScope.PUBLIC && this.publicVisibleToViewer(post.department, viewerDepartment)) ||
+      (post.scope === PostScope.DEPARTMENT && post.department === (viewerDepartment ?? null));
     if (!visible) return null;
 
     const comments = await this.commentModel
@@ -62,7 +79,7 @@ export class FeedContextService {
       .filter((comment) => {
         const post = comment.post as unknown as Pick<Post, 'scope' | 'department'> | null;
         if (!post) return false;
-        if (post.scope === PostScope.PUBLIC) return true;
+        if (post.scope === PostScope.PUBLIC) return this.publicVisibleToViewer(post.department, viewerDepartment);
         return post.scope === PostScope.DEPARTMENT && post.department === (viewerDepartment ?? null);
       })
       .slice(0, MAX_MATCHES);

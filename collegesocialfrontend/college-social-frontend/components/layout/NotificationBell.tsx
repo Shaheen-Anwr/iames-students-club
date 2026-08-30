@@ -24,8 +24,9 @@ export const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   reel_comment: 'علّق على الريل الخاص بك',
   reel_comment_reply: 'رد على تعليقك',
   reel_mention: 'أشار إليك في ريل',
-  // Actor-less: the row renders the announcement title itself, not "<name> <label>".
-  system_announcement: 'إعلان جديد',
+  // Rendered as "<author name> نشر إعلانًا", with the announcement title on the line below.
+  // Legacy rows written before the author was carried fall back to showing the title alone.
+  system_announcement: 'نشر إعلانًا',
 };
 
 export const NOTIFICATION_ICONS: Record<Notification['type'], React.ComponentType<{ className?: string }>> = {
@@ -124,6 +125,8 @@ export function NotificationBell() {
               notifications.map((notification) => {
                 const Icon = NOTIFICATION_ICONS[notification.type];
                 const isSystem = notification.type === 'system_announcement';
+                // Legacy system rows written before the announcement's author was carried.
+                const systemNoActor = isSystem && !notification.actor;
                 return (
                   <button
                     key={notification._id}
@@ -133,7 +136,7 @@ export function NotificationBell() {
                       !notification.read && 'bg-accent/5',
                     )}
                   >
-                    {isSystem ? (
+                    {systemNoActor ? (
                       <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
                         <Megaphone className="h-4 w-4" />
                       </span>
@@ -142,7 +145,7 @@ export function NotificationBell() {
                     )}
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-sm text-foreground">
-                        {isSystem ? (
+                        {systemNoActor ? (
                           <span className="font-medium">{notification.title ?? NOTIFICATION_LABELS.system_announcement}</span>
                         ) : (
                           <>
@@ -151,8 +154,10 @@ export function NotificationBell() {
                           </>
                         )}
                       </p>
-                      {notification.preview && (
-                        <p className="truncate text-xs text-muted-foreground">{notification.preview}</p>
+                      {(isSystem && !systemNoActor ? notification.title : notification.preview) && (
+                        <p className="truncate text-xs text-muted-foreground">
+                          {isSystem && !systemNoActor ? notification.title : notification.preview}
+                        </p>
                       )}
                       <p className="mt-0.5 text-[11px] text-muted-foreground">{timeAgo(notification.createdAt)}</p>
                     </div>

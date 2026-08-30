@@ -14,6 +14,15 @@ export type AiStreamChunk =
   | { type: 'text'; delta: string; stub?: boolean }
   | { type: 'tool_calls'; calls: AiToolCall[] };
 
+// Thrown by completeJson() when no AI_API_KEY is set -- callers map this to a 503 so the UI can
+// show a "not configured yet" notice instead of a generic failure.
+export class AiNotConfiguredError extends Error {
+  constructor() {
+    super('AI is not configured (AI_API_KEY unset)');
+    this.name = 'AiNotConfiguredError';
+  }
+}
+
 export const SYSTEM_PROMPT =
   'أنت مساعد ذكي متكامل لطلاب الأكاديمية، يمكنك الإجابة عن الأسئلة وأيضًا تنفيذ إجراءات فعلية على المنصة نيابة عن الطالب عند الحاجة: ' +
   'إدارة مهامه في المخطط الشخصي (planner) والواجبات، البحث في المنشورات والأسئلة والمجموعات، وإرسال رسائل دردشة نيابة عنه عند طلبه ذلك صراحة. ' +
@@ -49,6 +58,68 @@ export class AiService {
       // exactly one retry layer, fully under this code's control.
       this.client = new OpenAI({ apiKey, baseURL: baseUrl, timeout: REQUEST_TIMEOUT_MS, maxRetries: 0 });
     }
+  }
+
+  /** True once AI_API_KEY is set -- callers gate expensive batch work (study kits) on this. */
+  get isConfigured(): boolean {
+    return this.client !== null;
+  }
+
+  /** The configured provider model id -- stored alongside generated artefacts for disclosure. */
+  get modelName(): string {
+    return this.model;
+  }
+
+  /**
+   * One-shot, non-streamed completion constrained to a single JSON object. For batch generators
+   * (lecture study kits) -- NOT the chat path. Throws AiNotConfiguredError when no key is set so
+   * the caller can surface a 503; retries once with a "JSON only" nudge on a transport/parse
+   * failure, then throws. Timeout is per-request (`timeoutMs`) since these prompts run longer
+   * than the 20s chat default.
+   */
+  async completeJson<T>(
+    system: string,
+    user: string,
+    opts: { maxTokens?: number; temperature?: number; timeoutMs?: number } = {},
+  ): Promise<T> {
+    if (!this.client) throw new AiNotConfiguredError();
+
+    const base: OpenAI.Chat.ChatCompletionMessageParam[] = [
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ];
+    const timeout = opts.timeoutMs ?? 40_000;
+    let lastErr: unknown;
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const messages =
+        attempt === 0
+          ? base
+          : [
+              ...base,
+              { role: 'system' as const, content: 'أعد كائن JSON صالحًا فقط، دون أي نص إضافي قبله أو بعده.' },
+            ];
+      try {
+        const res = await this.client.chat.completions.create(
+          {
+            model: this.model,
+            messages,
+            temperature: opts.temperature ?? 0.4,
+            max_tokens: opts.maxTokens ?? 2400,
+            response_format: { type: 'json_object' },
+            stream: false,
+          },
+          { timeout },
+        );
+        const content = res.choices[0]?.message?.content ?? '';
+        return JSON.parse(content) as T;
+      } catch (err) {
+        lastErr = err;
+        this.logger.warn(`completeJson attempt ${attempt + 1}/2 failed: ${(err as Error).message}`);
+        await new Promise((resolve) => setTimeout(resolve, 500 * (attempt + 1)));
+      }
+    }
+    throw lastErr instanceof Error ? lastErr : new Error('completeJson failed');
   }
 
   // Streams one completion turn. `tools` may be empty (plain Q&A, or the final forced round after

@@ -71,3 +71,10 @@ services:
         sync: false
       - key: VAPID_SUBJECT
         value: mailto:admin@example.com
+      # محوّل الملفات (src/convert) high-accuracy engine -- Adobe PDF Services OAuth Server-to-Server
+      # credentials. Optional: unset -> conversions use the local Poppler/LibreOffice/pdfkit
+      # pipeline. Set both -> every conversion routes through Adobe (free tier 500 docs/month).
+      - key: PDF_SERVICES_CLIENT_ID
+        sync: false
+      - key: PDF_SERVICES_CLIENT_SECRET
+        sync: false

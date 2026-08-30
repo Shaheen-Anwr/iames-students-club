@@ -178,7 +178,7 @@ export function AiFab() {
           }`}
         >
           <div className="h-[2px] w-full shrink-0 bg-gradient-accent" />
-          <div className="flex items-center justify-between border-b border-border px-4 py-3">
+          <div className="flex shrink-0 items-center justify-between border-b border-border px-4 py-3">
             <div className="flex items-center gap-2">
               <div className="relative flex h-7 w-7 items-center justify-center rounded-full bg-gradient-accent text-white">
                 <AiAvatar size={20} />
@@ -204,7 +204,9 @@ export function AiFab() {
               </Link>
             </div>
           </div>
-          <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+          <div className="min-h-0 flex-1">
+            <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+          </div>
         </div>
       )}
     </>

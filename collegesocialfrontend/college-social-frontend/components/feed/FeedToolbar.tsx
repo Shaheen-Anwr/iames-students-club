@@ -92,13 +92,15 @@ export function FeedToolbar({
 }) {
   const [filterSheetOpen, setFilterSheetOpen] = useState(false);
 
-  // The department filter only matters on the "عام" tab -- the "قسمي" tab is already locked
-  // server-side to the viewer's own department, so a department picker there would do nothing.
-  const showDepartmentFilter = scope === 'public';
-  // On the "قسمي" tab there's no department filter to read from, but the year/specialization
-  // options still need to match the viewer's own department (e.g. business admin tops out at
-  // year 4 and only offers its own 3 majors) rather than defaulting to "all departments".
-  const effectiveDepartment = showDepartmentFilter ? department : viewerDepartment ?? '';
+  // Both feed tabs are now locked server-side to the viewer's own شعبة (the "عام" tab shows their
+  // شعبة's public + college-wide posts, "قسمي" its department posts), so a شعبة picker would do
+  // nothing for them. It only still appears for a viewer with NO department (staff/admin), whose
+  // "عام" feed stays cross-شعبة and needs a way to narrow it.
+  const showDepartmentFilter = scope === 'public' && !viewerDepartment;
+  // The year/specialization options follow the viewer's own شعبة when they have one (e.g. business
+  // admin tops out at year 4 and only offers its own 3 majors); otherwise the picked شعبة filter,
+  // or "all departments" when nothing is picked.
+  const effectiveDepartment = viewerDepartment ?? (showDepartmentFilter ? department : '');
   const academicYearOptions = effectiveDepartment ? getAcademicYearsForDepartment(effectiveDepartment) : ACADEMIC_YEARS;
   const specializationOptions = effectiveDepartment ? SPECIALIZATIONS_BY_DEPARTMENT[effectiveDepartment] : [];
 

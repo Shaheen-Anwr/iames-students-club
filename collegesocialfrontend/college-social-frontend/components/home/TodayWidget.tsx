@@ -8,6 +8,7 @@ import { CalendarClock, CheckCircle2, Circle, Clock3, MapPin } from 'lucide-reac
 import { Card } from '@/components/ui/Card';
 import { Badge } from '@/components/ui/Badge';
 import { SectionHeader } from '@/components/ui/SectionHeader';
+import { SwipeableRow } from '@/components/ui/SwipeableRow';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
@@ -139,8 +140,12 @@ export function TodayWidget({ schedule, dueToday }: { schedule: ScheduleEntry[];
                 const canToggle = item.type === 'planner' || !isTeachingStaff;
 
                 return (
-                  <div
+                  <SwipeableRow
                     key={key}
+                    disabled={!canToggle || done}
+                    action={{ icon: CheckCircle2, label: 'وضع علامة كمُنجزة', tone: 'success', onAction: () => handleComplete(item) }}
+                  >
+                  <div
                     className={cn(
                       'flex items-center gap-3 rounded-xl bg-surface-2/60 px-3 py-2.5 transition-all duration-300',
                       URGENCY_BORDER[item.urgency],
@@ -173,6 +178,7 @@ export function TodayWidget({ schedule, dueToday }: { schedule: ScheduleEntry[];
                     </Link>
                     {badge && !done && <Badge variant={badge.variant}>{badge.label}</Badge>}
                   </div>
+                  </SwipeableRow>
                 );
               })}
             </div>

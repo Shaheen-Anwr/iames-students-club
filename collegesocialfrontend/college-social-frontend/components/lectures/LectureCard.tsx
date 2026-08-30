@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Maximize2, Trash2 } from 'lucide-react';
+import { Maximize2, Sparkles, Trash2 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { ConfirmModal } from '@/components/ui/ConfirmModal';
 import {
@@ -16,6 +16,7 @@ import { SPECIALIZATION_LABELS } from '@/lib/specializations';
 import { assetUrl, timeAgo } from '@/lib/utils';
 import type { Post } from '@/lib/types';
 import { LecturePdfLightbox } from './LecturePdfLightbox';
+import { LectureStudyToolsModal } from './LectureStudyToolsModal';
 
 export function LectureCard({
   post,
@@ -27,6 +28,7 @@ export function LectureCard({
   const { user } = useAuth();
 
   const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [studyOpen, setStudyOpen] = useState(false);
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false);
   const [deleteBusy, setDeleteBusy] = useState(false);
 
@@ -78,14 +80,24 @@ export function LectureCard({
         </div>
 
         {canFocus && (
-          <button
-            type="button"
-            onClick={() => setLightboxOpen(true)}
-            title="فتح في وضع القراءة"
-            className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-accent"
-          >
-            <Maximize2 className="h-4 w-4" />
-          </button>
+          <>
+            <button
+              type="button"
+              onClick={() => setStudyOpen(true)}
+              title="أدوات المذاكرة (ذكاء اصطناعي)"
+              className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-accent/10 hover:text-accent"
+            >
+              <Sparkles className="h-4 w-4" />
+            </button>
+            <button
+              type="button"
+              onClick={() => setLightboxOpen(true)}
+              title="فتح في وضع القراءة"
+              className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-accent"
+            >
+              <Maximize2 className="h-4 w-4" />
+            </button>
+          </>
         )}
 
         {isAuthor && (
@@ -148,6 +160,15 @@ export function LectureCard({
             post.caption ??
             'معاينة PDF'
           }
+        />
+      )}
+
+      {canFocus && (
+        <LectureStudyToolsModal
+          open={studyOpen}
+          onClose={() => setStudyOpen(false)}
+          postId={post._id}
+          title={post.caption || post.attachmentOriginalName || 'محاضرة'}
         />
       )}
 

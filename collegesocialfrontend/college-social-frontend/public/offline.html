@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <title>غير متصل</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100dvh;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        padding: 24px;
+        font-family: 'IBM Plex Sans Arabic', 'Tahoma', system-ui, -apple-system, sans-serif;
+        background: #f7f8fc;
+        color: #141521;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background: #0b0c12; color: #eaebf3; }
+        .card { background: #14151f !important; border-color: #2a2d3e !important; }
+        .btn { background: #837aff !important; }
+      }
+      .card {
+        width: 100%;
+        max-width: 360px;
+        text-align: center;
+        background: #fff;
+        border: 1px solid #e0e3ee;
+        border-radius: 20px;
+        padding: 32px 24px;
+        box-shadow: 0 16px 40px -12px rgba(20, 22, 43, 0.15);
+      }
+      .icon {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 16px;
+        border-radius: 16px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        background: rgba(131, 122, 255, 0.14);
+        color: #5a50e0;
+        font-size: 26px;
+      }
+      h1 { font-size: 18px; margin: 0 0 8px; }
+      p { font-size: 14px; line-height: 1.6; margin: 0 0 20px; opacity: 0.7; }
+      .btn {
+        display: inline-block;
+        border: 0;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 600;
+        color: #fff;
+        background: #5a50e0;
+        border-radius: 12px;
+        padding: 10px 22px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="card">
+      <div class="icon">📡</div>
+      <h1>أنت غير متصل بالإنترنت</h1>
+      <p>تعذّر تحميل هذه الصفحة. تحقّق من اتصالك ثم أعد المحاولة — الصفحات التي زرتها سابقًا لا تزال متاحة.</p>
+      <button class="btn" onclick="location.reload()">إعادة المحاولة</button>
+    </div>
+  </body>
+</html>

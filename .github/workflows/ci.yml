@@ -1,0 +1,78 @@
+# Type-checks both packages on every push / PR to main. This is the cheap, high-signal gate --
+# it catches exactly the class of breakage that "tsc --noEmit" would locally, without needing a
+# full `next build` (blocked in CI-less-network setups by next/font's Google Fonts fetch) or a
+# running MongoDB.
+#
+# Playwright E2E is a separate, heavier job -- see the (commented) `e2e` job at the bottom; it
+# needs `@playwright/test` added as a devDependency in the frontend first.
+
+name: ci
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck-frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: collegesocialfrontend/college-social-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: collegesocialfrontend/college-social-frontend/package-lock.json
+      - run: npm ci
+      - name: tsc --noEmit
+        run: npx tsc --noEmit
+      - name: next lint
+        run: npx next lint --max-warnings=0
+        continue-on-error: true # no eslint config in the repo yet -- informational until one lands
+
+  typecheck-backend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: collegesocialbackend/college-social-backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: collegesocialbackend/college-social-backend/package-lock.json
+      - run: npm ci
+      - name: tsc --noEmit
+        run: npx tsc --noEmit -p tsconfig.json
+      - name: nest build
+        run: npm run build
+
+  # --- E2E (opt-in) -----------------------------------------------------------
+  # Uncomment after: cd collegesocialfrontend/college-social-frontend
+  #                  npm i -D @playwright/test && npx playwright install --with-deps
+  # and once e2e/*.spec.ts are filled in (a smoke scaffold lives at e2e/smoke.spec.ts).
+  #
+  # e2e:
+  #   runs-on: ubuntu-latest
+  #   timeout-minutes: 20
+  #   defaults:
+  #     run:
+  #       working-directory: collegesocialfrontend/college-social-frontend
+  #   steps:
+  #     - uses: actions/checkout@v4
+  #     - uses: actions/setup-node@v4
+  #       with: { node-version: 20, cache: npm, cache-dependency-path: collegesocialfrontend/college-social-frontend/package-lock.json }
+  #     - run: npm ci
+  #     - run: npx playwright install --with-deps chromium
+  #     - run: npx playwright test

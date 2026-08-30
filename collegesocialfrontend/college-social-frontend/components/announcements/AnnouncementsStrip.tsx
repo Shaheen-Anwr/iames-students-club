@@ -4,10 +4,11 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { Megaphone, Pin, Plus } from 'lucide-react';
+import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { cn, timeAgo } from '@/lib/utils';
+import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import type { Announcement } from '@/lib/types';
 import { CreateAnnouncementModal } from './CreateAnnouncementModal';
 
@@ -68,9 +69,12 @@ export function AnnouncementsStrip() {
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-medium text-foreground">{a.title}</p>
                 <p className="line-clamp-2 text-xs text-muted-foreground">{a.body}</p>
-                <p className="mt-0.5 text-[11px] text-muted-foreground">
-                  {a.author?.name ?? 'مستخدم محذوف'} · {timeAgo(a.createdAt)}
-                </p>
+                <div className="mt-1 flex items-center gap-1.5">
+                  <Avatar src={assetUrl(a.author?.photoUrl)} name={a.author?.name ?? '؟'} size="xs" />
+                  <p className="text-[11px] text-muted-foreground">
+                    {a.author?.name ?? 'مستخدم محذوف'} · {timeAgo(a.createdAt)}
+                  </p>
+                </div>
               </div>
             </div>
           ))}

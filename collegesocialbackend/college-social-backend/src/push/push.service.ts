@@ -51,6 +51,20 @@ export class PushService {
     await this.userModel.updateOne({ _id: userId }, { $pull: { pushSubscriptions: { endpoint } } }).exec();
   }
 
+  // --- Notification preferences ---
+  // `dailyDigest` is stored inverted, as `dailyDigestOptOut`, so an existing user (field absent)
+  // defaults to opted-in. See DigestService for the digest itself.
+
+  async getDigestPreference(userId: string): Promise<{ dailyDigest: boolean }> {
+    const user = await this.userModel.findById(userId).select('dailyDigestOptOut').lean().exec();
+    return { dailyDigest: !(user?.dailyDigestOptOut ?? false) };
+  }
+
+  async setDigestPreference(userId: string, dailyDigest: boolean): Promise<{ dailyDigest: boolean }> {
+    await this.userModel.updateOne({ _id: userId }, { $set: { dailyDigestOptOut: !dailyDigest } }).exec();
+    return { dailyDigest };
+  }
+
   // Never throws -- a push failure must never break the in-app notification path that calls it.
   async sendToUser(userId: string, payload: PushPayload): Promise<void> {
     if (!this.enabled) return;

@@ -13,7 +13,10 @@ export type UploadCategory =
   | 'videos'
   | 'audio'
   | 'chat-backgrounds'
-  | 'group-photos';
+  | 'group-photos'
+  // Source files for محوّل الملفات (see src/convert). Never uploaded to Cloudinary -- the temp
+  // file is read, converted in-process, and deleted; the converted output is written to disk.
+  | 'conversions';
 
 const ALLOWED_MIME_BY_CATEGORY: Record<UploadCategory, RegExp> = {
   photos: /^image\/(jpe?g|png|webp|gif)$/,
@@ -26,6 +29,11 @@ const ALLOWED_MIME_BY_CATEGORY: Record<UploadCategory, RegExp> = {
   videos: /^video\/(mp4|quicktime|x-matroska|webm)$/,
   // Covers both regular audio files and recorded voice notes (MediaRecorder typically emits webm/ogg).
   audio: /^audio\/(mpeg|mp4|wav|webm|ogg|x-m4a)$/,
+  // محوّل الملفات: PDF + the three OOXML office types only. octet-stream / zip are allowed because
+  // browsers frequently mislabel .docx/.pptx/.xlsx that way -- ConvertService re-validates by
+  // extension against the supported matrix.
+  conversions:
+    /^application\/(pdf|zip|octet-stream|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet))$/,
 };
 
 // The actual per-asset ceiling the connected Cloudinary account's plan enforces on its own servers
@@ -44,6 +52,7 @@ export const CLOUDINARY_ASSET_CAP_MB: Record<UploadCategory, number> = {
   files: 10,
   videos: 100,
   audio: 100,
+  conversions: 25, // unused (never hits Cloudinary) -- kept so the Record stays exhaustive
 };
 
 // Categories StorageService knows how to transparently split into multiple sub-cap Cloudinary
@@ -70,6 +79,7 @@ const SIZE_LIMIT_MB_BY_CATEGORY: Record<UploadCategory, { envKey: string; defaul
   files: { envKey: 'MAX_GENERIC_FILE_SIZE_MB', defaultMb: 200 }, // chunked
   videos: { envKey: 'MAX_VIDEO_SIZE_MB', defaultMb: 1024 }, // lecture recordings -- chunked
   audio: { envKey: 'MAX_AUDIO_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB.audio },
+  conversions: { envKey: 'MAX_CONVERSION_SIZE_MB', defaultMb: 25 }, // source doc for محوّل الملفات -- not chunked
 };
 
 function parsePositiveInt(value: string | undefined): number | null {

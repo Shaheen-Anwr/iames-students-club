@@ -91,11 +91,14 @@ export class PostsController {
   }
 
   // GET /api/posts/lectures?type=lecture|video&department=&academicYear=&specialization=&courseCode=&q=&page=&limit=
-  // The PDF/video lecture library (components/lectures/) -- always public, browsable/filterable
-  // by anyone regardless of their own department (see PostsService.browseAttachments()).
-  // NOTE: must stay above @Get(':id') or it gets swallowed as an id lookup.
+  // The PDF/video lecture library (components/lectures/) -- always public, but department-scoped to
+  // the viewer's own شعبة when they have one (an explicit `department` is ignored for such a
+  // viewer); a departmentless viewer can still browse/filter every شعبة. See
+  // PostsService.browseAttachments(). NOTE: must stay above @Get(':id') or it gets swallowed as an
+  // id lookup.
   @Get('lectures')
   async browseAttachments(
+    @CurrentUser() user: AuthenticatedUser,
     @Query('type') type: 'lecture' | 'video',
     @Query('department') department?: Department,
     @Query('academicYear') academicYear?: AcademicYear,
@@ -110,6 +113,7 @@ export class PostsController {
       { department, academicYear, specialization, courseCode, q },
       Number(page) || 1,
       Number(limit) || 20,
+      user.department,
     );
   }
 

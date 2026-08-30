@@ -1,6 +1,7 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { LectureChunk, LectureChunkSchema } from './schemas/lecture-chunk.schema';
+import { LectureStudyKit, LectureStudyKitSchema } from './schemas/lecture-study-kit.schema';
 import { AiConversation, AiConversationSchema } from './schemas/ai-conversation.schema';
 import { AiMessage, AiMessageSchema } from './schemas/ai-message.schema';
 import { AiMemoryFact, AiMemoryFactSchema } from './schemas/ai-memory-fact.schema';
@@ -8,6 +9,7 @@ import { Post, PostSchema } from '../posts/schemas/post.schema';
 import { Comment, CommentSchema } from '../posts/schemas/comment.schema';
 import { LectureIndexService } from './lecture-index.service';
 import { LectureSearchService } from './lecture-search.service';
+import { LectureStudyToolsService } from './lecture-study-tools.service';
 import { FeedContextService } from './feed-context.service';
 import { ScheduleContextService } from './schedule-context.service';
 import { AiService } from './ai.service';
@@ -28,6 +30,7 @@ import { AssignmentsModule } from '../assignments/assignments.module';
   imports: [
     MongooseModule.forFeature([
       { name: LectureChunk.name, schema: LectureChunkSchema },
+      { name: LectureStudyKit.name, schema: LectureStudyKitSchema },
       { name: AiConversation.name, schema: AiConversationSchema },
       { name: AiMessage.name, schema: AiMessageSchema },
       { name: AiMemoryFact.name, schema: AiMemoryFactSchema },
@@ -53,6 +56,7 @@ import { AssignmentsModule } from '../assignments/assignments.module';
   providers: [
     LectureIndexService,
     LectureSearchService,
+    LectureStudyToolsService,
     FeedContextService,
     ScheduleContextService,
     AiService,
@@ -60,6 +64,6 @@ import { AssignmentsModule } from '../assignments/assignments.module';
     AiMemoryService,
     AiConversationsService,
   ],
-  exports: [LectureIndexService, AiConversationsService],
+  exports: [LectureIndexService, AiConversationsService, AiService],
 })
 export class AiModule {}

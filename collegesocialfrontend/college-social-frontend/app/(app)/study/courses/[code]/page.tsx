@@ -1,9 +1,9 @@
 'use client';
 
 import { useParams } from 'next/navigation';
-import { CoursePostsList } from '@/components/study/CoursePostsList';
+import { CourseHubDetail } from '@/components/study/CourseHubDetail';
 
 export default function StudyCoursePage() {
   const { code } = useParams<{ code: string }>();
-  return <CoursePostsList courseCode={decodeURIComponent(code)} />;
+  return <CourseHubDetail courseCode={decodeURIComponent(code)} />;
 }

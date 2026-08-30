@@ -204,10 +204,18 @@ export class PostsService {
       }
       if (filters?.department) filter.department = filters.department;
     } else {
-      // Main "عام" feed -- public posts for everyone, plus the two audience-restricted kinds the
-      // viewer is entitled to: 'friends' posts authored by someone they're friends with, and
-      // their own 'friends'/'private' posts. 'department' stays out of this tab (it has its own).
-      const or: Record<string, unknown>[] = [{ scope: PostScope.PUBLIC }];
+      // Main "عام" feed -- public posts, plus the two audience-restricted kinds the viewer is
+      // entitled to: 'friends' posts authored by someone they're friends with, and their own
+      // 'friends'/'private' posts. 'department' stays out of this tab (it has its own).
+      //
+      // A viewer WITH a شعبة (department) only sees public posts from their own شعبة here -- across
+      // every academic year/specialization -- plus college-wide posts that carry no department tag
+      // at all (admin announcements, posts by staff with no department). Another شعبة's public
+      // posts never surface. A viewer with no department (staff/admin) is unrestricted; there's no
+      // شعبة to scope them to.
+      const publicPosts: Record<string, unknown> = { scope: PostScope.PUBLIC };
+      if (viewerDepartment) publicPosts.department = { $in: [viewerDepartment, null] };
+      const or: Record<string, unknown>[] = [publicPosts];
       if (viewerId) {
         const friendObjectIds = (await this.usersService.getFriendIds(viewerId)).map((id) => new Types.ObjectId(id));
         or.push({ scope: PostScope.FRIENDS, author: { $in: friendObjectIds } });
@@ -232,17 +240,24 @@ export class PostsService {
   }
 
   // The PDF/video lecture library (components/lectures/): always scope='public' by design (see
-  // Post.department's comment) -- department/academicYear/specialization/courseCode are pure
-  // filter tags here, not access control, so unlike feed()/search() there's no viewer-department
-  // restriction: anyone can browse anyone's uploaded lecture regardless of their own department.
+  // Post.department's comment). academicYear/specialization/courseCode are pure filter tags here,
+  // but department is scoped the same way feed()/search() are: a viewer WITH a شعبة only browses
+  // their own شعبة's material (plus untagged/college-wide uploads), never another شعبة's -- an
+  // explicit filters.department is honored only while it matches. A viewer with no department
+  // (staff/admin) keeps the old cross-شعبة browse and can filter by any department.
   async browseAttachments(
     attachmentType: 'lecture' | 'video',
     filters: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization; courseCode?: string; q?: string },
     page = 1,
     limit = 20,
+    viewerDepartment?: Department | null,
   ): Promise<PostDocument[]> {
     const filter: Record<string, unknown> = { attachmentType, scope: PostScope.PUBLIC };
-    if (filters.department) filter.department = filters.department;
+    if (viewerDepartment) {
+      filter.department = { $in: [viewerDepartment, null] };
+    } else if (filters.department) {
+      filter.department = filters.department;
+    }
     if (filters.academicYear) filter.academicYear = filters.academicYear;
     if (filters.specialization) filter.specialization = filters.specialization;
     if (filters.courseCode) filter.courseCode = filters.courseCode;
@@ -257,13 +272,26 @@ export class PostsService {
       .exec();
   }
 
-  // Used by SearchService -- $text search over caption, scoped the same way the feed is (a
-  // department-scoped post never surfaces to a viewer outside that department).
+  // The scope filter shared by search()/searchByHashtag(), mirroring PostsService.feed()'s "عام"
+  // branch: a viewer WITH a شعبة (department) matches a public post only when it carries their own
+  // شعبة tag or none at all (college-wide), and a 'department' post only within their own شعبة; a
+  // viewer with no department matches every public post. 'friends'/'private' never surface here.
+  private visibilityOr(viewerDepartment?: Department | null): Record<string, unknown>[] {
+    return [
+      viewerDepartment
+        ? { scope: PostScope.PUBLIC, department: { $in: [viewerDepartment, null] } }
+        : { scope: PostScope.PUBLIC },
+      { scope: PostScope.DEPARTMENT, department: viewerDepartment ?? null },
+    ];
+  }
+
+  // Used by SearchService -- $text search over caption, scoped the same way the feed is (a post
+  // from another شعبة never surfaces to a viewer whose own شعبة is set).
   async search(query: string, limit: number, viewerDepartment?: Department | null): Promise<PostDocument[]> {
     return this.postModel
       .find({
         $text: { $search: query },
-        $or: [{ scope: PostScope.PUBLIC }, { scope: PostScope.DEPARTMENT, department: viewerDepartment ?? null }],
+        $or: this.visibilityOr(viewerDepartment),
       })
       .limit(limit)
       .populate('author', 'name role photoUrl collegeId')
@@ -277,7 +305,7 @@ export class PostsService {
     return this.postModel
       .find({
         hashtags: tag.toLowerCase(),
-        $or: [{ scope: PostScope.PUBLIC }, { scope: PostScope.DEPARTMENT, department: viewerDepartment ?? null }],
+        $or: this.visibilityOr(viewerDepartment),
       })
       .sort({ createdAt: -1 })
       .limit(limit)

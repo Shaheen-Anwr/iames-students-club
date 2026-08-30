@@ -51,6 +51,12 @@ export function LecturesBrowser({
   const { user } = useAuth();
   const canUpload = user?.role === 'admin' || user?.role === 'professor';
 
+  // A viewer WITH a شعبة browses only their own شعبة's material (+ college-wide uploads), enforced
+  // server-side -- so the شعبة picker is hidden and locked to it. A viewer with no department
+  // (rare: incomplete staff profile) keeps the cross-شعبة picker.
+  const lockedDepartment: Department | '' = user?.department ?? '';
+  const canPickDepartment = !lockedDepartment;
+
   const [posts, setPosts] = useState<Post[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -78,12 +84,15 @@ export function LecturesBrowser({
     return copy;
   }, [posts, sort]);
 
-  const specializationOptions = department
-    ? SPECIALIZATIONS_BY_DEPARTMENT[department]
+  // The picked شعبة for staff, or the viewer's locked own شعبة otherwise.
+  const effectiveDepartment = lockedDepartment || department;
+
+  const specializationOptions = effectiveDepartment
+    ? SPECIALIZATIONS_BY_DEPARTMENT[effectiveDepartment]
     : [];
 
-  const academicYearOptions = department
-    ? getAcademicYearsForDepartment(department)
+  const academicYearOptions = effectiveDepartment
+    ? getAcademicYearsForDepartment(effectiveDepartment)
     : ACADEMIC_YEARS;
 
   function buildQuery(targetPage: number) {
@@ -93,7 +102,7 @@ export function LecturesBrowser({
       limit: String(PAGE_SIZE),
     });
 
-    if (department) params.set('department', department);
+    if (effectiveDepartment) params.set('department', effectiveDepartment);
     if (academicYear) params.set('academicYear', academicYear);
     if (specialization) params.set('specialization', specialization);
 
@@ -125,7 +134,7 @@ export function LecturesBrowser({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     attachmentType,
-    department,
+    effectiveDepartment,
     academicYear,
     specialization,
     courseCode,
@@ -212,21 +221,23 @@ export function LecturesBrowser({
           />
         </div>
 
-        <select
-          value={department}
-          onChange={(e) =>
-            handleDepartmentChange(e.target.value as Department | '')
-          }
-          className={SELECT_CLASS}
-        >
-          <option value="">كل الشعب</option>
+        {canPickDepartment && (
+          <select
+            value={department}
+            onChange={(e) =>
+              handleDepartmentChange(e.target.value as Department | '')
+            }
+            className={SELECT_CLASS}
+          >
+            <option value="">كل الشعب</option>
 
-          {DEPARTMENTS.map((d) => (
-            <option key={d} value={d}>
-              {DEPARTMENT_LABELS[d]}
-            </option>
-          ))}
-        </select>
+            {DEPARTMENTS.map((d) => (
+              <option key={d} value={d}>
+                {DEPARTMENT_LABELS[d]}
+              </option>
+            ))}
+          </select>
+        )}
 
         <select
           value={academicYear}
@@ -249,11 +260,11 @@ export function LecturesBrowser({
           onChange={(e) =>
             setSpecialization(e.target.value as Specialization | '')
           }
-          disabled={!department}
+          disabled={!effectiveDepartment}
           className={SELECT_CLASS}
         >
           <option value="">
-            {department ? 'كل التخصصات' : 'التخصص'}
+            {effectiveDepartment ? 'كل التخصصات' : 'التخصص'}
           </option>
 
           {specializationOptions.map((s) => (

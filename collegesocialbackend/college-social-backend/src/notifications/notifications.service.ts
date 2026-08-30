@@ -65,17 +65,21 @@ export class NotificationsService {
   }
 
   // Fans a single platform/department announcement out to one notification per recipient. Kept
-  // separate from create() because these carry no actor and are written in bulk (insertMany)
-  // rather than one save() per row. Never throws -- a broadcast must not fail the announcement.
+  // separate from create() because these are written in bulk (insertMany) rather than one save()
+  // per row. `actorId` is the announcement's author -- carried so the recipient sees who posted
+  // it (photo + name), the same as any other notification. Never throws -- a broadcast must not
+  // fail the announcement.
   async createSystemBroadcast(
     recipientIds: Types.ObjectId[],
     data: { title: string; preview: string; link: string },
+    actorId?: string | Types.ObjectId | null,
   ): Promise<void> {
     if (recipientIds.length === 0) return;
 
+    const actor = actorId ? new Types.ObjectId(actorId) : null;
     const rows = recipientIds.map((recipient) => ({
       recipient,
-      actor: null,
+      actor,
       type: 'system_announcement' as const,
       title: data.title,
       preview: data.preview,
@@ -86,6 +90,9 @@ export class NotificationsService {
     try {
       // ordered: false -- one bad row (e.g. a since-deleted user) shouldn't abort the rest.
       const inserted = await this.notificationModel.insertMany(rows, { ordered: false });
+      // Populate the actor once for the whole batch so the live `newNotification` payload carries
+      // the announcer's name/photo, matching what listForUser() returns on a later refetch.
+      if (actor) await this.notificationModel.populate(inserted, { path: 'actor', select: 'name role photoUrl' });
       for (const doc of inserted) {
         this.realtimeEmitter.emitToUser(doc.recipient.toString(), 'newNotification', doc);
       }

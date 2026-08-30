@@ -6,6 +6,8 @@ import { Bell, Megaphone } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import { api } from '@/lib/api';
 import { useNotifications } from '@/lib/notifications-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
@@ -29,7 +31,7 @@ function dayLabel(dateStr: string): string {
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const { notifications, loading, markRead, markAllRead } = useNotifications();
+  const { notifications, loading, refresh, markRead, markAllRead } = useNotifications();
   const [extra, setExtra] = useState<Notification[]>([]);
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -77,21 +79,17 @@ export default function NotificationsPage() {
         )}
       </div>
 
-      <div className="min-h-0 flex-1 overflow-y-auto scrollbar-thin">
+      <PullToRefresh onRefresh={refresh} className="min-h-0 flex-1 scrollbar-thin">
         {loading ? (
           <div className="flex justify-center py-10">
             <Spinner className="h-5 w-5" />
           </div>
         ) : items.length === 0 ? (
-          <div className="flex flex-col items-center gap-3 py-16 text-center text-muted-foreground">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2/70">
-              <Bell className="h-6 w-6" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">لا توجد إشعارات بعد</p>
-              <p className="mt-1 text-xs text-muted-foreground">ستظهر هنا تفاعلات وردود ورسائل زملائك أولًا بأول.</p>
-            </div>
-          </div>
+          <EmptyState
+            icon={Bell}
+            title="لا توجد إشعارات بعد"
+            description="ستظهر هنا تفاعلات وردود ورسائل زملائك أولًا بأول."
+          />
         ) : (
           <>
             {groups.map(([label, groupItems]) => (
@@ -101,6 +99,8 @@ export default function NotificationsPage() {
                   {groupItems.map((notification) => {
                     const Icon = NOTIFICATION_ICONS[notification.type];
                     const isSystem = notification.type === 'system_announcement';
+                    // Legacy system rows written before the announcement's author was carried.
+                    const systemNoActor = isSystem && !notification.actor;
                     return (
                       <button
                         key={notification._id}
@@ -110,7 +110,7 @@ export default function NotificationsPage() {
                           !notification.read && 'bg-accent/5',
                         )}
                       >
-                        {isSystem ? (
+                        {systemNoActor ? (
                           <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
                             <Megaphone className="h-5 w-5" />
                           </span>
@@ -119,7 +119,7 @@ export default function NotificationsPage() {
                         )}
                         <div className="min-w-0 flex-1">
                           <p className="text-[15px] leading-relaxed text-foreground">
-                            {isSystem ? (
+                            {systemNoActor ? (
                               <span className="font-semibold">{notification.title ?? NOTIFICATION_LABELS.system_announcement}</span>
                             ) : (
                               <>
@@ -128,6 +128,9 @@ export default function NotificationsPage() {
                               </>
                             )}
                           </p>
+                          {isSystem && !systemNoActor && notification.title && (
+                            <p className="mt-0.5 truncate text-[13px] font-medium text-foreground">{notification.title}</p>
+                          )}
                           {notification.preview && (
                             <p className="mt-0.5 truncate text-xs text-muted-foreground">{notification.preview}</p>
                           )}
@@ -152,7 +155,7 @@ export default function NotificationsPage() {
             )}
           </>
         )}
-      </div>
+      </PullToRefresh>
     </div>
   );
 }

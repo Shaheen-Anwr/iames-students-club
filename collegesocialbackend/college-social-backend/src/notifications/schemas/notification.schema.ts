@@ -21,7 +21,8 @@ export type NotificationType =
   | 'reel_comment'
   | 'reel_comment_reply'
   | 'reel_mention'
-  // Platform-wide broadcast fanned out by AnnouncementsService -- one per recipient, no actor.
+  // Platform/department announcement fanned out by AnnouncementsService -- one per recipient.
+  // `actor` is the announcement's author; `title` is the announcement headline.
   | 'system_announcement';
 
 @Schema({ timestamps: true })
@@ -55,8 +56,8 @@ export class Notification {
   })
   type: NotificationType;
 
-  // Set only for actor-less notifications (system_announcement): the announcement title, shown
-  // as the notification's headline since there's no "<name> did X" phrase to render.
+  // Set for system_announcement: the announcement headline, shown under the "<author> نشر إعلانًا"
+  // line (or as the headline itself for legacy rows written before the author was carried).
   @Prop({ type: String, default: null })
   title: string | null;
 

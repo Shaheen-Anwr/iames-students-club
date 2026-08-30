@@ -166,6 +166,13 @@ export class User {
   // See PushService for send/prune logic.
   @Prop({ type: [PushSubscriptionSchema], default: [] })
   pushSubscriptions: PushSubscription[];
+
+  // Opt-out for the once-a-day "morning digest" push (today's lectures + assignments due soon +
+  // new announcements), sent by DigestService's cron. Absent/false -> the student receives it,
+  // but only ever when they also have at least one pushSubscription and actually have something
+  // on for the day. Toggled from profile > "إشعارات الهاتف".
+  @Prop({ default: false })
+  dailyDigestOptOut: boolean;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

@@ -28,6 +28,7 @@ const RESOURCE_TYPE_BY_CATEGORY: Record<UploadCategory, 'image' | 'video' | 'raw
   audio: 'video',
   lectures: 'raw',
   files: 'raw',
+  conversions: 'raw', // never actually uploaded (see ConvertService) -- present for exhaustiveness
 };
 
 // Longest-edge cap per image category, applied as an incoming (upload-time) transformation --

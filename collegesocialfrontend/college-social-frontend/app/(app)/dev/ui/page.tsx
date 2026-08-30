@@ -27,6 +27,8 @@ import { Dropdown } from '@/components/ui/Dropdown';
 import { Switch } from '@/components/ui/Switch';
 import { Segmented } from '@/components/ui/Segmented';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { PullToRefresh } from '@/components/ui/PullToRefresh';
+import { SwipeableRow } from '@/components/ui/SwipeableRow';
 import { FadeIn, Stagger, Pressable } from '@/components/ui/Motion';
 import { motion } from '@/lib/motion';
 
@@ -322,6 +324,36 @@ export default function DevUiPage() {
               <Skeleton className="h-4 w-full" />
               <Skeleton className="h-4 w-3/4" />
             </div>
+          </div>
+        </Card>
+      </Section>
+
+      <Section
+        title="Touch gestures"
+        hint="Touch devices only (emulate a phone in devtools). PullToRefresh: drag down from the top of the box. SwipeableRow: drag a row sideways past the threshold to fire its action."
+      >
+        <Card className="space-y-5 p-5">
+          <PullToRefresh
+            onRefresh={() => new Promise((r) => setTimeout(r, 1200))}
+            className="h-40 rounded-xl border border-border/80 bg-surface-2/40 p-3"
+          >
+            <p className="text-sm text-muted-foreground">
+              اسحب لأسفل من الحافة العلوية لتحديث المحتوى (محاكاة 1.2 ثانية).
+            </p>
+          </PullToRefresh>
+
+          <div className="space-y-2">
+            {['مراجعة الفصل الثالث', 'حل تمارين الرياضيات', 'قراءة المقال المطلوب'].map((t) => (
+              <SwipeableRow
+                key={t}
+                action={{ icon: Check, label: 'إنجاز', tone: 'success', onAction: () => setProgress((p) => Math.min(100, p + 10)) }}
+              >
+                <div className="flex items-center gap-3 rounded-xl bg-surface-2/60 px-3 py-2.5 text-sm text-foreground">
+                  <List className="h-4 w-4 text-muted-foreground" />
+                  {t}
+                </div>
+              </SwipeableRow>
+            ))}
           </div>
         </Card>
       </Section>

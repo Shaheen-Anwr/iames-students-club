@@ -9,6 +9,7 @@ import { SetDepartmentBanner } from './SetDepartmentBanner';
 import { TopNavbar } from './TopNavbar';
 import { MobileNav } from './MobileNav';
 import { AiFab } from '@/components/ai/AiFab';
+import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -36,6 +37,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       </main>
       <MobileNav />
       <AiFab />
+      <OnboardingFlow />
     </div>
   );
 }

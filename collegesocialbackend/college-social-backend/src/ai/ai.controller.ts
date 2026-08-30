@@ -1,15 +1,37 @@
 import { Body, Controller, Delete, Get, Param, Post, Res, UseGuards } from '@nestjs/common';
+import { Throttle } from '@nestjs/throttler';
 import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { AiConversationsService } from './ai-conversations.service';
+import { LectureStudyToolsService } from './lecture-study-tools.service';
 import { SendAiMessageDto } from './dto/send-ai-message.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('ai')
 export class AiController {
-  constructor(private readonly aiConversationsService: AiConversationsService) {}
+  constructor(
+    private readonly aiConversationsService: AiConversationsService,
+    private readonly lectureStudyTools: LectureStudyToolsService,
+  ) {}
+
+  // --- Lecture study tools: AI-generated summary + flashcards + quiz for one lecture PDF, ---
+  // --- generated once on demand then cached and shared with everyone who opens that lecture. ---
+
+  @Get('lectures/:postId/study-kit')
+  async getStudyKit(@Param('postId') postId: string) {
+    const kit = await this.lectureStudyTools.getForPost(postId);
+    return { kit: kit ?? null };
+  }
+
+  // One provider call + a PDF text load per hit -- much tighter than the global 20/min default.
+  @Throttle({ default: { limit: 6, ttl: 60_000 } })
+  @Post('lectures/:postId/study-kit')
+  async generateStudyKit(@Param('postId') postId: string, @CurrentUser() user: AuthenticatedUser) {
+    const kit = await this.lectureStudyTools.generate(postId, user);
+    return { kit };
+  }
 
   @Get('conversations')
   async listConversations(@CurrentUser() user: AuthenticatedUser) {

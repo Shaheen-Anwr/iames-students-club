@@ -78,13 +78,18 @@ export function buildPushPayload(notification: NotificationDocument, frontendUrl
   };
 }
 
-// Push payload for a platform/department announcement broadcast. Uses the announcement's own
-// title/body rather than an actor phrase, and always lands on the announcements page. `tag` is
-// per-announcement so a device that somehow receives it twice collapses to one notification.
-export function buildAnnouncementPushPayload(announcement: AnnouncementDocument, frontendUrl: string): PushPayload {
+// Push payload for a platform/department announcement broadcast. Leads with the announcer's name
+// when known ("📢 <name>: <title>") so the recipient sees who posted it, then the body excerpt;
+// always lands on the announcements page. `tag` is per-announcement so a device that somehow
+// receives it twice collapses to one notification.
+export function buildAnnouncementPushPayload(
+  announcement: AnnouncementDocument,
+  frontendUrl: string,
+  authorName?: string | null,
+): PushPayload {
   const body = announcement.body.length > 140 ? `${announcement.body.slice(0, 139)}…` : announcement.body;
   return {
-    title: `📢 ${announcement.title}`,
+    title: authorName ? `📢 ${authorName}: ${announcement.title}` : `📢 ${announcement.title}`,
     body,
     url: `${frontendUrl}/announcements`,
     icon: `${frontendUrl}/icons/icon-192.png`,

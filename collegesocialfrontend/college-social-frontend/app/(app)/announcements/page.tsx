@@ -2,13 +2,14 @@
 
 import { useEffect, useState } from 'react';
 import { Megaphone, Pin, Plus, Trash2 } from 'lucide-react';
+import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
-import { timeAgo } from '@/lib/utils';
+import { assetUrl, timeAgo } from '@/lib/utils';
 import type { Announcement } from '@/lib/types';
 import { CreateAnnouncementModal } from '@/components/announcements/CreateAnnouncementModal';
 
@@ -92,9 +93,12 @@ export default function AnnouncementsPage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-foreground">{a.title}</p>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{a.body}</p>
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {a.author?.name ?? 'مستخدم محذوف'} · {timeAgo(a.createdAt)}
-                    </p>
+                    <div className="mt-2 flex items-center gap-1.5">
+                      <Avatar src={assetUrl(a.author?.photoUrl)} name={a.author?.name ?? '؟'} size="xs" />
+                      <p className="text-xs text-muted-foreground">
+                        {a.author?.name ?? 'مستخدم محذوف'} · {timeAgo(a.createdAt)}
+                      </p>
+                    </div>
                   </div>
                   {canDelete && (
                     <button onClick={() => handleDelete(a._id)} className="shrink-0 text-muted-foreground hover:text-danger">

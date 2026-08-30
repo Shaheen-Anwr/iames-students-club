@@ -44,9 +44,10 @@ export function FeedList() {
   const [specialization, setSpecialization] = useState<Specialization | ''>('');
   const [sortMode, setSortMode] = useState<SortMode>('latest');
 
-  // Same "which department are the year/specialization options for" rule the toolbar uses:
-  // the department filter on "قسمي" or the selected filter on "عام".
-  const effectiveDepartment = scope === 'public' ? department : (user?.department ?? '');
+  // The year/specialization option lists follow the viewer's own شعبة when they have one -- both
+  // feed tabs are now locked to it server-side. The "عام" شعبة dropdown only exists for a viewer
+  // with no department (staff/admin), in which case fall back to whatever they picked there.
+  const effectiveDepartment = user?.department ?? (scope === 'public' ? department : '');
 
   // If the effective department changes (switching tabs, or narrowing the "عام" filter) and the
   // currently selected year/specialization no longer belongs to it, drop them rather than send a

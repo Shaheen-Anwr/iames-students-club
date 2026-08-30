@@ -59,7 +59,9 @@ export class AnnouncementsService {
       this.logger.warn(`Announcement broadcast failed: ${(err as Error)?.message ?? err}`),
     );
 
-    return announcement;
+    // Populate the author so the caller (and the optimistic insert on the client) can show the
+    // announcer's name/photo without a refetch -- same populate list() uses.
+    return announcement.populate('author', 'name role photoUrl');
   }
 
   // Recipients: everyone for a platform-wide announcement (department: null), otherwise only
@@ -68,20 +70,29 @@ export class AnnouncementsService {
     const recipientFilter: Record<string, unknown> = { _id: { $ne: new Types.ObjectId(authorId) } };
     if (announcement.department !== null) recipientFilter.department = announcement.department;
 
-    const recipients = await this.userModel.find(recipientFilter).select('_id').lean().exec();
+    const [recipients, author] = await Promise.all([
+      this.userModel.find(recipientFilter).select('_id').lean().exec(),
+      this.userModel.findById(authorId).select('name photoUrl role').lean().exec(),
+    ]);
     const ids = recipients.map((u) => u._id as Types.ObjectId);
     if (ids.length === 0) return;
 
-    await this.notificationsService.createSystemBroadcast(ids, {
-      title: announcement.title,
-      preview: announcement.body.length > 200 ? `${announcement.body.slice(0, 199)}…` : announcement.body,
-      link: '/announcements',
-    });
+    // Carry the announcement's author as the notification `actor` so the student sees who posted
+    // it (photo + name), the same as any other notification -- not an anonymous megaphone.
+    await this.notificationsService.createSystemBroadcast(
+      ids,
+      {
+        title: announcement.title,
+        preview: announcement.body.length > 200 ? `${announcement.body.slice(0, 199)}…` : announcement.body,
+        link: '/announcements',
+      },
+      authorId,
+    );
 
     const frontendUrl = this.config.get<string>('frontendUrl')!;
     await this.pushService.sendToUsers(
       ids.map((id) => id.toString()),
-      buildAnnouncementPushPayload(announcement, frontendUrl),
+      buildAnnouncementPushPayload(announcement, frontendUrl, author?.name),
     );
   }
 
@@ -95,6 +106,18 @@ export class AnnouncementsService {
       .skip((page - 1) * limit)
       .limit(limit)
       .populate('author', 'name role photoUrl')
+      .exec();
+  }
+
+  // Count of announcements a viewer in `viewerDepartment` can see that were posted on/after
+  // `since` -- used by the morning digest to tell a student how many landed overnight. Same
+  // visibility split as list().
+  async countSince(since: Date, viewerDepartment?: Department | null): Promise<number> {
+    return this.announcementModel
+      .countDocuments({
+        createdAt: { $gte: since },
+        $or: [{ department: null }, { department: viewerDepartment ?? null }],
+      })
       .exec();
   }
 

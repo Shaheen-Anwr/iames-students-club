@@ -34,7 +34,12 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { SearchModule } from './search/search.module';
 import { AiModule } from './ai/ai.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { DigestModule } from './digest/digest.module';
 import { BroadcastModule } from './broadcast/broadcast.module';
+import { ConvertModule } from './convert/convert.module';
+import { WallModule } from './wall/wall.module';
+import { EventsModule } from './events/events.module';
+import { MarketplaceModule } from './marketplace/marketplace.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -90,7 +95,12 @@ import { AppController } from './app.controller';
     SearchModule,
     AiModule,
     DashboardModule,
+    DigestModule,
     BroadcastModule,
+    ConvertModule,
+    WallModule,
+    EventsModule,
+    MarketplaceModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })
