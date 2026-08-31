@@ -1,0 +1,10 @@
+# Cloudflare Worker config for the Cloudinary media proxy.
+# Deploy:  cd cloudflare && npx wrangler deploy
+# (first run:  npx wrangler login)
+
+name = "media-proxy"
+main = "media-proxy.worker.js"
+compatibility_date = "2024-11-01"
+
+# The Worker runs on https://media-proxy.<your-subdomain>.workers.dev with no custom domain.
+workers_dev = true

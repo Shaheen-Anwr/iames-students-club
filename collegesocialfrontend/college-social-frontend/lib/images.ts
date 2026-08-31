@@ -9,6 +9,11 @@
 // No-op (returns the input untouched) for: a missing value, a local "/uploads/..." path, any
 // non-Cloudinary URL, or a Cloudinary URL that already carries a transformation right after
 // "/upload/" (e.g. built by an older ad-hoc helper) -- so it's always safe to wrap assetUrl().
+//
+// When NEXT_PUBLIC_MEDIA_PROXY is set, the final URL is additionally rewritten to go through the
+// Cloudflare edge cache (see lib/media.ts) so repeat views don't burn Cloudinary bandwidth.
+
+import { viaCdn } from './media';
 
 interface CldOptimizeOpts {
   width?: number;
@@ -34,7 +39,7 @@ function isCloudinaryImage(url: string): boolean {
 export function cldOptimize(url: string | undefined | null, opts: CldOptimizeOpts = {}): string | undefined {
   if (!url) return undefined;
   if (!isCloudinaryImage(url)) return url;
-  if (ALREADY_TRANSFORMED.test(url)) return url;
+  if (ALREADY_TRANSFORMED.test(url)) return viaCdn(url);
 
   const { width, height, crop = 'limit', quality = 'auto:good', progressive = true } = opts;
   const segment = [
@@ -47,7 +52,7 @@ export function cldOptimize(url: string | undefined | null, opts: CldOptimizeOpt
     ...(height ? [`h_${height}`] : []),
   ].join(',');
 
-  return url.replace('/image/upload/', `/image/upload/${segment}/`);
+  return viaCdn(url.replace('/image/upload/', `/image/upload/${segment}/`));
 }
 
 // A ~1KB blurred micro-thumbnail of the same asset, for use as an instant placeholder behind the
@@ -55,5 +60,7 @@ export function cldOptimize(url: string | undefined | null, opts: CldOptimizeOpt
 // distinct cheap placeholder to make -- a non-Cloudinary URL, or one that's already transformed.
 export function cldBlurPlaceholder(url: string | undefined | null): string | undefined {
   if (!url || !isCloudinaryImage(url) || ALREADY_TRANSFORMED.test(url)) return undefined;
-  return url.replace('/image/upload/', '/image/upload/w_48,h_48,c_fill,g_auto,q_10,f_auto,e_blur:600/');
+  return viaCdn(
+    url.replace('/image/upload/', '/image/upload/w_48,h_48,c_fill,g_auto,q_10,f_auto,e_blur:600/'),
+  );
 }
