@@ -5,6 +5,7 @@ import Link from 'next/link';
 import { Heart, MessageCircle, Share2, Bookmark, Play, Volume2, VolumeX, Trash2 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/lib/auth-context';
+import { viaCdn } from '@/lib/media';
 import { assetUrl, cn } from '@/lib/utils';
 import type { Reel } from '@/lib/types';
 
@@ -49,6 +50,10 @@ export function ReelCard({
   onViewRef.current = onView;
 
   const canDelete = !!user && (user._id === reel.author?.id || user.role === 'admin');
+
+  // Route the clip + poster through the Cloudflare edge cache when configured (no-op otherwise).
+  const videoSrc = viaCdn(reel.videoUrl) ?? reel.videoUrl;
+  const posterSrc = viaCdn(reel.thumbnailUrl) ?? reel.thumbnailUrl;
 
   // Play / pause follows the active slide.
   useEffect(() => {
@@ -105,8 +110,8 @@ export function ReelCard({
       {mounted ? (
         <video
           ref={videoRef}
-          src={reel.videoUrl}
-          poster={reel.thumbnailUrl}
+          src={videoSrc}
+          poster={posterSrc}
           loop
           playsInline
           muted={muted}
@@ -120,7 +125,7 @@ export function ReelCard({
         />
       ) : (
         <img
-          src={reel.thumbnailUrl}
+          src={posterSrc}
           alt=""
           className="absolute inset-0 h-full w-full object-contain opacity-70"
         />

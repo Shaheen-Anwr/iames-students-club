@@ -4,6 +4,7 @@ import { useRef, useState } from 'react';
 import { ChevronDown, ChevronUp, Download, FileText, Loader2, Paperclip, Play } from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
 import { useAttachmentObjectUrl } from '@/lib/use-attachment';
+import { viaCdn } from '@/lib/media';
 import { assetUrl, formatBytes } from '@/lib/utils';
 import type { Post, PostAttachmentType } from '@/lib/types';
 import { ImageGallery } from './ImageGallery';
@@ -51,7 +52,7 @@ function VideoPlayer({ url }: { url: string }) {
         onEnded={() => setPlaying(false)}
         className="max-h-[32rem] w-full"
       >
-        <source src={url} />
+        <source src={viaCdn(url) ?? url} />
       </video>
       {!playing && (
         <button
