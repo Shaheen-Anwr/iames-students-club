@@ -870,6 +870,9 @@ export interface ReelAuthor {
 export interface Reel {
   id: string;
   author: ReelAuthor | null;
+  // 'stream' -> videoUrl is an HLS manifest (.m3u8); play via lib/hls attachHls(). 'cloudinary'
+  // (default for every pre-Stream reel) -> a plain video URL.
+  videoProvider: 'cloudinary' | 'stream';
   videoUrl: string;
   thumbnailUrl: string;
   caption: string;

@@ -6,6 +6,7 @@ import { Heart, MessageCircle, Share2, Bookmark, Play, Volume2, VolumeX, Trash2 
 import { Avatar } from '@/components/ui/Avatar';
 import { useAuth } from '@/lib/auth-context';
 import { viaCdn } from '@/lib/media';
+import { attachHls, isHls } from '@/lib/hls';
 import { assetUrl, cn } from '@/lib/utils';
 import type { Reel } from '@/lib/types';
 
@@ -52,8 +53,22 @@ export function ReelCard({
   const canDelete = !!user && (user._id === reel.author?.id || user.role === 'admin');
 
   // Route the clip + poster through the Cloudflare edge cache when configured (no-op otherwise).
-  const videoSrc = viaCdn(reel.videoUrl) ?? reel.videoUrl;
+  // Stream reels serve an HLS manifest -- don't proxy that (the .m3u8 references its own segment
+  // URLs on the Stream domain); a plain Cloudinary URL still goes through viaCdn.
+  const hlsReel = reel.videoProvider === 'stream' || isHls(reel.videoUrl);
+  const videoSrc = hlsReel ? reel.videoUrl : viaCdn(reel.videoUrl) ?? reel.videoUrl;
   const posterSrc = viaCdn(reel.thumbnailUrl) ?? reel.thumbnailUrl;
+
+  // HLS (Stream) reels: attach via hls.js (or native on Safari). Cloudinary reels: plain <video src>.
+  useEffect(() => {
+    const v = videoRef.current;
+    if (!v || !mounted) return;
+    if (hlsReel) return attachHls(v, videoSrc);
+    v.src = videoSrc;
+    return () => {
+      v.removeAttribute('src');
+    };
+  }, [hlsReel, videoSrc, mounted]);
 
   // Play / pause follows the active slide.
   useEffect(() => {
@@ -110,7 +125,6 @@ export function ReelCard({
       {mounted ? (
         <video
           ref={videoRef}
-          src={videoSrc}
           poster={posterSrc}
           loop
           playsInline

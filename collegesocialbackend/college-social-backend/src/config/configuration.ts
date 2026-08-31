@@ -60,6 +60,19 @@ export default () => ({
     // safe truncation, not a lossy one.
     historyWindowMessages: parseInt(process.env.AI_HISTORY_WINDOW_MESSAGES ?? '30', 10),
   },
+  // Cloudflare Stream -- video hosting + adaptive HLS. When all three are set, new reels upload
+  // to Stream instead of Cloudinary (existing Cloudinary reels keep playing). Unset -> reels
+  // stay on Cloudinary, exactly as before. See StreamService.
+  //   CF_STREAM_ACCOUNT_ID          -- Cloudflare account id
+  //   CF_STREAM_API_TOKEN           -- API token scoped to Account · Stream · Edit
+  //   CF_STREAM_CUSTOMER_SUBDOMAIN  -- e.g. customer-xxxx.cloudflarestream.com (host only, no scheme)
+  stream: {
+    accountId: process.env.CF_STREAM_ACCOUNT_ID ?? '',
+    apiToken: process.env.CF_STREAM_API_TOKEN ?? '',
+    customerSubdomain: (process.env.CF_STREAM_CUSTOMER_SUBDOMAIN ?? '')
+      .replace(/^https?:\/\//, '')
+      .replace(/\/+$/, ''),
+  },
   // Web Push (VAPID). Generate a pair with `npx web-push generate-vapid-keys`. Until both keys
   // are set, PushService no-ops (logs a warning once) instead of throwing -- see PushService.
   push: {

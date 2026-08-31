@@ -16,9 +16,18 @@ export class Reel {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
   author: Types.ObjectId;
 
-  // Canonical Cloudinary URL from confirmDirectUpload -- a plain secure_url, or an fl_splice
-  // delivery URL that plays every segment as one continuous video when the source was too big for
-  // a single asset.
+  // Which backend hosts the video. 'cloudinary' (default, every pre-Stream reel) -> `videoUrl` is
+  // a Cloudinary secure_url / fl_splice URL. 'stream' -> `videoUrl` is a Cloudflare Stream HLS
+  // manifest (.m3u8) and `videoUid` is set. See StreamService.
+  @Prop({ type: String, enum: ['cloudinary', 'stream'], default: 'cloudinary' })
+  videoProvider: 'cloudinary' | 'stream';
+
+  // Cloudflare Stream video id -- set only when videoProvider === 'stream'. Used for delete cleanup.
+  @Prop({ type: String, default: null })
+  videoUid: string | null;
+
+  // For 'cloudinary': a plain secure_url or an fl_splice delivery URL. For 'stream': the HLS
+  // manifest URL (.m3u8).
   @Prop({ type: String, required: true })
   videoUrl: string;
 

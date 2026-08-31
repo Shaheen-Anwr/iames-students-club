@@ -27,6 +27,16 @@ function directUploadEnabled(): boolean {
   return typeof window !== 'undefined' && process.env.NEXT_PUBLIC_DIRECT_UPLOAD !== '0';
 }
 
+// Set NEXT_PUBLIC_STREAM_ENABLED=1 once the backend has CF_STREAM_* configured -- new reels then
+// upload to Cloudflare Stream (adaptive HLS) instead of Cloudinary. Existing reels are unaffected.
+function streamEnabled(): boolean {
+  return (
+    typeof window !== 'undefined' &&
+    !!process.env.NEXT_PUBLIC_STREAM_ENABLED &&
+    process.env.NEXT_PUBLIC_STREAM_ENABLED !== '0'
+  );
+}
+
 export async function createReel({
   file,
   caption,
@@ -34,6 +44,16 @@ export async function createReel({
   onProgress,
   signal,
 }: CreateReelInput): Promise<Reel> {
+  if (streamEnabled()) {
+    const { uploadToStream } = await import('./stream-upload');
+    const s = await uploadToStream(file, { onProgress, signal });
+    return api.post<Reel>('/reels', {
+      streamUid: s.uid,
+      caption,
+      durationSec: Math.round(s.durationSec || durationSec),
+    });
+  }
+
   if (directUploadEnabled()) {
     try {
       return await uploadVideoDirect<Reel>(file, {

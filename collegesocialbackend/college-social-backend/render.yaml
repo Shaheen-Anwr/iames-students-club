@@ -67,6 +67,15 @@ services:
         value: https://api.groq.com/openai/v1
       - key: AI_MODEL
         value: openai/gpt-oss-120b
+      # Cloudflare Stream (video hosting for reels). Set all three on the dashboard -> new reels
+      # upload to Stream instead of Cloudinary. Unset -> reels stay on Cloudinary. The frontend
+      # also needs NEXT_PUBLIC_STREAM_ENABLED=1 (see the frontend's .env.production).
+      - key: CF_STREAM_ACCOUNT_ID
+        sync: false
+      - key: CF_STREAM_API_TOKEN
+        sync: false
+      - key: CF_STREAM_CUSTOMER_SUBDOMAIN
+        sync: false
       # Web Push (phone notifications). Public key is safe to commit -- it's already baked into
       # the frontend build too (see .env.production there), so this MUST match that value exactly.
       # Only the private key is a real secret and needs to be pasted on the dashboard.

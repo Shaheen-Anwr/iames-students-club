@@ -30,6 +30,14 @@ export class CreateReelDto {
   @MaxLength(2048)
   videoUrl?: string;
 
+  // Cloudflare Stream path: the uid from POST /api/stream/direct-upload, after the browser has
+  // tus-uploaded the file and polled it to `ready`. The server re-verifies it with
+  // StreamService.getStatus() before trusting the duration / building the reel.
+  @IsOptional()
+  @IsString()
+  @MaxLength(64)
+  streamUid?: string;
+
   @IsOptional()
   @IsString()
   @MaxLength(2000)

@@ -41,6 +41,7 @@ import { WallModule } from './wall/wall.module';
 import { EventsModule } from './events/events.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { RoomsModule } from './rooms/rooms.module';
+import { StreamModule } from './stream/stream.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -103,6 +104,7 @@ import { AppController } from './app.controller';
     EventsModule,
     MarketplaceModule,
     RoomsModule,
+    StreamModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

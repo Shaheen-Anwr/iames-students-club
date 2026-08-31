@@ -5,6 +5,7 @@ import { ReelComment, ReelCommentSchema } from './schemas/reel-comment.schema';
 import { ReelsController } from './reels.controller';
 import { ReelsService } from './reels.service';
 import { UploadModule } from '../upload/upload.module';
+import { StreamModule } from '../stream/stream.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { GamificationModule } from '../gamification/gamification.module';
@@ -16,6 +17,7 @@ import { GamificationModule } from '../gamification/gamification.module';
       { name: ReelComment.name, schema: ReelCommentSchema },
     ]),
     UploadModule,
+    StreamModule,
     NotificationsModule,
     UsersModule,
     GamificationModule,

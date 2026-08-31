@@ -11,6 +11,7 @@ import { Reel, ReelDocument } from './schemas/reel.schema';
 import { ReelComment, ReelCommentDocument } from './schemas/reel-comment.schema';
 import { CreateReelDto } from './dto/create-reel.dto';
 import { StorageService } from '../upload/storage.service';
+import { StreamService } from '../stream/stream.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { UsersService } from '../users/users.service';
 import { GamificationService } from '../gamification/gamification.service';
@@ -36,6 +37,8 @@ interface AuthorView {
 export interface ReelView {
   id: string;
   author: AuthorView | null;
+  // 'stream' -> `videoUrl` is an HLS manifest (.m3u8), play with hls.js on non-Safari.
+  videoProvider: 'cloudinary' | 'stream';
   videoUrl: string;
   thumbnailUrl: string;
   caption: string;
@@ -70,6 +73,7 @@ export class ReelsService {
     @InjectModel(Reel.name) private readonly reelModel: Model<ReelDocument>,
     @InjectModel(ReelComment.name) private readonly commentModel: Model<ReelCommentDocument>,
     private readonly storageService: StorageService,
+    private readonly streamService: StreamService,
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
     private readonly gamificationService: GamificationService,
@@ -101,10 +105,14 @@ export class ReelsService {
 
   private toReelView(reel: ReelDocument, viewerId: string): ReelView {
     const vid = new Types.ObjectId(viewerId);
+    const provider = reel.videoProvider ?? 'cloudinary';
     return {
       id: reel._id.toString(),
       author: this.toAuthorView(reel.author),
-      videoUrl: cldVideoOptimize(reel.videoUrl),
+      videoProvider: provider,
+      // cldVideoOptimize rewrites a Cloudinary /video/upload transform segment -- leave a Stream
+      // HLS manifest URL untouched.
+      videoUrl: provider === 'stream' ? reel.videoUrl : cldVideoOptimize(reel.videoUrl),
       thumbnailUrl: reel.thumbnailUrl,
       caption: reel.caption,
       durationSec: reel.durationSec,
@@ -144,18 +152,38 @@ export class ReelsService {
   // --- create -----------------------------------------------------------------
 
   async create(userId: string, dto: CreateReelDto): Promise<ReelView> {
+    let videoProvider: 'cloudinary' | 'stream' = 'cloudinary';
+    let videoUid: string | null = null;
     let videoUrl: string;
+    let thumbnailUrl: string;
     let chunkCount = dto.chunkCount ?? 1;
     let durationSec: number;
 
-    if (dto.publicIds?.length) {
+    if (dto.streamUid) {
+      // Cloudflare Stream path: re-verify the uid server-side -- never trust the client's duration.
+      if (!this.streamService.isConfigured) {
+        throw new BadRequestException('رفع الفيديو عبر Cloudflare Stream غير مُفعّل');
+      }
+      const status = await this.streamService.getStatus(dto.streamUid);
+      if (!status.ready) {
+        throw new BadRequestException('الفيديو لا يزال قيد المعالجة، حاول مرة أخرى بعد قليل');
+      }
+      videoProvider = 'stream';
+      videoUid = status.uid;
+      videoUrl = status.playbackUrl;
+      thumbnailUrl = status.thumbnailUrl;
+      durationSec = status.durationSec;
+      chunkCount = 1;
+    } else if (dto.publicIds?.length) {
       const outcome = await this.storageService.confirmDirectUpload('videos', dto.publicIds);
       videoUrl = outcome.url;
       chunkCount = outcome.chunkCount;
       durationSec = outcome.durationSec ?? dto.durationSec ?? 0;
+      thumbnailUrl = buildReelThumbnailUrl(videoUrl);
     } else if (dto.videoUrl && dto.videoUrl.includes('res.cloudinary.com') && dto.videoUrl.includes('/video/')) {
       videoUrl = dto.videoUrl;
       durationSec = dto.durationSec ?? 0;
+      thumbnailUrl = buildReelThumbnailUrl(videoUrl);
     } else {
       throw new BadRequestException('لم يتم رفع الفيديو بشكل صحيح');
     }
@@ -172,8 +200,10 @@ export class ReelsService {
 
     const reel = await new this.reelModel({
       author: new Types.ObjectId(userId),
+      videoProvider,
+      videoUid,
       videoUrl,
-      thumbnailUrl: buildReelThumbnailUrl(videoUrl),
+      thumbnailUrl,
       caption,
       durationSec: Math.round(durationSec),
       chunkCount,
@@ -288,10 +318,16 @@ export class ReelsService {
     }
     await this.reelModel.deleteOne({ _id: reel._id }).exec();
     await this.commentModel.deleteMany({ reel: reel._id }).exec();
-    // Best-effort -- freeing the Cloudinary asset must never block the delete response.
-    this.storageService
-      .destroyVideoByUrl(reel.videoUrl)
-      .catch((err) => this.logger.warn(`Reel asset cleanup failed: ${err?.message ?? err}`));
+    // Best-effort -- freeing the hosted asset must never block the delete response.
+    if (reel.videoProvider === 'stream' && reel.videoUid) {
+      this.streamService
+        .deleteVideo(reel.videoUid)
+        .catch((err) => this.logger.warn(`Stream asset cleanup failed: ${err?.message ?? err}`));
+    } else {
+      this.storageService
+        .destroyVideoByUrl(reel.videoUrl)
+        .catch((err) => this.logger.warn(`Reel asset cleanup failed: ${err?.message ?? err}`));
+    }
   }
 
   // --- comments ---------------------------------------------------------------
