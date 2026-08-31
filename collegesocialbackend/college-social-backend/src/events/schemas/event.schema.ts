@@ -39,6 +39,11 @@ export class Event {
   // null = unlimited. When set, RSVP is refused once attendees.length reaches it.
   @Prop({ type: Number, default: null })
   capacity: number | null;
+
+  // Set once EventReminderService has pushed the "starts soon" notification to attendees, so the
+  // hourly cron never double-notifies.
+  @Prop({ type: Date, default: null })
+  reminderSentAt: Date | null;
 }
 
 export const EventSchema = SchemaFactory.createForClass(Event);

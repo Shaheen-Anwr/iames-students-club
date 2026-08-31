@@ -829,6 +829,10 @@ export type NotificationType =
   | 'reel_comment'
   | 'reel_comment_reply'
   | 'reel_mention'
+  // Someone commented on your anonymous الجدار post -- links to /wall.
+  | 'wall_comment'
+  // An event you RSVP'd to starts soon -- links to /events; `preview` is the event title.
+  | 'event_reminder'
   // Platform/department announcement broadcast -- `actor` is the announcement's author,
   // `title` the headline. Legacy rows predating the author carry a null actor.
   | 'system_announcement';

@@ -5,6 +5,7 @@ import { WallComment, WallCommentSchema } from './schemas/wall-comment.schema';
 import { WallController } from './wall.controller';
 import { WallService } from './wall.service';
 import { AiModule } from '../ai/ai.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { AiModule } from '../ai/ai.module';
       { name: WallComment.name, schema: WallCommentSchema },
     ]),
     AiModule,
+    NotificationsModule,
   ],
   controllers: [WallController],
   providers: [WallService],

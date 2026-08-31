@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Crown, Flame, Trophy } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
-import { api } from '@/lib/api';
+import { useApiQuery } from '@/lib/query';
 import { useAuth } from '@/lib/auth-context';
 import { assetUrl, cn } from '@/lib/utils';
 import type { LeaderboardEntry } from '@/lib/types';
@@ -26,16 +26,11 @@ export function Leaderboard() {
   const { user } = useAuth();
   const hasDept = !!user?.department;
   const [scope, setScope] = useState<Scope>(hasDept ? 'dept' : 'all');
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setLoading(true);
-    api
-      .get<LeaderboardEntry[]>(`/users/leaderboard?limit=20${scope === 'dept' ? '&scope=dept' : ''}`)
-      .then(setEntries)
-      .finally(() => setLoading(false));
-  }, [scope]);
+  const { data: entries = [], isPending: loading } = useApiQuery<'/users/leaderboard', LeaderboardEntry[]>(
+    `/users/leaderboard?limit=20${scope === 'dept' ? '&scope=dept' : ''}`,
+    { key: ['/users/leaderboard', scope] },
+  );
 
   return (
     <div className="space-y-2.5">

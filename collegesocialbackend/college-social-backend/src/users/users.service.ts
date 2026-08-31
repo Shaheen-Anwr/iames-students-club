@@ -534,6 +534,27 @@ export class UsersService {
       .exec();
   }
 
+  // "Your classmates online right now" -- other users in the caller's شعبة with a live socket
+  // (isOnline is maintained by ChatGateway; SocketProvider connects app-wide, so it means "app
+  // open"). Falls back to college-wide for a caller with no شعبة set. Excludes the caller.
+  async onlineInDepartment(
+    userId: string,
+    department: string | null,
+    limit = 24,
+  ): Promise<Pick<UserDocument, '_id' | 'name' | 'photoUrl' | 'role'>[]> {
+    const filter: Record<string, unknown> = {
+      isOnline: true,
+      _id: { $ne: new Types.ObjectId(userId) },
+    };
+    if (department) filter.department = department;
+    return this.userModel
+      .find(filter)
+      .select('name photoUrl role')
+      .sort({ lastSeenAt: -1 })
+      .limit(Math.min(Math.max(limit, 1), 60))
+      .exec();
+  }
+
   async countAdmins(): Promise<number> {
     return this.userModel.countDocuments({ role: Role.ADMIN }).exec();
   }

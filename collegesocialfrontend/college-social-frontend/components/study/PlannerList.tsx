@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { differenceInCalendarDays, format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { CalendarClock, Circle, CheckCircle2, ListTodo, Plus, Trash2 } from 'lucide-react';
@@ -10,6 +11,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
+import { useApiQuery } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { cn } from '@/lib/utils';
 import type { PlannerTask } from '@/lib/types';
@@ -23,19 +25,15 @@ function taskUrgency(dueDate: string): 'overdue' | 'soon' | 'normal' {
 
 export function PlannerList() {
   const { showToast } = useToast();
-  const [tasks, setTasks] = useState<PlannerTask[]>([]);
-  const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
   const [title, setTitle] = useState('');
   const [dueDate, setDueDate] = useState('');
   const [courseCode, setCourseCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    api
-      .get<PlannerTask[]>('/planner')
-      .then(setTasks)
-      .finally(() => setLoading(false));
-  }, []);
+  const { data: tasks = [], isPending: loading } = useApiQuery<'/planner', PlannerTask[]>('/planner');
+  const patchTasks = (fn: (prev: PlannerTask[]) => PlannerTask[]) =>
+    qc.setQueryData<PlannerTask[]>(['/planner'], (prev) => fn(prev ?? []));
 
   async function handleAdd(e: React.FormEvent) {
     e.preventDefault();
@@ -47,7 +45,7 @@ export function PlannerList() {
         dueDate: dueDate ? new Date(dueDate).toISOString() : undefined,
         courseCode: courseCode.trim() || undefined,
       });
-      setTasks((prev) => [...prev, task].sort((a, b) => Number(a.done) - Number(b.done)));
+      patchTasks((prev) => [...prev, task].sort((a, b) => Number(a.done) - Number(b.done)));
       setTitle('');
       setDueDate('');
       setCourseCode('');
@@ -60,13 +58,13 @@ export function PlannerList() {
 
   async function handleToggle(id: string) {
     const updated = await api.post<PlannerTask>(`/planner/${id}/toggle`);
-    setTasks((prev) => prev.map((t) => (t._id === id ? updated : t)));
+    patchTasks((prev) => prev.map((t) => (t._id === id ? updated : t)));
   }
 
   async function handleDelete(id: string) {
     if (!confirm('هل تريد حذف هذه المهمة؟')) return;
     await api.delete(`/planner/${id}`);
-    setTasks((prev) => prev.filter((t) => t._id !== id));
+    patchTasks((prev) => prev.filter((t) => t._id !== id));
   }
 
   return (

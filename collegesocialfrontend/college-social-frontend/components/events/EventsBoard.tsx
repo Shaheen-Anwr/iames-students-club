@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { CalendarPlus, Clock3, MapPin, Trash2, Users } from 'lucide-react';
@@ -12,6 +13,7 @@ import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { Input } from '@/components/ui/Input';
 import { api, ApiError } from '@/lib/api';
+import { useApiQuery } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { cn } from '@/lib/utils';
 import type { CampusEvent } from '@/lib/types';
@@ -20,38 +22,35 @@ type Scope = 'upcoming' | 'past';
 
 export function EventsBoard() {
   const { showToast } = useToast();
+  const qc = useQueryClient();
   const [scope, setScope] = useState<Scope>('upcoming');
-  const [events, setEvents] = useState<CampusEvent[]>([]);
-  const [loading, setLoading] = useState(true);
   const [createOpen, setCreateOpen] = useState(false);
 
-  function load(next: Scope) {
-    setLoading(true);
-    api
-      .get<CampusEvent[]>(`/events?scope=${next}&limit=50`)
-      .then(setEvents)
-      .catch(() => showToast('تعذّر تحميل الفعاليات', 'error'))
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => {
-    load(scope);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope]);
+  const eventsKey = ['/events', scope] as const;
+  const { data: events = [], isPending: loading } = useApiQuery<'/events', CampusEvent[]>(
+    `/events?scope=${scope}&limit=50`,
+    { key: [...eventsKey] },
+  );
+  const patchList = (fn: (list: CampusEvent[]) => CampusEvent[]) =>
+    qc.setQueryData<CampusEvent[]>([...eventsKey], (list) => fn(list ?? []));
 
   async function rsvp(ev: CampusEvent) {
-    setEvents((list) =>
+    patchList((list) =>
       list.map((x) =>
-        x._id === ev._id
-          ? { ...x, going: !x.going, attendeeCount: x.attendeeCount + (x.going ? -1 : 1) }
-          : x,
+        x._id === ev._id ? { ...x, going: !x.going, attendeeCount: x.attendeeCount + (x.going ? -1 : 1) } : x,
       ),
     );
     try {
       const res = await api.post<{ going: boolean; attendeeCount: number }>(`/events/${ev._id}/rsvp`);
-      setEvents((list) => list.map((x) => (x._id === ev._id ? { ...x, ...res, full: x.capacity != null && res.attendeeCount >= x.capacity } : x)));
+      patchList((list) =>
+        list.map((x) =>
+          x._id === ev._id ? { ...x, ...res, full: x.capacity != null && res.attendeeCount >= x.capacity } : x,
+        ),
+      );
     } catch (err) {
-      setEvents((list) => list.map((x) => (x._id === ev._id ? { ...x, going: ev.going, attendeeCount: ev.attendeeCount } : x)));
+      patchList((list) =>
+        list.map((x) => (x._id === ev._id ? { ...x, going: ev.going, attendeeCount: ev.attendeeCount } : x)),
+      );
       showToast(err instanceof ApiError ? err.message : 'تعذّر تحديث الحضور', 'error');
     }
   }
@@ -59,11 +58,11 @@ export function EventsBoard() {
   async function remove(id: string) {
     if (!confirm('حذف هذه الفعالية؟')) return;
     const before = events;
-    setEvents((list) => list.filter((x) => x._id !== id));
+    patchList((list) => list.filter((x) => x._id !== id));
     try {
       await api.delete(`/events/${id}`);
     } catch (err) {
-      setEvents(before);
+      patchList(() => before);
       showToast(err instanceof ApiError ? err.message : 'تعذّر الحذف', 'error');
     }
   }
@@ -114,7 +113,9 @@ export function EventsBoard() {
         onClose={() => setCreateOpen(false)}
         onCreated={(ev) => {
           setCreateOpen(false);
-          if (scope === 'upcoming') setEvents((list) => [ev, ...list].sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
+          if (scope === 'upcoming') {
+            patchList((list) => [ev, ...list].sort((a, b) => a.startsAt.localeCompare(b.startsAt)));
+          }
           showToast('أُنشئت الفعالية', 'success');
         }}
       />

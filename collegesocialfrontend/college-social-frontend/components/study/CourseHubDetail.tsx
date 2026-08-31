@@ -1,6 +1,7 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   ArrowRight,
@@ -46,51 +47,54 @@ function courseColor(code: string) {
 
 const q = (code: string) => encodeURIComponent(code);
 
+interface CourseHubData {
+  lectures: Post[];
+  assignments: Assignment[];
+  questions: Question[];
+  quizzes: QuizSummary[];
+  slots: ScheduleEntry[];
+}
+
+// One fan-out over the existing `?courseCode=` endpoints. `Promise.allSettled` so one failing
+// leg degrades that section only. (A dedicated backend aggregator is a noted follow-up.)
+async function fetchCourseHub(courseCode: string): Promise<CourseHubData> {
+  const [lec, asg, qa, qz, sched] = await Promise.allSettled([
+    api.get<Post[]>(`/posts?courseCode=${q(courseCode)}&hasAttachment=true&page=1&limit=50`),
+    api.get<Assignment[]>(`/assignments?courseCode=${q(courseCode)}&page=1&limit=50`),
+    api.get<Question[]>(`/qa?courseCode=${q(courseCode)}&limit=50`),
+    api.get<QuizSummary[]>(`/quizzes?courseCode=${q(courseCode)}&limit=50`),
+    api.get<ScheduleEntry[]>('/schedule'),
+  ]);
+  const norm = courseCode.trim().toLowerCase();
+  return {
+    lectures: lec.status === 'fulfilled' ? lec.value : [],
+    assignments:
+      asg.status === 'fulfilled'
+        ? [...asg.value].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
+        : [],
+    questions: qa.status === 'fulfilled' ? qa.value : [],
+    quizzes: qz.status === 'fulfilled' ? qz.value : [],
+    slots:
+      sched.status === 'fulfilled'
+        ? sched.value
+            .filter((s) => s.courseName.trim().toLowerCase() === norm)
+            .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))
+        : [],
+  };
+}
+
 export function CourseHubDetail({ courseCode }: { courseCode: string }) {
+  const qc = useQueryClient();
   const [tab, setTab] = useState<Tab>('overview');
-  const [loading, setLoading] = useState(true);
-  const [lectures, setLectures] = useState<Post[]>([]);
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [quizzes, setQuizzes] = useState<QuizSummary[]>([]);
-  const [slots, setSlots] = useState<ScheduleEntry[]>([]);
 
-  const load = useCallback(async () => {
-    const [lec, asg, qa, qz, sched] = await Promise.allSettled([
-      api.get<Post[]>(`/posts?courseCode=${q(courseCode)}&hasAttachment=true&page=1&limit=50`),
-      api.get<Assignment[]>(`/assignments?courseCode=${q(courseCode)}&page=1&limit=50`),
-      api.get<Question[]>(`/qa?courseCode=${q(courseCode)}&limit=50`),
-      api.get<QuizSummary[]>(`/quizzes?courseCode=${q(courseCode)}&limit=50`),
-      api.get<ScheduleEntry[]>('/schedule'),
-    ]);
-    if (lec.status === 'fulfilled') setLectures(lec.value);
-    if (asg.status === 'fulfilled') {
-      setAssignments(
-        [...asg.value].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime()),
-      );
-    }
-    if (qa.status === 'fulfilled') setQuestions(qa.value);
-    if (qz.status === 'fulfilled') setQuizzes(qz.value);
-    if (sched.status === 'fulfilled') {
-      const norm = courseCode.trim().toLowerCase();
-      setSlots(
-        sched.value
-          .filter((s) => s.courseName.trim().toLowerCase() === norm)
-          .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime)),
-      );
-    }
-  }, [courseCode]);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    load().finally(() => {
-      if (!cancelled) setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [load]);
+  const hubKey = ['course-hub', courseCode];
+  const { data, isPending: loading } = useQuery<CourseHubData>({
+    queryKey: hubKey,
+    queryFn: () => fetchCourseHub(courseCode),
+  });
+  const { lectures = [], assignments = [], questions = [], quizzes = [], slots = [] } = data ?? {};
+  const patchHub = (fn: (d: CourseHubData) => CourseHubData) =>
+    qc.setQueryData<CourseHubData>(hubKey, (d) => (d ? fn(d) : d));
 
   const counts = {
     lectures: lectures.length,
@@ -187,7 +191,11 @@ export function CourseHubDetail({ courseCode }: { courseCode: string }) {
             ) : (
               <div className="space-y-4">
                 {lectures.map((p) => (
-                  <LectureCard key={p._id} post={p} onDeleted={(id) => setLectures((l) => l.filter((x) => x._id !== id))} />
+                  <LectureCard
+                    key={p._id}
+                    post={p}
+                    onDeleted={(id) => patchHub((d) => ({ ...d, lectures: d.lectures.filter((x) => x._id !== id) }))}
+                  />
                 ))}
               </div>
             ))}
@@ -201,7 +209,7 @@ export function CourseHubDetail({ courseCode }: { courseCode: string }) {
                   <AssignmentCard
                     key={a._id}
                     assignment={a}
-                    onDeleted={(id) => setAssignments((x) => x.filter((y) => y._id !== id))}
+                    onDeleted={(id) => patchHub((d) => ({ ...d, assignments: d.assignments.filter((y) => y._id !== id) }))}
                   />
                 ))}
               </div>
@@ -224,7 +232,11 @@ export function CourseHubDetail({ courseCode }: { courseCode: string }) {
             ) : (
               <div className="space-y-4">
                 {quizzes.map((quiz) => (
-                  <QuizCard key={quiz._id} quiz={quiz} onDeleted={(id) => setQuizzes((x) => x.filter((y) => y._id !== id))} />
+                  <QuizCard
+                    key={quiz._id}
+                    quiz={quiz}
+                    onDeleted={(id) => patchHub((d) => ({ ...d, quizzes: d.quizzes.filter((y) => y._id !== id) }))}
+                  />
                 ))}
               </div>
             ))}

@@ -1,7 +1,10 @@
 'use client';
 
+import { useState } from 'react';
 import { MotionConfig } from 'framer-motion';
 import { DirectionProvider } from '@radix-ui/react-direction';
+import { QueryClientProvider } from '@tanstack/react-query';
+import { makeQueryClient } from '@/lib/query';
 import { AuthProvider } from '@/lib/auth-context';
 import { SocketProvider } from '@/lib/socket-context';
 import { ToastProvider } from '@/lib/toast-context';
@@ -14,7 +17,11 @@ import { PwaRegistrar } from '@/components/PwaRegistrar';
 import { Observability } from '@/components/Observability';
 
 export function Providers({ children }: { children: React.ReactNode }) {
+  // One client for the life of the tab -- useState(factory) so it isn't recreated on re-render.
+  const [queryClient] = useState(makeQueryClient);
+
   return (
+    <QueryClientProvider client={queryClient}>
     <ThemeProvider>
       {/* App is RTL app-wide (<html dir="rtl">). Radix reads direction from context, not the
           DOM, so set it once here -- otherwise every menu/tooltip aligns for LTR. */}
@@ -43,5 +50,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
         </MotionConfig>
       </DirectionProvider>
     </ThemeProvider>
+    </QueryClientProvider>
   );
 }

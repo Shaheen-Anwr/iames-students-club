@@ -13,7 +13,8 @@
     "start:prod": "node dist/main",
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "jest",
-    "compress:legacy": "node dist/scripts/compress-legacy-images.js"
+    "compress:legacy": "node dist/scripts/compress-legacy-images.js",
+    "gen:openapi": "nest build && node dist/scripts/gen-openapi.js"
   },
   "dependencies": {
     "@adobe/pdfservices-node-sdk": "^4.1.0",
@@ -28,6 +29,7 @@
     "@nestjs/platform-socket.io": "^10.4.0",
     "@nestjs/schedule": "^6.1.3",
     "@nestjs/serve-static": "^4.0.2",
+    "@nestjs/swagger": "^8.1.1",
     "@nestjs/throttler": "^6.5.0",
     "@nestjs/websockets": "^10.4.0",
     "@socket.io/redis-adapter": "^8.3.0",

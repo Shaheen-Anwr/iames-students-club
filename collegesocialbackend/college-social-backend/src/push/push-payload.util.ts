@@ -28,6 +28,8 @@ const LABELS: Record<NotificationType, string> = {
   reel_comment: 'علّق على الريل الخاص بك',
   reel_comment_reply: 'رد على تعليقك',
   reel_mention: 'أشار إليك في ريل',
+  wall_comment: 'علّق على منشورك في الجدار',
+  event_reminder: 'فعالية قريبة',
   // Never used to build a title -- system_announcement pushes go through
   // buildAnnouncementPushPayload(), which uses the announcement's own title. Present only so
   // this map stays exhaustive over NotificationType.
@@ -56,6 +58,10 @@ function relativeHref(notification: NotificationDocument): string {
     case 'reel_comment_reply':
     case 'reel_mention':
       return notification.reelId ? `/reels/${notification.reelId}` : '/reels';
+    case 'wall_comment':
+      return '/wall';
+    case 'event_reminder':
+      return '/events';
     case 'post_comment':
     case 'post_reaction':
     case 'post_share':

@@ -29,10 +29,21 @@ export function AppShell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="flex h-dvh flex-col overflow-hidden bg-background">
+      {/* Keyboard/screen-reader shortcut past the nav straight to the page content. Visually
+          hidden until focused. */}
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:start-3 focus:top-3 focus:z-[100] focus:rounded-lg focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-elev-3 focus:outline focus:outline-2 focus:outline-accent"
+      >
+        تخطَّ إلى المحتوى
+      </a>
       <TopNavbar />
       <VerifyEmailBanner />
       <SetDepartmentBanner />
-      <main className="flex min-h-0 flex-1 flex-col  overflow-y-auto overflow-x-hidden scrollbar-none pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0">
+      <main
+        id="main-content"
+        className="flex min-h-0 flex-1 flex-col  overflow-y-auto overflow-x-hidden scrollbar-none pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0"
+      >
         {children}
       </main>
       <MobileNav />

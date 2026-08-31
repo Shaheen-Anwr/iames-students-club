@@ -98,8 +98,16 @@ export function AttendanceTracker() {
         : prev,
     );
     try {
-      await api.put('/attendance', { scheduleEntryId: o.scheduleEntryId, date: o.date, status: next });
-      loadSummary();
+      // Marking attendance often happens in a lecture hall with no signal -- queue it offline
+      // and let it replay on reconnect (the row already updated optimistically above).
+      const res = await api.sendQueued(
+        'PUT',
+        '/attendance',
+        { scheduleEntryId: o.scheduleEntryId, date: o.date, status: next },
+        'تسجيل حضور',
+      );
+      if (res.queued) showToast('لا يوجد اتصال — سيُحفظ الحضور تلقائيًا عند عودة الشبكة', 'success');
+      else loadSummary();
     } catch (err) {
       setWeek((prev) =>
         prev

@@ -12,6 +12,7 @@ import { createHash } from 'crypto';
 import { WallPost, WallPostDocument } from './schemas/wall-post.schema';
 import { WallComment, WallCommentDocument } from './schemas/wall-comment.schema';
 import { AiService } from '../ai/ai.service';
+import { NotificationsService } from '../notifications/notifications.service';
 import { Department } from '../common/enums/department.enum';
 import { Role } from '../common/enums/role.enum';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -59,6 +60,7 @@ export class WallService {
     @InjectModel(WallPost.name) private readonly model: Model<WallPostDocument>,
     @InjectModel(WallComment.name) private readonly commentModel: Model<WallCommentDocument>,
     private readonly ai: AiService,
+    private readonly notifications: NotificationsService,
     config: ConfigService,
   ) {
     // Reuse the JWT secret as the hash salt -- already a high-entropy server secret, and rotating
@@ -221,6 +223,20 @@ export class WallService {
       body,
     });
     await this.model.updateOne({ _id: post._id }, { $inc: { commentCount: 1 } }).exec();
+
+    // Notify the (anonymous) post author -- unless they're the one commenting. The notification
+    // itself carries the commenter as `actor`, but the wall pseudonymises identity elsewhere so
+    // this only reveals "someone replied", landing them on /wall. Fire-and-forget.
+    if (post.authorId.toString() !== user.userId) {
+      void this.notifications
+        .create({
+          recipient: post.authorId.toString(),
+          actor: user.userId,
+          type: 'wall_comment',
+          preview: body.slice(0, 80),
+        })
+        .catch(() => undefined);
+    }
 
     return {
       _id: doc._id.toString(),

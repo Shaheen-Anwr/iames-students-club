@@ -49,6 +49,12 @@ export class UsersController {
     return this.gamificationService.getLeaderboard(Number(limit) || 20, department);
   }
 
+  // GET /api/users/online -- classmates (same شعبة) with a live socket right now. Above @Get(':id').
+  @Get('online')
+  async online(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
+    return this.usersService.onlineInDepartment(user.userId, user.department, Number(limit) || 24);
+  }
+
   // GET /api/users/suggestions -- same reason as leaderboard above: must stay above @Get(':id').
   @Get('suggestions')
   async suggestions(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {

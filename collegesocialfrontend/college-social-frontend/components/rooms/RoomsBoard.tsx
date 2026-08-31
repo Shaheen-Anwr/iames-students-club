@@ -1,7 +1,8 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
+import { useQueryClient } from '@tanstack/react-query';
 import { Coffee, Plus, Timer, Users } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
@@ -11,30 +12,18 @@ import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
+import { useApiQuery } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn } from '@/lib/utils';
 import type { StudyRoomDetail, StudyRoomListItem } from '@/lib/types';
 
 export function RoomsBoard() {
-  const { showToast } = useToast();
-  const [rooms, setRooms] = useState<StudyRoomListItem[]>([]);
-  const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
 
-  function load() {
-    api
-      .get<StudyRoomListItem[]>('/rooms')
-      .then(setRooms)
-      .catch(() => showToast('تعذّر تحميل الغرف', 'error'))
-      .finally(() => setLoading(false));
-  }
-
-  useEffect(() => {
-    load();
-    const id = setInterval(load, 10_000); // rooms/members change slowly
-    return () => clearInterval(id);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  const { data: rooms = [], isPending: loading } = useApiQuery<'/rooms', StudyRoomListItem[]>('/rooms', {
+    refetchInterval: 10_000, // rooms/members change slowly
+  });
 
   return (
     <div className="mx-auto w-full max-w-2xl flex-1 space-y-4 px-4 py-6">
@@ -99,7 +88,7 @@ export function RoomsBoard() {
         onClose={() => setCreateOpen(false)}
         onCreated={(r) => {
           setCreateOpen(false);
-          setRooms((list) => [r, ...list]);
+          qc.setQueryData<StudyRoomListItem[]>(['/rooms'], (list) => [r, ...(list ?? [])]);
         }}
       />
     </div>

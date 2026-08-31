@@ -1,6 +1,6 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import { Award } from 'lucide-react';
 import Link from 'next/link';
 import { useAuth } from '@/lib/auth-context';
@@ -15,6 +15,7 @@ import { GreetingHeader } from '@/components/home/GreetingHeader';
 import { QuickActions } from '@/components/home/QuickActions';
 import { NextClassCard } from '@/components/home/NextClassCard';
 import { TodayGlance } from '@/components/home/TodayGlance';
+import { OnlineNow } from '@/components/home/OnlineNow';
 import { TodayWidget } from '@/components/home/TodayWidget';
 import { CompactLeaderboard } from '@/components/home/CompactLeaderboard';
 import { MyAssignmentsCard } from '@/components/home/MyAssignmentsCard';
@@ -27,25 +28,12 @@ import type { DashboardResponse } from '@/lib/types';
 export default function HomePage() {
   const { user } = useAuth();
   const { unreadCount } = useNotifications();
-  const [data, setData] = useState<DashboardResponse | null>(null);
   const isProfessor = user?.role === 'professor';
 
-  // Pull-to-refresh + first load share this. Kept as a plain fetch (no useQuery) so the change
-  // stays contained; migrate with the rest of the dashboard reads later.
-  const load = useCallback(async () => {
-    const res = await api.get<DashboardResponse>('/dashboard');
-    setData(res);
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    api.get<DashboardResponse>('/dashboard').then((res) => {
-      if (!cancelled) setData(res);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, refetch } = useQuery<DashboardResponse>({
+    queryKey: ['dashboard'],
+    queryFn: () => api.get<DashboardResponse>('/dashboard'),
+  });
 
   if (!user || !data) {
     return (
@@ -67,7 +55,7 @@ export default function HomePage() {
       });
 
   return (
-    <PullToRefresh onRefresh={load} className="min-h-0 flex-1 scrollbar-thin">
+    <PullToRefresh onRefresh={() => refetch()} className="min-h-0 flex-1 scrollbar-thin">
       <div className="mx-auto w-full max-w-5xl space-y-5 px-4 py-6">
         {/* Sections rise in gently in sequence rather than all snapping in at once. */}
         <div className="animate-slide-up" style={{ animationDelay: '0ms' }}>
@@ -81,6 +69,12 @@ export default function HomePage() {
         <div className="animate-slide-up" style={{ animationDelay: '120ms' }}>
           <TodayGlance schedule={data.todaySchedule} dueToday={data.dueToday} streak={user.streakCount ?? 0} />
         </div>
+
+        {!isProfessor && (
+          <div className="animate-slide-up" style={{ animationDelay: '160ms' }}>
+            <OnlineNow />
+          </div>
+        )}
 
         <div className="animate-slide-up" style={{ animationDelay: '180ms' }}>
           <QuickActions />

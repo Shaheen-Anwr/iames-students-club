@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { Bell, MessageCircle, Users, MessageSquareText, Heart, HelpCircle, Share2, UserPlus, UserCheck, Megaphone, AtSign } from 'lucide-react';
+import { Bell, MessageCircle, Users, MessageSquareText, Heart, HelpCircle, Share2, UserPlus, UserCheck, Megaphone, AtSign, MessagesSquare, CalendarClock } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { useNotifications } from '@/lib/notifications-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
@@ -24,6 +24,8 @@ export const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   reel_comment: 'علّق على الريل الخاص بك',
   reel_comment_reply: 'رد على تعليقك',
   reel_mention: 'أشار إليك في ريل',
+  wall_comment: 'علّق على منشورك في الجدار',
+  event_reminder: 'فعالية قريبة تنتظرك',
   // Rendered as "<author name> نشر إعلانًا", with the announcement title on the line below.
   // Legacy rows written before the author was carried fall back to showing the title alone.
   system_announcement: 'نشر إعلانًا',
@@ -44,6 +46,8 @@ export const NOTIFICATION_ICONS: Record<Notification['type'], React.ComponentTyp
   reel_comment: MessageSquareText,
   reel_comment_reply: MessageSquareText,
   reel_mention: AtSign,
+  wall_comment: MessagesSquare,
+  event_reminder: CalendarClock,
   system_announcement: Megaphone,
 };
 
@@ -65,6 +69,10 @@ export function notificationHref(notification: Notification): string {
     case 'reel_comment_reply':
     case 'reel_mention':
       return notification.reelId ? `/reels/${notification.reelId}` : '/reels';
+    case 'wall_comment':
+      return '/wall';
+    case 'event_reminder':
+      return '/events';
     // Comment-centric: land on the post with its comments already open.
     case 'post_comment':
     case 'comment_reply':

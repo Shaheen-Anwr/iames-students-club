@@ -33,6 +33,8 @@ const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   reel_comment: 'علّق على الريل الخاص بك',
   reel_comment_reply: 'رد على تعليقك',
   reel_mention: 'أشار إليك في ريل',
+  wall_comment: 'علّق على منشورك في الجدار',
+  event_reminder: 'فعالية قريبة تنتظرك',
   // "<author name> نشر إعلانًا" -- the toast below leads with the author when known.
   system_announcement: 'نشر إعلانًا',
 };

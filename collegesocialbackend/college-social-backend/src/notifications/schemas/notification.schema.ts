@@ -21,6 +21,11 @@ export type NotificationType =
   | 'reel_comment'
   | 'reel_comment_reply'
   | 'reel_mention'
+  // Someone commented on your anonymous الجدار post (see src/wall) -- links to /wall.
+  | 'wall_comment'
+  // An event you RSVP'd to starts soon (see src/events/event-reminder.service) -- links to /events.
+  // `actor` is the event's creator; `preview` is the event title.
+  | 'event_reminder'
   // Platform/department announcement fanned out by AnnouncementsService -- one per recipient.
   // `actor` is the announcement's author; `title` is the announcement headline.
   | 'system_announcement';
@@ -51,6 +56,8 @@ export class Notification {
       'reel_comment',
       'reel_comment_reply',
       'reel_mention',
+      'wall_comment',
+      'event_reminder',
       'system_announcement',
     ],
   })

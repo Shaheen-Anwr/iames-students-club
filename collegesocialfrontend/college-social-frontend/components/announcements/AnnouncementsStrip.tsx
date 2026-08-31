@@ -1,37 +1,34 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { useQueryClient } from '@tanstack/react-query';
 import { Megaphone, Pin, Plus } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
-import { api } from '@/lib/api';
+import { useApiQuery } from '@/lib/query';
 import { useAuth } from '@/lib/auth-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import type { Announcement } from '@/lib/types';
 import { CreateAnnouncementModal } from './CreateAnnouncementModal';
 
+const STRIP_PATH = '/announcements?limit=3';
+
 export function AnnouncementsStrip() {
   const { user } = useAuth();
+  const qc = useQueryClient();
   const searchParams = useSearchParams();
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const { data: announcements = [], isPending: loading } = useApiQuery<'/announcements', Announcement[]>(STRIP_PATH);
 
   const canPost = user?.role === 'professor' || user?.role === 'admin';
   // Opens automatically when the home page's "نشر إعلان" quick action links here with
   // ?announce=1, same pattern as AssignmentsBoard's ?new=1.
   const [modalOpen, setModalOpen] = useState(() => canPost && searchParams.get('announce') === '1');
 
-  useEffect(() => {
-    api
-      .get<Announcement[]>('/announcements?limit=3')
-      .then(setAnnouncements)
-      .finally(() => setLoading(false));
-  }, []);
-
   function handleCreated(announcement: Announcement) {
-    setAnnouncements((prev) => [announcement, ...prev].slice(0, 3));
+    qc.setQueryData<Announcement[]>([STRIP_PATH], (prev) => [announcement, ...(prev ?? [])].slice(0, 3));
   }
 
   if (loading || (announcements.length === 0 && !canPost)) return null;

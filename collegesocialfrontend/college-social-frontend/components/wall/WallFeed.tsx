@@ -91,10 +91,10 @@ export function WallFeed() {
   }
 
   async function toggleLike(post: WallPost) {
+    // Optimistic toggle -- and it survives going offline: sendQueued replays the like on reconnect.
     patch(post._id, { liked: !post.liked, likeCount: post.likeCount + (post.liked ? -1 : 1) });
     try {
-      const res = await api.post<{ liked: boolean; likeCount: number }>(`/wall/${post._id}/like`);
-      patch(post._id, res);
+      await api.sendQueued('POST', `/wall/${post._id}/like`, undefined, 'إعجاب');
     } catch {
       patch(post._id, { liked: post.liked, likeCount: post.likeCount });
     }

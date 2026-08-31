@@ -402,6 +402,30 @@ export const api = {
   put: <T>(path: string, data?: unknown) =>
     request<T>(path, { method: 'PUT', body: data !== undefined ? JSON.stringify(data) : undefined }),
   delete: <T>(path: string) => request<T>(path, { method: 'DELETE' }),
+
+  /**
+   * A write that survives going offline. Tries the request; on a genuine network failure (offline,
+   * not an HTTP error) it queues the request to an IndexedDB outbox that auto-replays on reconnect
+   * and resolves with `{ queued: true }`. Only for writes whose response body the caller doesn't
+   * need and where the UI already updated optimistically (attendance marks, wall likes, …).
+   */
+  sendQueued: async (
+    method: 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    path: string,
+    data?: unknown,
+    label = path,
+  ): Promise<{ queued: boolean }> => {
+    try {
+      await request(path, { method, body: data !== undefined ? JSON.stringify(data) : undefined });
+      return { queued: false };
+    } catch (err) {
+      const offline = err instanceof TypeError || (typeof navigator !== 'undefined' && !navigator.onLine);
+      if (!offline) throw err;
+      const { enqueue } = await import('./offline-queue');
+      await enqueue({ method, path, body: data, label });
+      return { queued: true };
+    }
+  },
   upload: async <T>(path: string, file: File, onProgress?: UploadProgressHandler) => {
     const category = path.replace(/^\/?upload\//, '');
 

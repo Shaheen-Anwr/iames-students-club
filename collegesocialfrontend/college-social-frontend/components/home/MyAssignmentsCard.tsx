@@ -1,13 +1,13 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useMemo } from 'react';
 import Link from 'next/link';
 import { format } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import { ClipboardList, Plus, Users } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { SectionHeader } from '@/components/ui/SectionHeader';
-import { api } from '@/lib/api';
+import { useApiQuery } from '@/lib/query';
 import { useAuth } from '@/lib/auth-context';
 import type { Assignment } from '@/lib/types';
 
@@ -15,23 +15,19 @@ import type { Assignment } from '@/lib/types';
 // a quick view of the assignments they've published and how many students have submitted so far.
 export function MyAssignmentsCard() {
   const { user } = useAuth();
-  const [assignments, setAssignments] = useState<Assignment[]>([]);
-  const [loading, setLoading] = useState(true);
+  const { data: all, isPending } = useApiQuery<'/assignments', Assignment[]>('/assignments?limit=50', {
+    enabled: !!user,
+  });
+  const loading = isPending;
 
-  useEffect(() => {
-    if (!user) return;
-    api
-      .get<Assignment[]>('/assignments?limit=50')
-      .then((all) => {
-        setAssignments(
-          all
-            .filter((a) => a.createdBy?._id === user._id)
-            .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
-            .slice(0, 5),
-        );
-      })
-      .finally(() => setLoading(false));
-  }, [user]);
+  const assignments = useMemo(
+    () =>
+      (all ?? [])
+        .filter((a) => a.createdBy?._id === user?._id)
+        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+        .slice(0, 5),
+    [all, user?._id],
+  );
 
   return (
     <Card className="p-4">

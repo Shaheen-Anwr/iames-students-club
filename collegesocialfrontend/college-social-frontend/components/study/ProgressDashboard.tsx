@@ -1,6 +1,7 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
+import { useQuery } from '@tanstack/react-query';
 import Link from 'next/link';
 import {
   Bar,
@@ -63,30 +64,32 @@ const GPA_TONE_CLASS: Record<ReturnType<typeof gpaTone>, string> = {
   low: 'text-danger',
 };
 
+interface DashboardData {
+  gpa: GpaResponse | null;
+  attendance: AttendanceSummary | null;
+  assignments: Assignment[] | null;
+}
+
+async function fetchProgress(): Promise<DashboardData> {
+  const [g, a, asg] = await Promise.allSettled([
+    api.get<GpaResponse>('/gpa'),
+    api.get<AttendanceSummary>('/attendance/summary'),
+    api.get<Assignment[]>('/assignments?limit=100'),
+  ]);
+  return {
+    gpa: g.status === 'fulfilled' ? g.value : null,
+    attendance: a.status === 'fulfilled' ? a.value : null,
+    assignments: asg.status === 'fulfilled' ? asg.value : null,
+  };
+}
+
 export function ProgressDashboard() {
   const { user } = useAuth();
-  const [loading, setLoading] = useState(true);
-  const [gpa, setGpa] = useState<GpaResponse | null>(null);
-  const [attendance, setAttendance] = useState<AttendanceSummary | null>(null);
-  const [assignments, setAssignments] = useState<Assignment[] | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    Promise.allSettled([
-      api.get<GpaResponse>('/gpa'),
-      api.get<AttendanceSummary>('/attendance/summary'),
-      api.get<Assignment[]>('/assignments?limit=100'),
-    ]).then(([g, a, asg]) => {
-      if (cancelled) return;
-      if (g.status === 'fulfilled') setGpa(g.value);
-      if (a.status === 'fulfilled') setAttendance(a.value);
-      if (asg.status === 'fulfilled') setAssignments(asg.value);
-      setLoading(false);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { data, isPending: loading } = useQuery<DashboardData>({
+    queryKey: ['progress-dashboard'],
+    queryFn: fetchProgress,
+  });
+  const { gpa = null, attendance = null, assignments = null } = data ?? {};
 
   const termData = useMemo(
     () => (gpa?.summary.terms ?? []).map((t) => ({ term: t.term, gpa: t.gpa })),
