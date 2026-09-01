@@ -4,8 +4,9 @@
 //
 //   * -> PDF  (docx/pptx/xlsx -> pdf): Adobe Create PDF (identical to Office's own "Save as PDF")
 //       -> headless LibreOffice -> pdfkit redraw (last resort).
-//   PDF -> Word/PowerPoint: Adobe Export PDF + Arabic clean-up -> LibreOffice PDF import
-//       (writer_pdf_import / impress_pdf_import) -> flat block pipeline (last resort).
+//   PDF -> Word/PowerPoint: LlamaParse structural recovery (LLM-backed; keeps headings, lists and
+//       tables-as-grids, and Arabic/RTL in reading order) -> Adobe Export PDF + Arabic clean-up ->
+//       LibreOffice PDF import (writer_pdf_import / impress_pdf_import) -> flat block pipeline.
 //   Word/PowerPoint/Excel -> Word/PowerPoint: LibreOffice renders the source to a PDF, then that
 //       PDF is recovered into the target (Adobe Export PDF, else LibreOffice's PDF import); no
 //       soffice -> Adobe's own Create+Export round-trip; else the flat block pipeline. This trades
@@ -30,6 +31,7 @@ import {
   runViaLibreOffice,
 } from './libreoffice.engine';
 import { adobeAvailable, isAdobeRecoverable, runViaAdobe } from './adobe.engine';
+import { llamaParseAvailable, runViaLlamaParse } from './llamaparse.engine';
 import { normalizeArabicInOfficeFile } from './office-arabic-normalize.util';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -140,7 +142,27 @@ async function pdfToOffice(input: Buffer, target: ConvertFormat, onProgress: Pro
 }
 
 // pdf -> docx | pptx: recover the page as editable objects, keeping its layout.
-async function pdfToPaged(input: Buffer, target: 'docx' | 'pptx', onProgress: ProgressFn): Promise<Buffer> {
+//
+// `viaLlamaParse` is set only when the input is a real user-uploaded PDF -- not when officeToPaged
+// hands us a LibreOffice-rendered intermediate (that source already has clean structure, and every
+// call would otherwise burn LlamaParse quota + ~30s of network on a round-trip we don't need).
+async function pdfToPaged(
+  input: Buffer,
+  target: 'docx' | 'pptx',
+  onProgress: ProgressFn,
+  opts: { viaLlamaParse?: boolean } = {},
+): Promise<Buffer> {
+  if (opts.viaLlamaParse && llamaParseAvailable()) {
+    try {
+      const out = await runViaLlamaParse(input, target, onProgress);
+      onProgress(95, 'تحسين النص العربي');
+      return finish(out, target);
+    } catch (err) {
+      logger.warn(
+        `LlamaParse pdf->${target} failed (${(err as Error).message}); falling back to Adobe/LibreOffice`,
+      );
+    }
+  }
   if (adobeAvailable()) {
     try {
       const out = await runViaAdobe(input, 'pdf', target, onProgress);
@@ -239,6 +261,6 @@ export async function runConversion(
   }
 
   // target is docx | pptx: keep the source's visual structure, editable.
-  if (source === 'pdf') return pdfToPaged(input, target, onProgress);
+  if (source === 'pdf') return pdfToPaged(input, target, onProgress, { viaLlamaParse: true });
   return officeToPaged(input, source, target, onProgress);
 }

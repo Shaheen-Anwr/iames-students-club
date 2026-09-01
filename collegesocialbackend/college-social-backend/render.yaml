@@ -92,3 +92,8 @@ services:
         sync: false
       - key: PDF_SERVICES_CLIENT_SECRET
         sync: false
+      # محوّل الملفات -- LlamaParse (LlamaCloud) key for PDF -> Word/PowerPoint. LLM-backed structural
+      # recovery (headings, lists, tables-as-grids, Arabic/RTL in reading order); tried before Adobe
+      # for pdf->docx / pdf->pptx. Optional -- unset just skips to Adobe. Free tier 1000 pages/day.
+      - key: LLAMAPARSE_API_KEY
+        sync: false
