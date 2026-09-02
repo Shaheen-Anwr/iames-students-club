@@ -171,10 +171,14 @@ export class PostsService {
     return post.populate('author', 'name role photoUrl collegeId');
   }
 
-  // Simple reverse-chronological feed with optional course/author/attachment filter and pagination.
+  // Reverse-chronological feed with optional course/author/attachment filter and pagination.
   // `scope`/`viewerDepartment` split the feed into "public" (everyone) vs "department" (only the
   // viewer's own department, taken from their JWT -- never client-suppliable, so a student can
   // never query another department's feed).
+  //
+  // On the main "عام" feed and the شعبة feed, the viewer's own academic year is prioritised: posts
+  // tagged with their academicYear (plus untagged / college-wide posts) come first, then every
+  // other year's, each tier newest-first -- see the tiering block below.
   async feed(
     page = 1,
     limit = 20,
@@ -235,10 +239,49 @@ export class PostsService {
     }
     if (filters?.academicYear) filter.academicYear = filters.academicYear;
     if (filters?.specialization) filter.specialization = filters.specialization;
+
+    const skip = (page - 1) * limit;
+
+    // Priority for the student's own academic year: on the main "عام" feed and the شعبة feed, show
+    // posts tagged with the viewer's academicYear -- plus untagged / college-wide posts -- ahead of
+    // every other year's, each tier still newest-first. Skipped for the profile feed, a
+    // course-filtered view, an explicit academicYear filter the viewer chose, or a viewer with no
+    // academicYear of their own to prioritise.
+    if (!authorId && !courseCode && !filters?.academicYear && viewerId) {
+      const viewerYear = (await this.usersService.findById(viewerId))?.academicYear ?? null;
+      if (viewerYear) {
+        const ownYear = { ...filter, academicYear: { $in: [viewerYear, null] } };
+        const otherYears = { ...filter, academicYear: { $nin: [viewerYear, null] } };
+
+        // First page: fetch the own-year tier straight off and top up from other years only if it
+        // doesn't fill the page -- no countDocuments on the hot path.
+        if (skip === 0) {
+          const head = await this.findFeedPage(ownYear, 0, limit);
+          if (head.length === limit) return head;
+          const tail = await this.findFeedPage(otherYears, 0, limit - head.length);
+          return [...head, ...tail];
+        }
+
+        // Deeper pages need the tier boundary to translate the offset.
+        const ownYearTotal = await this.postModel.countDocuments(ownYear);
+        if (skip + limit <= ownYearTotal) return this.findFeedPage(ownYear, skip, limit);
+        if (skip >= ownYearTotal) return this.findFeedPage(otherYears, skip - ownYearTotal, limit);
+        const head = await this.findFeedPage(ownYear, skip, ownYearTotal - skip);
+        const tail = await this.findFeedPage(otherYears, 0, limit - head.length);
+        return [...head, ...tail];
+      }
+    }
+
+    return this.findFeedPage(filter, skip, limit);
+  }
+
+  // The reverse-chronological page fetch shared by feed()'s tiers -- same sort, populate and
+  // pagination as the plain feed, split out so the academic-year tiering can call it per tier.
+  private findFeedPage(filter: Record<string, unknown>, skip: number, limit: number): Promise<PostDocument[]> {
     return this.postModel
       .find(filter)
       .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
+      .skip(skip)
       .limit(limit)
       .populate('author', 'name role photoUrl collegeId')
       .populate({ path: 'sharedFrom', populate: { path: 'author', select: 'name role photoUrl collegeId' } })

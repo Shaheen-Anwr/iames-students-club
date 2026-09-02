@@ -154,6 +154,11 @@ PostSchema.index({ caption: 'text' });
 // index) and a plain createdAt index as a fallback for any other sort-by-recency query.
 PostSchema.index({ scope: 1, department: 1, createdAt: -1 });
 PostSchema.index({ scope: 1, createdAt: -1 });
+// Academic-year priority tier (see PostsService.feed()): the main "عام" feed and the شعبة feed put
+// the viewer's own academicYear (plus untagged posts) ahead of every other year's. This covers the
+// hot own-year page fetch + its countDocuments; the rest-of-years tier ($nin) is a rare deep-scroll
+// and falls back to the indexes above.
+PostSchema.index({ scope: 1, department: 1, academicYear: 1, createdAt: -1 });
 // Profile feed: one author's posts narrowed to the audiences the viewer may see (scope $in),
 // newest first -- see PostsService.feed()'s profile branch. Also covers the main feed's
 // "friends-scoped posts by people I'm friends with" $or clause (author $in + scope equality).
