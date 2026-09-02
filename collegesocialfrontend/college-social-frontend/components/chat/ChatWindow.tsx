@@ -454,9 +454,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   // ========== RENDER ==========
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex h-full min-h-0 flex-col bg-surface">
       {/* Header */}
-      <div className="flex items-center gap-3 border-b border-border bg-surface px-4 py-3.5">
+      <div className="border-b border-border bg-surface">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3.5">
         <Link
           href="/chat"
           className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground lg:hidden"
@@ -510,10 +511,12 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           <Search className="h-4 w-4" />
         </button>
       </div>
+      </div>
 
       {/* Search */}
       {searchOpen && (
-        <div className="border-b border-border bg-surface px-4 py-2.5">
+        <div className="border-b border-border bg-surface">
+        <div className="mx-auto w-full max-w-3xl px-4 py-2.5">
           <div className="flex items-center gap-2">
             <Input
               autoFocus
@@ -554,6 +557,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </div>
           )}
         </div>
+        </div>
       )}
 
       {/* Messages */}
@@ -561,15 +565,18 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       <div
         ref={scrollRef}
         onScroll={handleScroll}
-        className="min-h-0 flex-1 space-y-4 overflow-y-auto bg-surface-2 px-4 py-5 scrollbar-thin sm:px-6"
+        className="min-h-0 flex-1 overflow-y-auto bg-surface-2 px-4 py-5 scrollbar-thin sm:px-6"
         style={chatBackgroundStyle(background)}
       >
+        {/* Cap the thread to a comfortable reading width and centre it, so bubbles don't stretch
+            edge-to-edge (and own-messages don't hug the far side) on a wide conversation pane. */}
+        <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
         {loading || !conversation ? (
-          <div className="flex h-full items-center justify-center">
+          <div className="flex flex-1 items-center justify-center">
             <Spinner className="h-6 w-6" />
           </div>
         ) : messages.length === 0 ? (
-          <div className="flex h-full flex-col items-center justify-center gap-3 text-center">
+          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2/70">
               <MessageCircle className="h-6 w-6 text-muted-foreground" />
             </div>
@@ -579,7 +586,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </div>
           </div>
         ) : (
-          messages.map((message, index) => {
+          <div className="flex-1 space-y-4">
+          {messages.map((message, index) => {
             const prev = messages[index - 1];
             const isOwn = message.sender?._id === user._id;
             const showAvatar = !prev || prev.sender?._id !== message.sender?._id;
@@ -603,9 +611,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                 />
               </div>
             );
-          })
+          })}
+          </div>
         )}
         <div ref={bottomRef} />
+        </div>
       </div>
 
         {newCount > 0 && (
@@ -621,12 +631,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
       {/* Input */}
       {blockedByMe ? (
-        <div className="flex items-center justify-center gap-2 border-t border-border bg-surface px-4 py-3.5 text-center text-sm text-muted-foreground">
-          <ShieldOff className="h-4 w-4 shrink-0" />
-          لقد قمت بحظر هذا المستخدم.
-          <button onClick={handleUnblock} className="font-medium text-accent hover:underline">
-            إلغاء الحظر
-          </button>
+        <div className="border-t border-border bg-surface">
+          <div className="mx-auto flex w-full max-w-3xl items-center justify-center gap-2 px-4 py-3.5 text-center text-sm text-muted-foreground">
+            <ShieldOff className="h-4 w-4 shrink-0" />
+            لقد قمت بحظر هذا المستخدم.
+            <button onClick={handleUnblock} className="font-medium text-accent hover:underline">
+              إلغاء الحظر
+            </button>
+          </div>
         </div>
       ) : (
         <MessageInput
