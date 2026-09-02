@@ -3,9 +3,11 @@
 import { useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Maximize2, Plus, X } from 'lucide-react';
+import { History, Maximize2, Plus, X } from 'lucide-react';
+import { cn } from '@/lib/utils';
 import { useAi } from '@/lib/ai-context';
 import { AiChatPanel } from './AiChatPanel';
+import { AiConversationSwitcher } from './AiConversationSwitcher';
 import { AiAvatar } from './AiAvatar';
 
 const STORAGE_KEY = 'ai-fab-position';
@@ -42,6 +44,8 @@ export function AiFab() {
   const pathname = usePathname();
   const { conversations, panelOpen: open, setPanelOpen: setOpen } = useAi();
   const [activeId, setActiveId] = useState<string | null>(null);
+  // 'chat' = the live conversation; 'history' = the switch-between / delete list.
+  const [view, setView] = useState<'chat' | 'history'>('chat');
   const [pos, setPos] = useState<Point | null>(null);
   const [dragging, setDragging] = useState(false);
   const [hovered, setHovered] = useState(false);
@@ -67,6 +71,11 @@ export function AiFab() {
       // ignore malformed storage
     }
   }, []);
+
+  // Always reopen on the chat, not wherever the history toggle was left.
+  useEffect(() => {
+    if (!open) setView('chat');
+  }, [open]);
 
   useEffect(() => {
     function onResize() {
@@ -188,11 +197,25 @@ export function AiFab() {
             </div>
             <div className="flex items-center gap-1">
               <button
-                onClick={() => setActiveId(null)}
+                onClick={() => {
+                  setActiveId(null);
+                  setView('chat');
+                }}
                 title="محادثة جديدة"
                 className="rounded-full p-1.5 text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-foreground active:scale-95"
               >
                 <Plus className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => setView((v) => (v === 'history' ? 'chat' : 'history'))}
+                title={view === 'history' ? 'العودة إلى المحادثة' : 'سجل المحادثات'}
+                aria-pressed={view === 'history'}
+                className={cn(
+                  'rounded-full p-1.5 transition-transform hover:scale-110 hover:bg-surface-2 active:scale-95',
+                  view === 'history' ? 'bg-surface-2 text-accent' : 'text-muted-foreground hover:text-foreground',
+                )}
+              >
+                <History className="h-4 w-4" />
               </button>
               <Link
                 href="/ai"
@@ -205,7 +228,22 @@ export function AiFab() {
             </div>
           </div>
           <div className="min-h-0 flex-1">
-            <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+            {view === 'history' ? (
+              <AiConversationSwitcher
+                activeId={conversationId}
+                onSelect={(id) => {
+                  setActiveId(id);
+                  setView('chat');
+                }}
+                onNew={() => {
+                  setActiveId(null);
+                  setView('chat');
+                }}
+                onDeleteActive={() => setActiveId(null)}
+              />
+            ) : (
+              <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+            )}
           </div>
         </div>
       )}

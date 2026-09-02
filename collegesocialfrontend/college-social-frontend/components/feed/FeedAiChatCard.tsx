@@ -2,10 +2,12 @@
 
 import { useState } from 'react';
 import Link from 'next/link';
-import { Maximize2, Plus } from 'lucide-react';
+import { History, Maximize2, Plus } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
+import { cn } from '@/lib/utils';
 import { useAi } from '@/lib/ai-context';
 import { AiChatPanel } from '@/components/ai/AiChatPanel';
+import { AiConversationSwitcher } from '@/components/ai/AiConversationSwitcher';
 import { AiAvatar } from '@/components/ai/AiAvatar';
 
 // Left rail: the AI assistant embedded as a full chat box next to the create-post box,
@@ -13,6 +15,7 @@ import { AiAvatar } from '@/components/ai/AiAvatar';
 export function FeedAiChatCard() {
   const { conversations } = useAi();
   const [activeId, setActiveId] = useState<string | null>(null);
+  const [view, setView] = useState<'chat' | 'history'>('chat');
   const conversationId = activeId ?? conversations[0]?._id ?? null;
 
   return (
@@ -28,11 +31,25 @@ export function FeedAiChatCard() {
         </div>
         <div className="flex items-center gap-1">
           <button
-            onClick={() => setActiveId(null)}
+            onClick={() => {
+              setActiveId(null);
+              setView('chat');
+            }}
             title="محادثة جديدة"
             className="rounded-full p-1.5 text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-foreground active:scale-95"
           >
             <Plus className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setView((v) => (v === 'history' ? 'chat' : 'history'))}
+            title={view === 'history' ? 'العودة إلى المحادثة' : 'سجل المحادثات'}
+            aria-pressed={view === 'history'}
+            className={cn(
+              'rounded-full p-1.5 transition-transform hover:scale-110 hover:bg-surface-2 active:scale-95',
+              view === 'history' ? 'bg-surface-2 text-accent' : 'text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <History className="h-4 w-4" />
           </button>
           <Link
             href="/ai"
@@ -45,7 +62,22 @@ export function FeedAiChatCard() {
       </div>
 
       <div className="min-h-0 flex-1">
-        <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+        {view === 'history' ? (
+          <AiConversationSwitcher
+            activeId={conversationId}
+            onSelect={(id) => {
+              setActiveId(id);
+              setView('chat');
+            }}
+            onNew={() => {
+              setActiveId(null);
+              setView('chat');
+            }}
+            onDeleteActive={() => setActiveId(null)}
+          />
+        ) : (
+          <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+        )}
       </div>
     </Card>
   );

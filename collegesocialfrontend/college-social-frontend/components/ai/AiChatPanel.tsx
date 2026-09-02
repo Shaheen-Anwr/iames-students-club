@@ -114,7 +114,7 @@ function AiStreamingBubble({ store, onTextChange }: { store: StreamingStore; onT
         <AiAvatar size={18} />
       </div>
       {text ? (
-        <div className="flex max-w-[80%] flex-col gap-1 items-start">
+        <div className="flex max-w-[85%] flex-col gap-1 items-start">
           {stub && (
             <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-3 w-3" />
