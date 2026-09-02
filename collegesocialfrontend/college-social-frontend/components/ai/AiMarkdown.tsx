@@ -131,12 +131,12 @@ function splitRow(line: string): string[] {
 function Table({ rows, keyPrefix }: { rows: string[][]; keyPrefix: string }) {
   const [head, ...body] = rows;
   return (
-    <div className="my-3 max-w-full overflow-x-auto first:mt-0 last:mb-0 scrollbar-thin">
-      <table className="w-full border-collapse text-[13px]">
+    <div className="my-3 max-w-full overflow-x-auto first:mt-0 last:mb-0 scrollbar-thin [overflow-wrap:normal] [word-break:normal]">
+      <table className="w-max min-w-full border-collapse text-[13px]">
         <thead>
           <tr className="border-b border-border">
             {head.map((c, i) => (
-              <th key={i} className="px-2.5 py-1.5 text-start font-semibold text-foreground">
+              <th key={i} className="whitespace-nowrap px-2.5 py-1.5 text-start font-semibold text-foreground">
                 {renderInline(c, `${keyPrefix}-h-${i}`)}
               </th>
             ))}
@@ -146,7 +146,7 @@ function Table({ rows, keyPrefix }: { rows: string[][]; keyPrefix: string }) {
           {body.map((r, ri) => (
             <tr key={ri}>
               {head.map((_, ci) => (
-                <td key={ci} className="px-2.5 py-1.5 align-top text-muted-foreground">
+                <td key={ci} className="whitespace-nowrap px-2.5 py-1.5 align-top text-muted-foreground">
                   {renderInline(r[ci] ?? '', `${keyPrefix}-${ri}-${ci}`)}
                 </td>
               ))}
@@ -315,7 +315,7 @@ export function AiMarkdown({ text }: { text: string }) {
   }
 
   return (
-    <div className="min-w-0 max-w-full break-words [overflow-wrap:anywhere] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+    <div className="min-w-0 max-w-full break-words [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
       {blocks}
     </div>
   );

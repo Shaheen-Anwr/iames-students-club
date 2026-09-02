@@ -124,7 +124,7 @@ function AiStreamingBubble({ store, onTextChange }: { store: StreamingStore; onT
           )}
           <div
             className={cn(
-              'relative min-w-0 max-w-full break-words [overflow-wrap:anywhere] rounded-2xl rounded-br-md border px-4 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm',
+              'relative min-w-0 max-w-full break-words rounded-2xl rounded-br-md border px-4 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm',
               stub
                 ? 'border-amber-500/30 border-s-2 border-s-amber-500/60 bg-amber-500/10 text-foreground'
                 : 'border-border border-s-2 border-s-accent/50 bg-surface-2/60 text-foreground',
