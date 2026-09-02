@@ -7,7 +7,13 @@ import { CreateConversationDto } from './dto/create-conversation.dto';
 import { AttachmentDto } from './dto/create-message.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
 import { NotificationsService } from '../notifications/notifications.service';
-import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
+import {
+  DailyCount,
+  daysAgoStart,
+  fillDailyCounts,
+  previousWindowMatch,
+  TrendSeries,
+} from '../common/utils/daily-counts.util';
 import { extractMentionIds } from '../common/utils/tag-parser.util';
 import { UsersService } from '../users/users.service';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
@@ -731,5 +737,15 @@ export class ChatService {
       ])
       .exec();
     return fillDailyCounts(rows, days);
+  }
+
+  // Chat messages over the trailing `days` window + period-over-period totals (admin console).
+  async getMessageTrend(days: number): Promise<TrendSeries> {
+    const [series, current, previous] = await Promise.all([
+      this.dailyMessages(days),
+      this.messageModel.countDocuments({ createdAt: { $gte: daysAgoStart(days) } }).exec(),
+      this.messageModel.countDocuments({ createdAt: previousWindowMatch(days) }).exec(),
+    ]);
+    return { series, current, previous };
   }
 }

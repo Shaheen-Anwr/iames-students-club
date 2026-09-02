@@ -1,9 +1,17 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useRef } from 'react';
 import type { ComponentType } from 'react';
-import { animate, motion, useMotionValue, useTransform, type PanInfo } from 'framer-motion';
+import {
+  animate,
+  motion,
+  useMotionValue,
+  useMotionValueEvent,
+  useTransform,
+  type PanInfo,
+} from 'framer-motion';
 import { useMediaQuery } from '@/lib/use-media-query';
+import { haptic } from '@/lib/haptics';
 import { cn } from '@/lib/utils';
 
 type Tone = 'success' | 'danger' | 'accent' | 'warning';
@@ -48,6 +56,17 @@ export function SwipeableRow({ action, threshold = 92, disabled, className, chil
   const trackOpacity = useTransform(distance, [0, threshold * 0.4, threshold], [0, 0.5, 1]);
   const iconScale = useTransform(distance, [0, threshold], [0.6, 1]);
 
+  // Tick once each time the drag crosses the commit threshold, so the finger feels the point
+  // past which releasing will fire -- the same cue iOS gives on a swipe action.
+  const pastThreshold = useRef(false);
+  useMotionValueEvent(distance, 'change', (d) => {
+    const past = d >= threshold;
+    if (past !== pastThreshold.current) {
+      pastThreshold.current = past;
+      if (past) haptic('select');
+    }
+  });
+
   if (!isTouch || disabled) return <div className={className}>{children}</div>;
 
   const Icon = action.icon;
@@ -56,6 +75,7 @@ export function SwipeableRow({ action, threshold = 92, disabled, className, chil
     if (firing.current) return;
     if (Math.abs(info.offset.x) >= threshold) {
       firing.current = true;
+      haptic('success');
       const dir = info.offset.x > 0 ? 1 : -1;
       const w = rowRef.current?.offsetWidth ?? 320;
       void animate(x, dir * w, { type: 'spring', stiffness: 420, damping: 42 }).then(() => {

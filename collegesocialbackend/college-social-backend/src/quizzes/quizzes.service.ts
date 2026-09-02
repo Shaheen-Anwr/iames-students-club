@@ -6,7 +6,13 @@ import { CreateQuizDto } from './dto/create-quiz.dto';
 import { SubmitQuizAttemptDto } from './dto/submit-quiz-attempt.dto';
 import { GamificationService } from '../gamification/gamification.service';
 import { POINTS } from '../gamification/badges';
-import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
+import {
+  DailyCount,
+  daysAgoStart,
+  fillDailyCounts,
+  previousWindowMatch,
+  TrendSeries,
+} from '../common/utils/daily-counts.util';
 import { GroupsService } from '../groups/groups.service';
 
 export interface QuizStats {
@@ -211,6 +217,27 @@ export class QuizzesService {
       ])
       .exec();
     return fillDailyCounts(rows, days);
+  }
+
+  private async countAttempts(match: Record<string, unknown>): Promise<number> {
+    const [row] = await this.quizModel
+      .aggregate<{ n: number }>([
+        { $unwind: '$attempts' },
+        { $match: { 'attempts.submittedAt': match } },
+        { $count: 'n' },
+      ])
+      .exec();
+    return row?.n ?? 0;
+  }
+
+  // Quiz attempts over the trailing `days` window + period-over-period totals (admin console).
+  async getAttemptTrend(days: number): Promise<TrendSeries> {
+    const [series, current, previous] = await Promise.all([
+      this.dailyAttempts(days),
+      this.countAttempts({ $gte: daysAgoStart(days) }),
+      this.countAttempts(previousWindowMatch(days)),
+    ]);
+    return { series, current, previous };
   }
 
   private async findRaw(id: string, viewerId: string): Promise<QuizDocument> {

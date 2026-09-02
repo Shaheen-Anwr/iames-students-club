@@ -1,9 +1,9 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
-import { FileText, HelpCircle, LogOut, Search, User as UserIcon, Users } from 'lucide-react';
+import { TransitionLink as Link } from '@/components/ui/TransitionLink';
+import { FileText, HelpCircle, LayoutGrid, LogOut, Search, User as UserIcon, Users } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { useChatUnread } from '@/lib/chat-unread-context';
 import { Avatar } from '@/components/ui/Avatar';
@@ -16,7 +16,7 @@ import { CommandPalette } from './CommandPalette';
 import { api } from '@/lib/api';
 import { assetUrl, cn } from '@/lib/utils';
 import type { SearchResults } from '@/lib/types';
-import { getNavItems } from './nav-items';
+import { getPrimaryNavItems } from './nav-items';
 
 const EMPTY_RESULTS: SearchResults = { posts: [], questions: [], groups: [], users: [] };
 
@@ -191,7 +191,7 @@ export function TopNavbar() {
       </div>
 
       <nav className="hidden flex-1 items-center justify-center gap-1 md:flex">
-        {getNavItems(user.role).map(({ href, label, icon: Icon }) => {
+        {getPrimaryNavItems(user.role).map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           const badge = href === '/chat' ? chatUnread : 0;
           return (
@@ -217,6 +217,16 @@ export function TopNavbar() {
             </Link>
           );
         })}
+        {/* Everything outside the primary 4 lives in the ⌘K palette -- it already lists every
+            nav destination and is searchable, so "More" just opens it. */}
+        <button
+          type="button"
+          onClick={() => setPaletteOpen(true)}
+          title="المزيد (⌘K)"
+          className="group relative flex h-10 w-20 items-center justify-center rounded-xl text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+        >
+          <LayoutGrid className="relative h-5.5 w-5.5 transition-transform group-hover:scale-110" />
+        </button>
       </nav>
 
       <div className="ms-auto flex shrink-0 items-center gap-1">

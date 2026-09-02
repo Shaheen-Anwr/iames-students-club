@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Sans_Arabic, IBM_Plex_Sans } from 'next/font/google';
 import './globals.css';
+import { ViewTransitions } from 'next-view-transitions';
 import { Providers } from '@/components/Providers';
 import { SpeedInsights } from "@vercel/speed-insights/next"
 const fontArabic = IBM_Plex_Sans_Arabic({
@@ -100,13 +101,15 @@ const THEME_INIT_SCRIPT = `
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ar" dir="rtl" className={`${fontArabic.variable} ${fontLatin.variable}`} suppressHydrationWarning>
-      <head>
-        <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
-      </head>
-      <body className="font-sans antialiased">
-        <Providers>{children}</Providers>
-      </body>
-    </html>
+    <ViewTransitions>
+      <html lang="ar" dir="rtl" className={`${fontArabic.variable} ${fontLatin.variable}`} suppressHydrationWarning>
+        <head>
+          <script dangerouslySetInnerHTML={{ __html: THEME_INIT_SCRIPT }} />
+        </head>
+        <body className="font-sans antialiased">
+          <Providers>{children}</Providers>
+        </body>
+      </html>
+    </ViewTransitions>
   );
 }

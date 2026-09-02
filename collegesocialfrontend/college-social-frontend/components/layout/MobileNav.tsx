@@ -1,8 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import Link from 'next/link';
 import { usePathname } from 'next/navigation';
+import { TransitionLink as Link } from '@/components/ui/TransitionLink';
 import { LayoutGrid } from 'lucide-react';
 import { AnimatePresence, LayoutGroup, motion } from 'framer-motion';
 import { transitions } from '@/lib/motion';
@@ -10,12 +10,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { useChatUnread } from '@/lib/chat-unread-context';
 import { Sheet } from '@/components/ui/Sheet';
-import { getNavItems } from './nav-items';
-
-// Only the handful of destinations a student jumps to constantly live in the bar itself --
-// everything else (quizzes, lectures, groups, profile, admin) opens from "المزيد", since
-// cramming all ~9-10 nav-items.ts routes into one row is what made this bar overflow/wrap before.
-const PRIMARY_HREFS = ['/home', '/feed', '/reels', '/chat'];
+import { getPrimaryNavItems, getSecondaryNavItems } from './nav-items';
 
 const isActive = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
@@ -25,13 +20,13 @@ export function MobileNav() {
   const { user } = useAuth();
   const chatUnread = useChatUnread();
   const [moreOpen, setMoreOpen] = useState(false);
+  const [moreQuery, setMoreQuery] = useState('');
 
-  const items = getNavItems(user?.role);
-  const primary = PRIMARY_HREFS.map((href) => items.find((i) => i.href === href)).filter(
-    Boolean,
-  ) as typeof items;
-  const more = items.filter((i) => !PRIMARY_HREFS.includes(i.href));
+  const primary = getPrimaryNavItems(user?.role);
+  const more = getSecondaryNavItems(user?.role);
   const moreActive = more.some((i) => isActive(pathname, i.href));
+  const q = moreQuery.trim();
+  const filteredMore = q ? more.filter((i) => i.label.includes(q)) : more;
 
   return (
     <>
@@ -130,29 +125,46 @@ export function MobileNav() {
         </div>
       </nav>
 
-      <Sheet open={moreOpen} onOpenChange={setMoreOpen} title="المزيد">
-        <div className="grid grid-cols-4 gap-2">
-          {more.map(({ href, label, icon: Icon }) => {
-            const active = isActive(pathname, href);
-            return (
-              <Link
-                key={href}
-                href={href}
-                onClick={() => setMoreOpen(false)}
-                aria-current={active ? 'page' : undefined}
-                className={cn(
-                  'flex flex-col items-center gap-1.5 rounded-2xl p-3 text-center transition-colors active:scale-95',
-                  active
-                    ? 'bg-accent-100 text-accent-800'
-                    : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
-                )}
-              >
-                <Icon className="h-5 w-5" />
-                <span className="text-[11px] font-medium leading-tight">{label}</span>
-              </Link>
-            );
-          })}
-        </div>
+      <Sheet
+        open={moreOpen}
+        onOpenChange={(o) => {
+          setMoreOpen(o);
+          if (!o) setMoreQuery('');
+        }}
+        title="المزيد"
+      >
+        <input
+          value={moreQuery}
+          onChange={(e) => setMoreQuery(e.target.value)}
+          placeholder="ابحث في القائمة..."
+          className="mb-3 h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent/40 focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/25 md:text-sm"
+        />
+        {filteredMore.length === 0 ? (
+          <p className="py-8 text-center text-sm text-muted-foreground">لا توجد نتائج</p>
+        ) : (
+          <div className="grid grid-cols-4 gap-2">
+            {filteredMore.map(({ href, label, icon: Icon }) => {
+              const active = isActive(pathname, href);
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  onClick={() => setMoreOpen(false)}
+                  aria-current={active ? 'page' : undefined}
+                  className={cn(
+                    'flex flex-col items-center gap-1.5 rounded-2xl p-3 text-center transition-colors active:scale-95',
+                    active
+                      ? 'bg-accent-100 text-accent-800'
+                      : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+                  )}
+                >
+                  <Icon className="h-5 w-5" />
+                  <span className="text-[11px] font-medium leading-tight">{label}</span>
+                </Link>
+              );
+            })}
+          </div>
+        )}
       </Sheet>
     </>
   );

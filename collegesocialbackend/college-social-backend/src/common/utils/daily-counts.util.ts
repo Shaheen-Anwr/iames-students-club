@@ -29,3 +29,18 @@ export function daysAgoStart(days: number): Date {
   since.setDate(since.getDate() - (days - 1));
   return since;
 }
+
+// A chart-ready daily series for the trailing `days` window, plus how many events fell in that
+// window vs. the `days` window immediately before it -- so the admin console can show a
+// period-over-period delta (▲/▼) next to the sparkline.
+export interface TrendSeries {
+  series: DailyCount[];
+  current: number;
+  previous: number;
+}
+
+// Mongo range match for the `days`-day window ending exactly where the current window (the one
+// `daysAgoStart(days)` opens) begins -- i.e. the immediately-preceding comparison period.
+export function previousWindowMatch(days: number): { $gte: Date; $lt: Date } {
+  return { $gte: daysAgoStart(days * 2), $lt: daysAgoStart(days) };
+}

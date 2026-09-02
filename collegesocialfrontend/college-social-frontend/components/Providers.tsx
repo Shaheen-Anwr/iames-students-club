@@ -3,7 +3,11 @@
 import { useState } from 'react';
 import { MotionConfig } from 'framer-motion';
 import { DirectionProvider } from '@radix-ui/react-direction';
-import { QueryClientProvider } from '@tanstack/react-query';
+import {
+  PersistQueryClientProvider,
+  removeOldestQuery,
+} from '@tanstack/react-query-persist-client';
+import { createSyncStoragePersister } from '@tanstack/query-sync-storage-persister';
 import { makeQueryClient } from '@/lib/query';
 import { AuthProvider } from '@/lib/auth-context';
 import { SocketProvider } from '@/lib/socket-context';
@@ -20,8 +24,25 @@ export function Providers({ children }: { children: React.ReactNode }) {
   // One client for the life of the tab -- useState(factory) so it isn't recreated on re-render.
   const [queryClient] = useState(makeQueryClient);
 
+  // Persist the query cache to localStorage so the app opens on last-known data (feed, dashboard,
+  // course hubs...) instead of a wall of skeletons, and reads survive an offline launch. On the
+  // server `storage` is undefined -> createSyncStoragePersister returns a no-op, so this is
+  // client-only in practice. `removeOldestQuery` sheds the oldest entry on a quota error rather
+  // than dropping the whole cache; `buster` invalidates every persisted cache at once when bumped.
+  const [persister] = useState(() =>
+    createSyncStoragePersister({
+      storage: typeof window !== 'undefined' ? window.localStorage : undefined,
+      key: 'iaems:query-cache',
+      throttleTime: 1500,
+      retry: removeOldestQuery,
+    }),
+  );
+
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister, maxAge: 1000 * 60 * 60 * 24, buster: 'iaems-q-v1' }}
+    >
     <ThemeProvider>
       {/* App is RTL app-wide (<html dir="rtl">). Radix reads direction from context, not the
           DOM, so set it once here -- otherwise every menu/tooltip aligns for LTR. */}
@@ -50,6 +71,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
         </MotionConfig>
       </DirectionProvider>
     </ThemeProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   );
 }

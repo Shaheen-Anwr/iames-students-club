@@ -1,12 +1,12 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { HelpCircle, MessageCircle, Plus } from 'lucide-react';
 import { Spinner } from '@/components/ui/Spinner';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
-import { api } from '@/lib/api';
+import { useRawQuery } from '@/lib/query';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
@@ -16,24 +16,13 @@ import { AskQuestionModal } from './AskQuestionModal';
 export function QuestionsList({ groupId, canCreate = true }: { groupId?: string; canCreate?: boolean } = {}) {
   const { user } = useAuth();
   const [scope, setScope] = useState<PostScope>(user?.department ? 'department' : 'public');
-  const [questions, setQuestions] = useState<Question[]>([]);
-  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    if (groupId) {
-      api
-        .get<Question[]>(`/qa/group/${groupId}?limit=30`)
-        .then(setQuestions)
-        .finally(() => setLoading(false));
-      return;
-    }
-    api
-      .get<Question[]>(`/qa?limit=30&scope=${scope}`)
-      .then(setQuestions)
-      .finally(() => setLoading(false));
-  }, [groupId, scope]);
+  const path = groupId ? `/qa/group/${groupId}?limit=30` : `/qa?limit=30&scope=${scope}`;
+  const { data: questions = [], isPending: loading } = useRawQuery<Question[]>(
+    ['qa', groupId ?? 'feed', scope],
+    path,
+  );
 
   return (
     <div className="space-y-4">

@@ -1,67 +1,45 @@
 'use client';
 
-import { useEffect, useState } from 'react';
 import { Bell, BookOpen, Bot, Calendar, CheckSquare, Files, MessageSquareText } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
-import { Spinner } from '@/components/ui/Spinner';
-import { StatTile } from './AdminStats';
-import { api } from '@/lib/api';
-import type { AdminStats } from '@/lib/types';
+import { nf, pct } from '@/lib/format';
+import { StatCard } from './ui/StatCard';
+import { DashboardSkeleton } from './AdminSkeletons';
+import { useAdminStats } from './AdminStatsProvider';
 
 type Section = 'ai' | 'study' | 'notifications';
 
-// Stats-only views (no per-record CRUD) for domains where an admin gets aggregate visibility
-// but not per-user editing: AI usage, personal schedule/planner, and notification analytics.
+// Stats-only views (no per-record CRUD) for domains where an admin gets aggregate visibility but
+// not per-user editing: AI usage, personal schedule/planner, notification analytics. All read the
+// shared /admin/stats snapshot — no extra request.
 export function AdminMiscStats({ section }: { section: Section }) {
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [loading, setLoading] = useState(true);
+  const { stats, isLoading } = useAdminStats();
 
-  useEffect(() => {
-    let cancelled = false;
-    api
-      .get<AdminStats>('/admin/stats')
-      .then((res) => {
-        if (!cancelled) setStats(res);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <Spinner className="h-6 w-6" />
-      </div>
-    );
-  }
-
+  if (!stats && isLoading) return <DashboardSkeleton />;
   if (!stats) {
     return <p className="py-16 text-center text-sm text-muted-foreground">تعذّر تحميل الإحصائيات.</p>;
   }
 
   if (section === 'ai') {
+    const byDept = Object.entries(stats.ai.lectureIndex.byDepartment);
     return (
       <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-          <StatTile icon={Bot} label="محادثات المساعد الذكي" value={stats.ai.totalConversations} />
-          <StatTile icon={MessageSquareText} label="رسائل المساعد" value={stats.ai.totalMessages} />
-          <StatTile icon={Files} label="مقتطفات محاضرات مفهرسة" value={stats.ai.lectureIndex.totalChunks} />
-          <StatTile icon={BookOpen} label="مصادر مفهرسة" value={stats.ai.lectureIndex.indexedSources} />
+        <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <StatCard icon={Bot} label="محادثات المساعد" value={stats.ai.totalConversations} exact />
+          <StatCard icon={MessageSquareText} label="رسائل المساعد" value={stats.ai.totalMessages} exact />
+          <StatCard icon={Files} label="مقتطفات مفهرسة" value={stats.ai.lectureIndex.totalChunks} exact />
+          <StatCard icon={BookOpen} label="مصادر مفهرسة" value={stats.ai.lectureIndex.indexedSources} exact />
         </div>
         <Card className="p-4">
-          <p className="mb-2 text-sm font-medium text-foreground">فهرسة المحاضرات حسب الشعبة</p>
-          {Object.keys(stats.ai.lectureIndex.byDepartment).length === 0 ? (
+          <p className="mb-2 text-sm font-semibold text-foreground">فهرسة المحاضرات حسب الشعبة</p>
+          {byDept.length === 0 ? (
             <p className="text-sm text-muted-foreground">لا توجد بيانات بعد.</p>
           ) : (
-            <ul className="space-y-1 text-sm text-muted-foreground">
-              {Object.entries(stats.ai.lectureIndex.byDepartment).map(([dept, count]) => (
-                <li key={dept} className="flex justify-between">
-                  <span>{dept}</span>
-                  <span className="font-medium text-foreground">{count}</span>
+            <ul className="divide-y divide-border/60 text-sm">
+              {byDept.map(([dept, count]) => (
+                <li key={dept} className="flex justify-between py-1.5">
+                  <span className="text-muted-foreground">{dept}</span>
+                  <span className="font-semibold tabular-nums text-foreground">{nf(count)}</span>
                 </li>
               ))}
             </ul>
@@ -74,32 +52,37 @@ export function AdminMiscStats({ section }: { section: Section }) {
   if (section === 'study') {
     return (
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile icon={Calendar} label="حصص الجدول الدراسي" value={stats.schedule.totalEntries} />
-        <StatTile icon={Calendar} label="فئات لديها جدول منشور" value={stats.schedule.groupsCovered} />
-        <StatTile icon={CheckSquare} label="مهام المخطط" value={stats.planner.totalTasks} />
-        <StatTile icon={CheckSquare} label="مهام مكتملة" value={stats.planner.doneTasks} />
-        <StatTile icon={CheckSquare} label="مستخدمون لديهم مهام" value={stats.planner.usersWithTasks} />
+        <StatCard icon={Calendar} label="حصص الجدول الدراسي" value={stats.schedule.totalEntries} exact />
+        <StatCard icon={Calendar} label="فئات لديها جدول" value={stats.schedule.groupsCovered} exact />
+        <StatCard icon={CheckSquare} label="مهام المخطط" value={stats.planner.totalTasks} exact />
+        <StatCard icon={CheckSquare} label="مهام مكتملة" value={stats.planner.doneTasks} tone="success" exact />
+        <StatCard icon={CheckSquare} label="مستخدمون لديهم مهام" value={stats.planner.usersWithTasks} exact />
       </div>
     );
   }
 
+  const byType = Object.entries(stats.notifications.byType).sort((a, b) => b[1] - a[1]);
   return (
     <div className="space-y-4">
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <StatTile icon={Bell} label="إجمالي الإشعارات" value={stats.notifications.total} />
-        <StatTile icon={Bell} label="غير مقروءة" value={stats.notifications.unread} />
+        <StatCard icon={Bell} label="إجمالي الإشعارات" value={stats.notifications.total} exact />
+        <StatCard icon={Bell} label="غير مقروءة" value={stats.notifications.unread} tone="warning" exact />
       </div>
       <Card className="p-4">
-        <p className="mb-2 text-sm font-medium text-foreground">حسب النوع</p>
-        <ul className="space-y-1 text-sm text-muted-foreground">
-          {Object.entries(stats.notifications.byType).map(([type, count]) => (
-            <li key={type} className="flex justify-between">
-              <span>{type}</span>
-              <span className="font-medium text-foreground">{count}</span>
+        <div className="mb-2 flex items-center justify-between">
+          <p className="text-sm font-semibold text-foreground">حسب النوع</p>
+          <span className="text-xs text-muted-foreground">
+            نسبة القراءة: {pct(stats.notifications.readRatePercent, false)}
+          </span>
+        </div>
+        <ul className="divide-y divide-border/60 text-sm">
+          {byType.map(([type, count]) => (
+            <li key={type} className="flex justify-between py-1.5">
+              <span className="font-mono text-xs text-muted-foreground">{type}</span>
+              <span className="font-semibold tabular-nums text-foreground">{nf(count)}</span>
             </li>
           ))}
         </ul>
-        <p className="mt-3 text-xs text-muted-foreground">نسبة القراءة: {stats.notifications.readRatePercent}%</p>
       </Card>
     </div>
   );

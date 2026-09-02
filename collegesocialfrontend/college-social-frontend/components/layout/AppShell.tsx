@@ -19,12 +19,16 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     if (!loading && !user) router.replace('/login');
   }, [loading, user, router]);
 
-  if (loading || !user) {
-    return (
+  // With a cached user snapshot (auth-context), `user` is populated before /users/me returns, so
+  // a returning visitor renders straight into the shell -- the spinner is only for a genuine cold
+  // start (first sign-in on this device, or cleared storage). `!user && !loading` briefly renders
+  // nothing while the redirect effect above sends an expired session to /login.
+  if (!user) {
+    return loading ? (
       <div className="flex h-dvh items-center justify-center bg-background">
         <Spinner className="h-8 w-8" />
       </div>
-    );
+    ) : null;
   }
 
   return (

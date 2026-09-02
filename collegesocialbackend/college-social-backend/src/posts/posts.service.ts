@@ -14,7 +14,13 @@ import { Department } from '../common/enums/department.enum';
 import { AcademicYear, getAcademicYearsForDepartment } from '../common/enums/academic-year.enum';
 import { Specialization } from '../common/enums/specialization.enum';
 import { LectureIndexService } from '../ai/lecture-index.service';
-import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
+import {
+  DailyCount,
+  daysAgoStart,
+  fillDailyCounts,
+  previousWindowMatch,
+  TrendSeries,
+} from '../common/utils/daily-counts.util';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { UsersService } from '../users/users.service';
 import { extractMentionIds, parseHashtags } from '../common/utils/tag-parser.util';
@@ -994,5 +1000,34 @@ export class PostsService {
       ])
       .exec();
     return fillDailyCounts(rows, days);
+  }
+
+  private async dailyComments(days: number): Promise<DailyCount[]> {
+    const rows = await this.commentModel
+      .aggregate<{ _id: string; count: number }>([
+        { $match: { createdAt: { $gte: daysAgoStart(days) } } },
+        { $group: { _id: { $dateToString: { format: '%Y-%m-%d', date: '$createdAt' } }, count: { $sum: 1 } } },
+      ])
+      .exec();
+    return fillDailyCounts(rows, days);
+  }
+
+  // Posts / comments over the trailing `days` window + period-over-period totals (admin console).
+  async getPostTrend(days: number): Promise<TrendSeries> {
+    const [series, current, previous] = await Promise.all([
+      this.dailyPosts(days),
+      this.postModel.countDocuments({ createdAt: { $gte: daysAgoStart(days) } }).exec(),
+      this.postModel.countDocuments({ createdAt: previousWindowMatch(days) }).exec(),
+    ]);
+    return { series, current, previous };
+  }
+
+  async getCommentTrend(days: number): Promise<TrendSeries> {
+    const [series, current, previous] = await Promise.all([
+      this.dailyComments(days),
+      this.commentModel.countDocuments({ createdAt: { $gte: daysAgoStart(days) } }).exec(),
+      this.commentModel.countDocuments({ createdAt: previousWindowMatch(days) }).exec(),
+    ]);
+    return { series, current, previous };
   }
 }

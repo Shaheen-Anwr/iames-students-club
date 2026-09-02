@@ -97,6 +97,66 @@ export function captureEvent(event: string, props?: Record<string, unknown>) {
   window.posthog?.capture(event, props);
 }
 
+// --- Performance instrumentation ------------------------------------------------------------
+// Feeds the docs/PERF-BUDGET.md metrics. Reporting is a no-op until PostHog has a key;
+// `performance.mark` is always safe so marks still show in the browser Performance panel.
+
+type WebVitalMetric = {
+  name: string;
+  value: number;
+  rating?: 'good' | 'needs-improvement' | 'poor';
+  id: string;
+  navigationType?: string;
+};
+
+/** Wired via `useReportWebVitals` in components/Observability.tsx. */
+export function reportWebVitals(metric: WebVitalMetric) {
+  // INP / LCP / CLS / FCP / TTFB plus Next's own hydration/render timings.
+  window.posthog?.capture('web_vitals', {
+    metric: metric.name,
+    // CLS is a unitless ratio -- scale it so it lands on the same axis as the millisecond metrics.
+    value: Math.round(metric.name === 'CLS' ? metric.value * 1000 : metric.value),
+    rating: metric.rating,
+    nav_type: metric.navigationType,
+    path: typeof window !== 'undefined' ? window.location.pathname : undefined,
+  });
+  if (metric.rating === 'poor' && process.env.NODE_ENV !== 'production') {
+    // eslint-disable-next-line no-console
+    console.warn(`[web-vitals] ${metric.name} poor:`, metric.value);
+  }
+}
+
+/** Drop a named performance mark, e.g. mark('feed:first-content'). */
+export function mark(name: string) {
+  if (typeof performance === 'undefined' || typeof performance.mark !== 'function') return;
+  try {
+    performance.mark(name);
+  } catch {
+    /* duplicate name etc. -- non-critical */
+  }
+}
+
+/**
+ * Measure from a prior mark (or navigation start) to now, report the duration as a `timing`
+ * event, and return it. e.g. mark('chat:mounted') then later measureSince('chat:interactive',
+ * 'chat:mounted').
+ */
+export function measureSince(name: string, startMark?: string): number | undefined {
+  if (typeof performance === 'undefined' || typeof performance.measure !== 'function') return;
+  try {
+    const m = performance.measure(name, startMark ? { start: startMark } : undefined);
+    const duration = Math.round(m?.duration ?? 0);
+    window.posthog?.capture('timing', {
+      name,
+      duration_ms: duration,
+      path: window.location.pathname,
+    });
+    return duration;
+  } catch {
+    return undefined;
+  }
+}
+
 export function identifyUser(
   user: { _id: string; role?: string; department?: string | null } | null,
 ) {
