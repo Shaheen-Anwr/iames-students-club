@@ -45,7 +45,7 @@ export default () => ({
   ai: {
     apiKey: process.env.AI_API_KEY ?? '',
     baseUrl: process.env.AI_BASE_URL ?? 'https://api.groq.com/openai/v1',
-    model: process.env.AI_MODEL ?? 'openai/gpt-oss-120b',
+    model: process.env.AI_MODEL ?? 'openai/gpt-oss-20b',
     // Optional: a separate vision-capable model for image attachments (the default text model
     // above may not support image input). Left blank, the assistant tells the student vision
     // isn't configured yet instead of silently sending an image to a model that can't read it.

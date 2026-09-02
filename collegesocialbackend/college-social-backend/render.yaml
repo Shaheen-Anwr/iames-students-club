@@ -66,7 +66,7 @@ services:
       - key: AI_BASE_URL
         value: https://api.groq.com/openai/v1
       - key: AI_MODEL
-        value: openai/gpt-oss-120b
+        value: openai/gpt-oss-20b
       # Cloudflare Stream (video hosting for reels). Set all three on the dashboard -> new reels
       # upload to Stream instead of Cloudinary. Unset -> reels stay on Cloudinary. The frontend
       # also needs NEXT_PUBLIC_STREAM_ENABLED=1 (see the frontend's .env.production).
