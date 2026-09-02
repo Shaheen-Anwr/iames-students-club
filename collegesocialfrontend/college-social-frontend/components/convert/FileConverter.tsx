@@ -18,9 +18,10 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Spinner } from '@/components/ui/Spinner';
-import { api, ApiError, fetchConversionObjectUrl, fetchConversionsZip } from '@/lib/api';
+import { api, ApiError, fetchConversionBlob, fetchConversionsZipBlob } from '@/lib/api';
 import { useRawQuery } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
+import { saveBlob } from '@/lib/download';
 import { cn } from '@/lib/utils';
 import type { ConversionRecord, ConversionStatus, ConvertCapabilities } from '@/lib/types';
 
@@ -58,14 +59,8 @@ function timeLeft(iso: string): string {
 
 async function downloadOne(id: string, fallbackName: string, onError: (m: string) => void) {
   try {
-    const { url, filename } = await fetchConversionObjectUrl(id);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = filename || fallbackName;
-    document.body.appendChild(a);
-    a.click();
-    a.remove();
-    setTimeout(() => URL.revokeObjectURL(url), 4000);
+    const { blob, filename } = await fetchConversionBlob(id);
+    await saveBlob(blob, filename || fallbackName);
   } catch (err) {
     onError(err instanceof ApiError ? err.message : 'تعذّر تنزيل الملف.');
   }
@@ -251,14 +246,8 @@ export function FileConverter() {
     if (done.length < 2) return;
     setZipping(true);
     try {
-      const url = await fetchConversionsZip(done.map((d) => d.jobId!));
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = 'converted.zip';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      const blob = await fetchConversionsZipBlob(done.map((d) => d.jobId!));
+      await saveBlob(blob, 'converted.zip');
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر تجهيز الملف المضغوط.', 'error');
     } finally {

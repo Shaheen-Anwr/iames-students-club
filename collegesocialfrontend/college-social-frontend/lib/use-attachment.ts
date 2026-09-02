@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { fetchAttachmentObjectUrl } from './api';
+import { saveBlob } from './download';
 
 export interface AttachmentObjectUrl {
   // The blob: URL once loaded, else null. Safe to feed straight into <iframe src>.
@@ -67,12 +68,20 @@ export function useAttachmentObjectUrl(postId: string | undefined): AttachmentOb
     async (filename?: string | null) => {
       const objectUrl = await load();
       if (!objectUrl) return;
-      const a = document.createElement('a');
-      a.href = objectUrl;
-      a.download = filename || 'file';
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
+      try {
+        // Re-read the already-fetched blob out of its object URL, then hand it to saveBlob so
+        // an installed PWA (iOS especially, where `<a download>` is a no-op) gets the native
+        // share sheet instead of a dead click.
+        const blob = await fetch(objectUrl).then((r) => r.blob());
+        await saveBlob(blob, filename || 'file');
+      } catch {
+        const a = document.createElement('a');
+        a.href = objectUrl;
+        a.download = filename || 'file';
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+      }
     },
     [load],
   );
