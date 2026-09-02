@@ -1,7 +1,16 @@
 'use client';
 
-/** Friendly "student assistant" mascot: graduation cap, blinking eyes, waving hand on hover/open. */
+import { useId } from 'react';
+
+/**
+ * The assistant's mark: a faceted "spark prism" — a cut-gem hexagon with a four-point AI spark at
+ * its core and a small orbiting sparkle. Drawn in `currentColor` (white on the gradient FAB,
+ * accent on chips) with layered opacity facets so it reads as premium at any size. Gently bobs;
+ * the core twinkles on hover / when the panel opens (`waving`).
+ */
 export function AiAvatar({ size = 28, waving = false }: { size?: number; waving?: boolean }) {
+  const gid = useId();
+
   return (
     <svg
       width={size}
@@ -11,35 +20,38 @@ export function AiAvatar({ size = 28, waving = false }: { size?: number; waving?
       className="animate-bob overflow-visible"
       aria-hidden="true"
     >
-      {/* waving hand */}
-      <g
-        className={waving ? 'animate-wave' : ''}
-        style={{ transformOrigin: '17px 16px', transition: 'transform 0.2s ease' }}
-      >
-        <circle cx="18.3" cy="14.2" r="1.6" fill="white" />
-      </g>
+      <defs>
+        <linearGradient id={gid} x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
+          <stop stopColor="currentColor" stopOpacity="0.28" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0.08" />
+        </linearGradient>
+      </defs>
 
-      {/* face */}
-      <circle cx="12" cy="13" r="6.5" fill="white" />
-
-      {/* graduation cap */}
-      <path d="M12 3.2 4.5 6.4 12 9.6l7.5-3.2L12 3.2Z" fill="white" />
-      <path d="M7 7.6v2.6c0 1 2.2 1.8 5 1.8s5-.8 5-1.8V7.6l-5 2.1-5-2.1Z" fill="white" fillOpacity="0.75" />
-      <line x1="19" y1="6.6" x2="19" y2="10.4" stroke="white" strokeWidth="0.7" strokeLinecap="round" />
-
-      {/* eyes */}
-      <g className="animate-blink" style={{ transformOrigin: 'center' }}>
-        <circle cx="9.6" cy="13.1" r="1" fill="rgb(var(--accent))" />
-        <circle cx="14.4" cy="13.1" r="1" fill="rgb(var(--accent))" />
-      </g>
-
-      {/* smile */}
+      {/* gem body */}
       <path
-        d="M9.8 15.4c.7.7 3.7.7 4.4 0"
-        stroke="rgb(var(--accent))"
-        strokeWidth="0.9"
-        strokeLinecap="round"
-        fill="none"
+        d="M12 2.5 20.5 7.2V16.8L12 21.5 3.5 16.8V7.2L12 2.5Z"
+        fill={`url(#${gid})`}
+        stroke="currentColor"
+        strokeWidth="1.4"
+        strokeLinejoin="round"
+      />
+      {/* crown + pavilion facets */}
+      <path d="M12 2.5 20.5 7.2 12 11.9 3.5 7.2 12 2.5Z" fill="currentColor" fillOpacity="0.18" />
+      <path d="M3.5 7.2 12 11.9V21.5L3.5 16.8V7.2Z" fill="currentColor" fillOpacity="0.1" />
+
+      {/* core AI spark */}
+      <path
+        d="M12 8.4c.4 2.7 1.5 3.8 4.2 4.2-2.7.4-3.8 1.5-4.2 4.2-.4-2.7-1.5-3.8-4.2-4.2 2.7-.4 3.8-1.5 4.2-4.2Z"
+        fill="currentColor"
+        className={waving ? 'origin-center motion-safe:animate-pulse' : ''}
+        style={{ transformOrigin: '12px 12.6px' }}
+      />
+
+      {/* orbiting sparkle */}
+      <path
+        d="M17.6 6.6c.16 1.05.56 1.45 1.6 1.6-1.04.16-1.44.56-1.6 1.6-.16-1.04-.56-1.44-1.6-1.6 1.04-.15 1.44-.55 1.6-1.6Z"
+        fill="currentColor"
+        fillOpacity="0.9"
       />
     </svg>
   );

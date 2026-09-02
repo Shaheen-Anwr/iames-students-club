@@ -16,8 +16,11 @@ import { AiAvatar } from '@/components/ai/AiAvatar';
 export function FeedAiChatCard() {
   const { conversations, usage } = useAi();
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Explicit "start fresh" state (the + button) -- overrides the resume-most-recent fallback
+  // below until a message is actually sent.
+  const [newChat, setNewChat] = useState(false);
   const [view, setView] = useState<'chat' | 'history'>('chat');
-  const conversationId = activeId ?? conversations[0]?._id ?? null;
+  const conversationId = newChat ? null : (activeId ?? conversations[0]?._id ?? null);
 
   return (
     <Card className="flex h-[560px] flex-col overflow-hidden">
@@ -35,6 +38,7 @@ export function FeedAiChatCard() {
           <button
             onClick={() => {
               setActiveId(null);
+              setNewChat(true);
               setView('chat');
             }}
             title="محادثة جديدة"
@@ -69,16 +73,24 @@ export function FeedAiChatCard() {
             activeId={conversationId}
             onSelect={(id) => {
               setActiveId(id);
+              setNewChat(false);
               setView('chat');
             }}
             onNew={() => {
               setActiveId(null);
+              setNewChat(true);
               setView('chat');
             }}
             onDeleteActive={() => setActiveId(null)}
           />
         ) : (
-          <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+          <AiChatPanel
+            conversationId={conversationId}
+            onConversationCreated={(c) => {
+              setActiveId(c._id);
+              setNewChat(false);
+            }}
+          />
         )}
       </div>
     </Card>
