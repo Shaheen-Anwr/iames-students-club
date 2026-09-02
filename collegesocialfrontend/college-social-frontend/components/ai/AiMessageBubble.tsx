@@ -90,7 +90,7 @@ export const AiMessageBubble = memo(function AiMessageBubble({
           <AiAvatar size={18} />
         </div>
       )}
-      <div className={cn('flex max-w-[80%] flex-col gap-1', isUser ? 'items-end' : 'items-start')}>
+      <div className={cn('flex flex-col gap-1', isUser ? 'max-w-[80%] items-end' : 'max-w-[85%] items-start')}>
         {message.sharedPostId && (
           <span className="flex items-center gap-1.5 rounded-xl border border-border bg-surface-2/70 px-3 py-1.5 text-xs text-muted-foreground">
             <FileStack className="h-3.5 w-3.5" />
@@ -126,9 +126,14 @@ export const AiMessageBubble = memo(function AiMessageBubble({
         )}
         <div
           className={cn(
-            'relative animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
+            'relative animate-bubble-in break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
+            // The assistant path renders Markdown, which controls its own spacing -- `pre-wrap`
+            // there would double every blank line. The user path is plain text and needs it.
             isUser
-              ? cn('rounded-bl-md bg-gradient-accent text-white shadow-soft', failed && 'opacity-60 ring-2 ring-danger/60')
+              ? cn(
+                  'whitespace-pre-wrap rounded-bl-md bg-gradient-accent text-white shadow-soft',
+                  failed && 'opacity-60 ring-2 ring-danger/60',
+                )
               : isStub
                 ? 'rounded-br-md border border-amber-500/30 border-s-2 border-s-amber-500/60 bg-amber-500/10 text-foreground backdrop-blur-sm'
                 : 'rounded-br-md border border-s-2 border-border border-s-accent/50 bg-surface-2/60 text-foreground backdrop-blur-sm',
