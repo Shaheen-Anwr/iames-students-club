@@ -4,9 +4,12 @@
 //
 //   * -> PDF  (docx/pptx/xlsx -> pdf): Adobe Create PDF (identical to Office's own "Save as PDF")
 //       -> headless LibreOffice -> pdfkit redraw (last resort).
-//   PDF -> Word/PowerPoint: LlamaParse structural recovery (LLM-backed; keeps headings, lists and
-//       tables-as-grids, and Arabic/RTL in reading order) -> Adobe Export PDF + Arabic clean-up ->
-//       LibreOffice PDF import (writer_pdf_import / impress_pdf_import) -> flat block pipeline.
+//   PDF -> Word/PowerPoint: by default every page is rendered to an image and laid full-bleed onto
+//       a same-size page/slide with an invisible text layer behind it ("looks exactly like the
+//       PDF", MuPDF/WASM). Opt out with CONVERT_PDF_KEEP_TEXT=1 for editable text, which then runs
+//       LlamaParse structural recovery -> Adobe Export PDF + Arabic clean-up -> LibreOffice PDF
+//       import (writer_pdf_import / impress_pdf_import) -> flat block pipeline. The page-image path
+//       also falls back to that chain if rasterising fails.
 //   Word/PowerPoint/Excel -> Word/PowerPoint: LibreOffice renders the source to a PDF, then that
 //       PDF is recovered into the target (Adobe Export PDF, else LibreOffice's PDF import); no
 //       soffice -> Adobe's own Create+Export round-trip; else the flat block pipeline. This trades
@@ -32,6 +35,7 @@ import {
 } from './libreoffice.engine';
 import { adobeAvailable, isAdobeRecoverable, runViaAdobe } from './adobe.engine';
 import { llamaParseAvailable, runViaLlamaParse } from './llamaparse.engine';
+import { pageImageAvailable, pdfToPageImageFile } from './pageimage.engine';
 import { normalizeArabicInOfficeFile } from './office-arabic-normalize.util';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -143,15 +147,30 @@ async function pdfToOffice(input: Buffer, target: ConvertFormat, onProgress: Pro
 
 // pdf -> docx | pptx: recover the page as editable objects, keeping its layout.
 //
-// `viaLlamaParse` is set only when the input is a real user-uploaded PDF -- not when officeToPaged
-// hands us a LibreOffice-rendered intermediate (that source already has clean structure, and every
-// call would otherwise burn LlamaParse quota + ~30s of network on a round-trip we don't need).
+// `viaPageImage` / `viaLlamaParse` are set only when the input is a real user-uploaded PDF -- not
+// when officeToPaged hands us a LibreOffice-rendered intermediate (that source already has clean
+// structure, and the page-image / LlamaParse round-trips would just add cost and lose editability).
+//
+//   viaPageImage  -> reproduce every page as an image ("looks exactly like the PDF"); the DEFAULT.
+//   viaLlamaParse -> LLM structural recovery to editable text; used when page-image is opted out
+//                    (CONVERT_PDF_KEEP_TEXT=1) or fails.
 async function pdfToPaged(
   input: Buffer,
   target: 'docx' | 'pptx',
   onProgress: ProgressFn,
-  opts: { viaLlamaParse?: boolean } = {},
+  opts: { viaPageImage?: boolean; viaLlamaParse?: boolean } = {},
 ): Promise<Buffer> {
+  if (opts.viaPageImage && pageImageAvailable()) {
+    try {
+      const out = await pdfToPageImageFile(input, target, onProgress);
+      logger.log(`page-image pdf->${target} ok (${out.length}b)`);
+      return out; // it's rasterised pages -- no Arabic normalisation to do
+    } catch (err) {
+      logger.warn(
+        `page-image pdf->${target} failed (${(err as Error).message}); falling back to text recovery`,
+      );
+    }
+  }
   if (opts.viaLlamaParse && llamaParseAvailable()) {
     try {
       const out = await runViaLlamaParse(input, target, onProgress);
@@ -260,7 +279,9 @@ export async function runConversion(
     return finish(await render(blocks, 'xlsx'), 'xlsx');
   }
 
-  // target is docx | pptx: keep the source's visual structure, editable.
-  if (source === 'pdf') return pdfToPaged(input, target, onProgress, { viaLlamaParse: true });
+  // target is docx | pptx: keep the source's visual structure.
+  if (source === 'pdf') {
+    return pdfToPaged(input, target, onProgress, { viaPageImage: true, viaLlamaParse: true });
+  }
   return officeToPaged(input, source, target, onProgress);
 }
