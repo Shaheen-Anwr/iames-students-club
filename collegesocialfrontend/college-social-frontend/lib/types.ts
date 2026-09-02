@@ -38,6 +38,10 @@ export interface User {
   friends?: string[];
   friendRequestsSent?: string[];
   friendRequestsReceived?: string[];
+  // AI assistant personalisation: the name the student gave the assistant, and the name the
+  // assistant should call the student by. Set from the assistant's first-run card / settings.
+  aiAssistantName?: string | null;
+  aiPreferredName?: string | null;
 }
 
 export type BadgeId =

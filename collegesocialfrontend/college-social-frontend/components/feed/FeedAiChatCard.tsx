@@ -6,15 +6,18 @@ import { History, Maximize2, Plus } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { cn } from '@/lib/utils';
 import { useAi } from '@/lib/ai-context';
+import { useAuth } from '@/lib/auth-context';
 import { AiChatPanel } from '@/components/ai/AiChatPanel';
 import { AiConversationSwitcher } from '@/components/ai/AiConversationSwitcher';
 import { AiUsageMeter } from '@/components/ai/AiUsageMeter';
+import { assistantDisplayName } from '@/components/ai/AiPersonalizeCard';
 import { AiAvatar } from '@/components/ai/AiAvatar';
 
 // Left rail: the AI assistant embedded as a full chat box next to the create-post box,
 // shown only at `lg:` and up (AiFab covers the assistant on smaller screens instead).
 export function FeedAiChatCard() {
   const { conversations, usage } = useAi();
+  const { user } = useAuth();
   const [activeId, setActiveId] = useState<string | null>(null);
   // Explicit "start fresh" state (the + button) -- overrides the resume-most-recent fallback
   // below until a message is actually sent.
@@ -31,7 +34,7 @@ export function FeedAiChatCard() {
             <AiAvatar size={22} />
             <span className="absolute -end-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full bg-success ring-2 ring-surface" />
           </div>
-          <p className="text-sm font-semibold text-foreground">المساعد الذكي</p>
+          <p className="max-w-[9rem] truncate text-sm font-semibold text-foreground">{assistantDisplayName(user)}</p>
           {usage && <AiUsageMeter used={usage.used} limit={usage.limit} size={18} />}
         </div>
         <div className="flex items-center gap-1">

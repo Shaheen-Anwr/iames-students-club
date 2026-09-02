@@ -13,6 +13,7 @@ import { LectureIndexService } from './lecture-index.service';
 import { FeedContextService } from './feed-context.service';
 import { ScheduleContextService } from './schedule-context.service';
 import { StorageService } from '../upload/storage.service';
+import { UsersService } from '../users/users.service';
 import { Department } from '../common/enums/department.enum';
 import {
   DailyCount,
@@ -70,6 +71,7 @@ export class AiConversationsService {
     private readonly feedContextService: FeedContextService,
     private readonly scheduleContextService: ScheduleContextService,
     private readonly storageService: StorageService,
+    private readonly usersService: UsersService,
     config: ConfigService,
   ) {
     this.visionModel = config.get<string>('ai.visionModel') ?? '';
@@ -226,17 +228,32 @@ export class AiConversationsService {
 
     const history = await this.messageModel.find({ conversation: conversation._id }).sort({ createdAt: 1 }).exec();
 
-    const [lectureChunks, posts, comments, scheduleBlock, memoryFacts, sharedThread] = await Promise.all([
+    const [lectureChunks, posts, comments, scheduleBlock, memoryFacts, sharedThread, owner] = await Promise.all([
       this.lectureSearchService.search(text, ownerDepartment),
       this.feedContextService.searchPosts(text, ownerDepartment),
       this.feedContextService.searchComments(text, ownerDepartment),
       this.scheduleContextService.describeSchedule(ownerId),
       this.aiMemoryService.listForOwner(ownerId),
       sharedPostId ? this.feedContextService.getThread(sharedPostId, ownerDepartment) : Promise.resolve(null),
+      this.usersService.findById(ownerId),
     ]);
 
     const sources: AiMessageSource[] = [];
     const openAiMessages: OpenAI.Chat.ChatCompletionMessageParam[] = [{ role: 'system', content: SYSTEM_PROMPT }];
+
+    // Personalisation: address the student by name, and answer to the name they gave the assistant.
+    const studentName = (owner.aiPreferredName || owner.name || '').trim().split(/\s+/)[0];
+    const assistantName = (owner.aiAssistantName || '').trim();
+    openAiMessages.push({
+      role: 'system',
+      content:
+        (studentName
+          ? `اسم الطالب الذي تخاطبه: ${studentName}. ناده باسمه بلُطف عند بداية المحادثة وحين يكون ذلك طبيعيًا، دون إفراط. `
+          : '') +
+        (assistantName
+          ? `اختار لك الطالب اسم «${assistantName}» — قدّم نفسك بهذا الاسم إن سُئلت من أنت.`
+          : 'لم يختر لك الطالب اسمًا بعد؛ إن ناسب السياق في بداية محادثة جديدة اسأله بلطف عن الاسم الذي يحب أن يناديك به.'),
+    });
 
     if (scheduleBlock) {
       openAiMessages.push({ role: 'system', content: `جدول الطالب الدراسي:\n${scheduleBlock}` });

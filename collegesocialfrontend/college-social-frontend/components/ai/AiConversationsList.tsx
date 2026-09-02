@@ -4,15 +4,18 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useRouter, usePathname } from 'next/navigation';
 import { isToday, isYesterday } from 'date-fns';
-import { Bot, Plus, Search, Trash2, X } from 'lucide-react';
+import { Bot, Plus, Search, Sparkles, Trash2, X } from 'lucide-react';
 import { Spinner } from '@/components/ui/Spinner';
+import { Modal } from '@/components/ui/Modal';
 import { api, ApiError } from '@/lib/api';
 import { useAi } from '@/lib/ai-context';
+import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { cn, timeAgo } from '@/lib/utils';
 import type { AiConversation } from '@/lib/types';
 import { AiAuroraBackground } from './AiAuroraBackground';
 import { AiUsageMeter } from './AiUsageMeter';
+import { AiPersonalizeCard, assistantDisplayName } from './AiPersonalizeCard';
 
 const GROUP_LABELS = { today: 'اليوم', yesterday: 'أمس', earlier: 'أقدم' } as const;
 type GroupKey = keyof typeof GROUP_LABELS;
@@ -31,11 +34,13 @@ function groupConversations(conversations: AiConversation[]): [GroupKey, AiConve
 
 export function AiConversationsList() {
   const { conversations, loading, removeConversation, usage } = useAi();
+  const { user } = useAuth();
   const router = useRouter();
   const pathname = usePathname();
   const { showToast } = useToast();
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [query, setQuery] = useState('');
+  const [personalizeOpen, setPersonalizeOpen] = useState(false);
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
@@ -65,17 +70,27 @@ export function AiConversationsList() {
     <div className="relative flex h-full flex-col overflow-hidden">
       <AiAuroraBackground />
       <div className="h-[2px] w-full shrink-0 bg-gradient-accent" />
-      <div className="flex items-center justify-between border-b border-border px-4 py-4">
-        <div className="flex items-center gap-2.5">
-          <h1 className="text-lg font-semibold text-foreground">المساعد الذكي</h1>
+      <div className="flex items-center justify-between gap-2 border-b border-border px-4 py-4">
+        <div className="flex min-w-0 items-center gap-2.5">
+          <h1 className="truncate text-lg font-semibold text-foreground">{assistantDisplayName(user)}</h1>
           {usage && <AiUsageMeter used={usage.used} limit={usage.limit} showLabel />}
         </div>
-        <Link
-          href="/ai"
-          className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:scale-110 active:scale-95"
-        >
-          <Plus className="h-4 w-4" />
-        </Link>
+        <div className="flex shrink-0 items-center gap-1">
+          <button
+            onClick={() => setPersonalizeOpen(true)}
+            title="تخصيص المساعد"
+            className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+          >
+            <Sparkles className="h-4 w-4" />
+          </button>
+          <Link
+            href="/ai"
+            title="محادثة جديدة"
+            className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:scale-110 active:scale-95"
+          >
+            <Plus className="h-4 w-4" />
+          </Link>
+        </div>
       </div>
 
       {conversations.length > 0 && (
@@ -160,6 +175,10 @@ export function AiConversationsList() {
           </div>
         )}
       </div>
+
+      <Modal open={personalizeOpen} onClose={() => setPersonalizeOpen(false)} title="تخصيص المساعد" className="max-w-sm">
+        <AiPersonalizeCard bare onDone={() => setPersonalizeOpen(false)} />
+      </Modal>
     </div>
   );
 }

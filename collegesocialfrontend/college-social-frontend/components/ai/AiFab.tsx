@@ -6,9 +6,11 @@ import { usePathname } from 'next/navigation';
 import { History, Maximize2, Plus, X } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAi } from '@/lib/ai-context';
+import { useAuth } from '@/lib/auth-context';
 import { AiChatPanel } from './AiChatPanel';
 import { AiConversationSwitcher } from './AiConversationSwitcher';
 import { AiUsageMeter } from './AiUsageMeter';
+import { assistantDisplayName } from './AiPersonalizeCard';
 import { AiAvatar } from './AiAvatar';
 
 const STORAGE_KEY = 'ai-fab-position';
@@ -44,6 +46,7 @@ function clampToViewport(p: Point): Point {
 export function AiFab() {
   const pathname = usePathname();
   const { conversations, usage, panelOpen: open, setPanelOpen: setOpen } = useAi();
+  const { user } = useAuth();
   const [activeId, setActiveId] = useState<string | null>(null);
   // Opening the bubble resumes the most recent conversation; `newChat` is the explicit "start
   // fresh" state (the + button) that must override that fallback until a message is actually sent.
@@ -200,7 +203,7 @@ export function AiFab() {
                 <AiAvatar size={20} />
                 <span className="absolute -end-0.5 -bottom-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
               </div>
-              <p className="text-sm font-semibold text-foreground">المساعد الذكي</p>
+              <p className="max-w-[8rem] truncate text-sm font-semibold text-foreground">{assistantDisplayName(user)}</p>
               {usage && <AiUsageMeter used={usage.used} limit={usage.limit} size={18} />}
             </div>
             <div className="flex items-center gap-1">
