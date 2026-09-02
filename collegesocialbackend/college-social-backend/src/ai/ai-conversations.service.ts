@@ -14,7 +14,13 @@ import { FeedContextService } from './feed-context.service';
 import { ScheduleContextService } from './schedule-context.service';
 import { StorageService } from '../upload/storage.service';
 import { Department } from '../common/enums/department.enum';
-import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
+import {
+  DailyCount,
+  daysAgoStart,
+  fillDailyCounts,
+  previousWindowMatch,
+  TrendSeries,
+} from '../common/utils/daily-counts.util';
 
 const TITLE_MAX_LENGTH = 60;
 const MAX_TOOL_ROUNDS = 4;
@@ -402,5 +408,15 @@ export class AiConversationsService {
       ])
       .exec();
     return fillDailyCounts(rows, days);
+  }
+
+  // AI messages over the trailing `days` window + period-over-period totals (admin console).
+  async getMessageTrend(days: number): Promise<TrendSeries> {
+    const [series, current, previous] = await Promise.all([
+      this.dailyMessages(days),
+      this.messageModel.countDocuments({ createdAt: { $gte: daysAgoStart(days) } }).exec(),
+      this.messageModel.countDocuments({ createdAt: previousWindowMatch(days) }).exec(),
+    ]);
+    return { series, current, previous };
   }
 }

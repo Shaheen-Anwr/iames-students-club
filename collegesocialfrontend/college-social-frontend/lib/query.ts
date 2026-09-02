@@ -1,6 +1,12 @@
 'use client';
 
-import { QueryClient, useQuery, type UseQueryOptions } from '@tanstack/react-query';
+import { useMemo } from 'react';
+import {
+  QueryClient,
+  useInfiniteQuery,
+  useQuery,
+  type UseQueryOptions,
+} from '@tanstack/react-query';
 import { apiGet, type GetPath } from './api-typed';
 import { api } from './api';
 
@@ -49,4 +55,36 @@ export function useRawQuery<T>(key: unknown[], path: string, opts?: QueryOpts<T>
     queryFn: () => api.get<T>(path),
     ...opts,
   });
+}
+
+/**
+ * Offset-paginated infinite list, matching this app's REST convention: `GET <path>?page=N&limit=M`
+ * returning a bare `T[]`, with "there is more" inferred from a full-size page. Replaces the
+ * `useState(posts)` + `page` + `hasMore` + `loadingMore` + IntersectionObserver boilerplate.
+ *
+ *   const { items, fetchNextPage, hasNextPage, isFetchingNextPage, isPending } =
+ *     useInfiniteApiList<Post>('/posts/saved', { key: ['saved-posts'], pageSize: 10 });
+ *
+ * `path` may already carry query params (`/posts?scope=dept`); the pager appends with the right
+ * separator. Put every param that changes the result set into `key` so switching filters refetches.
+ */
+export function useInfiniteApiList<T>(
+  path: string,
+  opts?: { key?: unknown[]; pageSize?: number; enabled?: boolean },
+) {
+  const pageSize = opts?.pageSize ?? 10;
+  const query = useInfiniteQuery<T[], Error, { pages: T[][] }, unknown[], number>({
+    queryKey: opts?.key ?? [path],
+    initialPageParam: 1,
+    queryFn: ({ pageParam }) => {
+      const sep = path.includes('?') ? '&' : '?';
+      return api.get<T[]>(`${path}${sep}page=${pageParam}&limit=${pageSize}`);
+    },
+    getNextPageParam: (lastPage, allPages) =>
+      lastPage.length === pageSize ? allPages.length + 1 : undefined,
+    enabled: opts?.enabled,
+  });
+
+  const items = useMemo(() => query.data?.pages.flat() ?? [], [query.data]);
+  return { ...query, items };
 }

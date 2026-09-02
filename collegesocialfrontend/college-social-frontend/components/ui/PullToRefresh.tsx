@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Loader2 } from 'lucide-react';
+import { haptic } from '@/lib/haptics';
 import { cn } from '@/lib/utils';
 
 const THRESHOLD = 68; // px pull past which releasing triggers a refresh
@@ -26,6 +27,7 @@ export function PullToRefresh({ onRefresh, className, disabled, children }: Pull
   const startY = useRef<number | null>(null);
   const pullRef = useRef(0);
   const draggingRef = useRef(false);
+  const armedRef = useRef(false); // has the pull crossed THRESHOLD this gesture (for the haptic tick)
   const [pull, setPull] = useState(0);
   const [refreshing, setRefreshing] = useState(false);
   const [settling, setSettling] = useState(true);
@@ -67,7 +69,14 @@ export function PullToRefresh({ onRefresh, className, disabled, children }: Pull
       draggingRef.current = true;
       setSettling(false);
       const eased = delta <= THRESHOLD ? delta : THRESHOLD + (delta - THRESHOLD) * 0.35;
-      setPullBoth(Math.min(eased, MAX_PULL));
+      const next = Math.min(eased, MAX_PULL);
+      setPullBoth(next);
+      // One tick the moment the pull is far enough that releasing will refresh.
+      const armed = next >= THRESHOLD;
+      if (armed !== armedRef.current) {
+        armedRef.current = armed;
+        if (armed) haptic('select');
+      }
       if (e.cancelable) e.preventDefault(); // keep the page still while pulling
     };
 
@@ -79,9 +88,14 @@ export function PullToRefresh({ onRefresh, className, disabled, children }: Pull
       const shouldRefresh = draggingRef.current && pullRef.current >= THRESHOLD;
       startY.current = null;
       draggingRef.current = false;
+      armedRef.current = false;
       setSettling(true);
-      if (shouldRefresh) void run();
-      else setPullBoth(0);
+      if (shouldRefresh) {
+        haptic('impact');
+        void run();
+      } else {
+        setPullBoth(0);
+      }
     };
 
     el.addEventListener('touchstart', onTouchStart, { passive: true });

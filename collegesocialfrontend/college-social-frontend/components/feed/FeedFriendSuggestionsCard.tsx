@@ -7,8 +7,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { Skeleton } from '@/components/ui/Skeleton';
 import { FriendActionButton } from '@/components/profile/FriendActionButton';
-import { api } from '@/lib/api';
-import { useQuery } from '@/lib/use-query';
+import { useRawQuery } from '@/lib/query';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { assetUrl } from '@/lib/utils';
@@ -36,10 +35,10 @@ export function useFriendSuggestions() {
   const { user } = useAuth();
   // Cached + deduped: the desktop sidebar card, the mobile carousel and FriendsPage all call
   // this hook, and navigating feed -> profile -> back no longer refetches within staleTime.
-  const { data, isLoading } = useQuery<User[]>(
-    user ? 'users/suggestions' : null,
-    () => api.get<User[]>('/users/suggestions'),
-    { staleTime: 60_000 },
+  const { data, isLoading } = useRawQuery<User[]>(
+    ['users', 'suggestions'],
+    '/users/suggestions',
+    { enabled: !!user, staleTime: 60_000 },
   );
   const [dismissed, setDismissed] = useState<Set<string>>(new Set());
 

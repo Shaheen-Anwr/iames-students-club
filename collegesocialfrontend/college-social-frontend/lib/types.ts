@@ -336,6 +336,25 @@ export interface AdminStats {
   notifications: AdminNotificationStats;
 }
 
+// GET /api/admin/stats/trends?range=7|14|30|90 -- a daily series + this-period-vs-last-period
+// totals per metric, for the console dashboard's KPI deltas + sparklines. Additive, separate
+// from AdminStats (which stays range-fixed).
+export interface AdminTrendSeries {
+  series: DailyCount[];
+  current: number;
+  previous: number;
+}
+
+export interface AdminTrends {
+  range: number;
+  signups: AdminTrendSeries;
+  posts: AdminTrendSeries;
+  comments: AdminTrendSeries;
+  quizAttempts: AdminTrendSeries;
+  chatMessages: AdminTrendSeries;
+  aiMessages: AdminTrendSeries;
+}
+
 // --- Admin moderation list shapes (distinct from the public-facing types above, since admin
 // list endpoints return summarized/unpopulated-differently shapes and paginate) ---
 

@@ -1,158 +1,124 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { BadgeCheck, ChevronDown, KeyRound, MailWarning, Search, Shield, ShieldCheck, Trash2, UserX, UserCheck } from 'lucide-react';
-import { Avatar } from '@/components/ui/Avatar';
+import { useEffect, useMemo, useState } from 'react';
+import {
+  BadgeCheck,
+  KeyRound,
+  MailWarning,
+  Shield,
+  ShieldCheck,
+  Trash2,
+  UserCheck,
+  UserX,
+  Users,
+} from 'lucide-react';
 import { Badge } from '@/components/ui/Badge';
-import { Card } from '@/components/ui/Card';
-import { Input } from '@/components/ui/Input';
 import { Button } from '@/components/ui/Button';
-import { Spinner } from '@/components/ui/Spinner';
-import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { Switch } from '@/components/ui/Switch';
 import { Dropdown } from '@/components/ui/Dropdown';
+import { ConfirmModal } from '@/components/ui/ConfirmModal';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
-import { assetUrl, cn } from '@/lib/utils';
-import { ROLE_LABELS, type PaginatedUsers, type Role, type User } from '@/lib/types';
+import { cn } from '@/lib/utils';
+import { nf } from '@/lib/format';
+import { ROLE_LABELS, type Role, type User } from '@/lib/types';
+import { DataTable } from './ui/DataTable';
+import { DataTableToolbar } from './ui/DataTableToolbar';
+import { Pagination } from './ui/Pagination';
+import { DetailDrawer } from './ui/DetailDrawer';
+import { exportCsv } from './ui/exportCsv';
+import { useTableQuery } from './ui/useTableQuery';
+import { useAdminList } from './ui/useAdminList';
+import { useColumnPrefs } from './ui/useColumnPrefs';
+import { MonoId, PersonCell, TimeCell } from './ui/cells';
+import type { Column } from './ui/types';
 import { ResetPasswordModal } from './ResetPasswordModal';
 
 const LIMIT = 20;
 const ROLE_OPTIONS: Role[] = ['student', 'professor', 'admin'];
 
-interface AdminPanelProps {
-  // Lets AdminOverview's "pending verification" tile deep-link straight into a pre-filtered
-  // view; uncontrolled (plain internal state) when the admin opens this tab on its own.
-  unverifiedOnly?: boolean;
-  onUnverifiedOnlyChange?: (value: boolean) => void;
-}
-
-export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnlyChange }: AdminPanelProps = {}) {
+export function AdminUsersPanel() {
   const { user: currentUser, updateLocalUser } = useAuth();
   const { showToast } = useToast();
 
-  const [users, setUsers] = useState<User[]>([]);
-  const [total, setTotal] = useState(0);
-  const [page, setPage] = useState(1);
-  const [search, setSearch] = useState('');
-  const [debouncedSearch, setDebouncedSearch] = useState('');
-  const [unverifiedOnlyState, setUnverifiedOnlyState] = useState(false);
-  const unverifiedOnly = unverifiedOnlyProp ?? unverifiedOnlyState;
-  const setUnverifiedOnly = onUnverifiedOnlyChange ?? setUnverifiedOnlyState;
-  const [loading, setLoading] = useState(true);
+  const tq = useTableQuery({
+    limit: LIMIT,
+    defaultSort: { id: 'createdAt', dir: 'desc' },
+    filterKeys: ['verified'],
+  });
+  const { rows, total, loading, error, retry, removeLocal, patchLocal } = useAdminList<User>(
+    '/admin/users',
+    tq.queryString,
+  );
+
+  const unverifiedOnly = tq.filters.verified === 'false';
+
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [detail, setDetail] = useState<User | null>(null);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [passwordTarget, setPasswordTarget] = useState<User | null>(null);
   const [pendingDelete, setPendingDelete] = useState<User | null>(null);
-  const [selected, setSelected] = useState<Set<string>>(new Set());
   const [bulkAction, setBulkAction] = useState<'activate' | 'deactivate' | 'delete' | null>(null);
   const [bulkBusy, setBulkBusy] = useState(false);
 
-  // Debounce free-typed search input before it drives a request.
-  useEffect(() => {
-    const handle = setTimeout(() => setDebouncedSearch(search.trim()), 300);
-    return () => clearTimeout(handle);
-  }, [search]);
+  useEffect(() => setSelected(new Set()), [tq.queryString]);
 
-  // Any new search term or filter change restarts pagination at page 1.
-  useEffect(() => {
-    setPage(1);
-  }, [debouncedSearch, unverifiedOnly]);
+  // Keep the drawer's copy in sync with optimistic list edits.
+  const detailRow = detail ? (rows.find((u) => u._id === detail._id) ?? detail) : null;
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    const query = new URLSearchParams({ page: String(page), limit: String(LIMIT) });
-    if (debouncedSearch) query.set('search', debouncedSearch);
-    if (unverifiedOnly) query.set('verified', 'false');
-
-    api
-      .get<PaginatedUsers>(`/admin/users?${query.toString()}`)
-      .then((res) => {
-        if (cancelled) return;
-        setUsers(res.data);
-        setTotal(res.total);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [page, debouncedSearch, unverifiedOnly]);
-
-  useEffect(() => {
-    setSelected(new Set());
-  }, [page, debouncedSearch, unverifiedOnly]);
-
-  function patchLocal(id: string, patch: Partial<User>) {
-    setUsers((prev) => prev.map((u) => (u._id === id ? { ...u, ...patch } : u)));
+  function applyPatch(id: string, patch: Partial<User>) {
+    patchLocal(id, patch);
     if (id === currentUser?._id) updateLocalUser(patch);
   }
 
-  async function handleRoleChange(target: User, role: Role) {
-    setBusyId(target._id);
+  async function run(id: string, req: Promise<User>, ok: string, fail: string) {
+    setBusyId(id);
     try {
-      const updated = await api.patch<User>(`/admin/users/${target._id}`, { role });
-      patchLocal(target._id, updated);
-      showToast(`أصبح ${target.name} الآن ${ROLE_LABELS[role]}.`);
+      const updated = await req;
+      applyPatch(id, updated);
+      showToast(ok);
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر تحديث الدور.', 'error');
+      showToast(err instanceof ApiError ? err.message : fail, 'error');
     } finally {
       setBusyId(null);
     }
   }
 
-  async function handleToggleActive(target: User) {
-    const nextActive = !(target.isActive ?? true);
-    setBusyId(target._id);
-    try {
-      const updated = await api.patch<User>(`/admin/users/${target._id}`, { isActive: nextActive });
-      patchLocal(target._id, updated);
-      showToast(nextActive ? `تمت إعادة تفعيل ${target.name}.` : `تم إيقاف حساب ${target.name}.`);
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر تحديث الحساب.', 'error');
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const changeRole = (u: User, role: Role) =>
+    run(u._id, api.patch<User>(`/admin/users/${u._id}`, { role }), `أصبح ${u.name} الآن ${ROLE_LABELS[role]}.`, 'تعذّر تحديث الدور.');
 
-  async function handleToggleSuperAdmin(target: User) {
-    const nextValue = !target.isSuperAdmin;
-    setBusyId(target._id);
-    try {
-      const updated = await api.patch<User>(`/admin/users/${target._id}`, { isSuperAdmin: nextValue });
-      patchLocal(target._id, updated);
-      showToast(
-        nextValue ? `أصبح ${target.name} مديرًا عامًا.` : `أُزيلت صلاحية المدير العام عن ${target.name}.`,
-      );
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر تحديث صلاحية المدير العام.', 'error');
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const toggleActive = (u: User) => {
+    const next = !(u.isActive ?? true);
+    return run(
+      u._id,
+      api.patch<User>(`/admin/users/${u._id}`, { isActive: next }),
+      next ? `تمت إعادة تفعيل ${u.name}.` : `تم إيقاف حساب ${u.name}.`,
+      'تعذّر تحديث الحساب.',
+    );
+  };
 
-  async function handleVerifyEmail(target: User) {
-    setBusyId(target._id);
-    try {
-      const updated = await api.patch<User>(`/admin/users/${target._id}/verify-email`);
-      patchLocal(target._id, updated);
-      showToast(`تم توثيق بريد ${target.name}.`);
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر توثيق البريد.', 'error');
-    } finally {
-      setBusyId(null);
-    }
-  }
+  const toggleSuperAdmin = (u: User) => {
+    const next = !u.isSuperAdmin;
+    return run(
+      u._id,
+      api.patch<User>(`/admin/users/${u._id}`, { isSuperAdmin: next }),
+      next ? `أصبح ${u.name} مديرًا عامًا.` : `أُزيلت صلاحية المدير العام عن ${u.name}.`,
+      'تعذّر تحديث صلاحية المدير العام.',
+    );
+  };
 
-  async function handleDelete(target: User) {
-    setBusyId(target._id);
+  const verifyEmail = (u: User) =>
+    run(u._id, api.patch<User>(`/admin/users/${u._id}/verify-email`), `تم توثيق بريد ${u.name}.`, 'تعذّر توثيق البريد.');
+
+  async function handleDelete(u: User) {
+    setBusyId(u._id);
     try {
-      await api.delete(`/admin/users/${target._id}`);
-      setUsers((prev) => prev.filter((u) => u._id !== target._id));
-      setTotal((prev) => prev - 1);
-      showToast(`تم حذف حساب ${target.name}.`);
+      await api.delete(`/admin/users/${u._id}`);
+      removeLocal(u._id);
+      showToast(`تم حذف حساب ${u.name}.`);
+      if (detail?._id === u._id) setDetail(null);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر حذف المستخدم.', 'error');
     } finally {
@@ -161,37 +127,22 @@ export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnl
     }
   }
 
-  const selectableUsers = users.filter((u) => u._id !== currentUser?._id);
-  const allSelected = selectableUsers.length > 0 && selectableUsers.every((u) => selected.has(u._id));
+  const selectableRows = rows.filter((u) => u._id !== currentUser?._id);
 
-  function toggleSelectAll() {
-    setSelected(allSelected ? new Set() : new Set(selectableUsers.map((u) => u._id)));
-  }
-
-  function toggleSelect(id: string) {
-    setSelected((prev) => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  }
-
-  async function handleBulkAction() {
+  async function runBulk() {
     if (!bulkAction) return;
     const ids = [...selected];
     setBulkBusy(true);
     try {
       if (bulkAction === 'delete') {
         await Promise.all(ids.map((id) => api.delete(`/admin/users/${id}`)));
-        setUsers((prev) => prev.filter((u) => !selected.has(u._id)));
-        setTotal((prev) => prev - ids.length);
-        showToast(`تم حذف ${ids.length} حسابًا.`);
+        removeLocal(ids);
+        showToast(`تم حذف ${nf(ids.length)} حسابًا.`);
       } else {
         const isActive = bulkAction === 'activate';
         const updated = await Promise.all(ids.map((id) => api.patch<User>(`/admin/users/${id}`, { isActive })));
-        setUsers((prev) => prev.map((u) => updated.find((x) => x._id === u._id) ?? u));
-        showToast(isActive ? `تمت إعادة تفعيل ${ids.length} حسابًا.` : `تم إيقاف ${ids.length} حسابًا.`);
+        updated.forEach((u) => applyPatch(u._id, u));
+        showToast(isActive ? `تمت إعادة تفعيل ${nf(ids.length)} حسابًا.` : `تم إيقاف ${nf(ids.length)} حسابًا.`);
       }
       setSelected(new Set());
     } catch (err) {
@@ -202,221 +153,250 @@ export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnl
     }
   }
 
-  const totalPages = Math.max(1, Math.ceil(total / LIMIT));
+  const columns = useMemo<Column<User>[]>(
+    () => [
+      {
+        id: 'user',
+        header: 'المستخدم',
+        sortable: true,
+        sortValue: (u) => u.name,
+        cell: (u) => (
+          <div className="flex items-center gap-3">
+            <PersonCell
+              name={u.name}
+              photoUrl={u.photoUrl}
+              sub={undefined}
+            />
+            <div className="hidden min-w-0 sm:block">
+              <p className="flex items-center gap-1 truncate text-xs text-muted-foreground" dir="ltr">
+                {u.collegeEmail}
+                {u.collegeEmailVerifiedAt && <BadgeCheck className="h-3 w-3 shrink-0 text-success" />}
+              </p>
+            </div>
+            {u._id === currentUser?._id && <span className="text-[10px] text-muted-foreground">(أنت)</span>}
+            {u.isSuperAdmin && (
+              <span className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
+                <ShieldCheck className="h-3 w-3" />
+                عام
+              </span>
+            )}
+          </div>
+        ),
+        exportValue: (u) => u.name,
+      },
+      {
+        id: 'collegeId',
+        header: 'الرقم الجامعي',
+        sortable: true,
+        sortValue: (u) => u.collegeId,
+        cell: (u) => <MonoId value={u.collegeId} />,
+        exportValue: (u) => u.collegeId,
+      },
+      {
+        id: 'role',
+        header: 'الدور',
+        sortable: true,
+        sortValue: (u) => u.role,
+        cell: (u) => <span className="text-muted-foreground">{ROLE_LABELS[u.role]}</span>,
+        exportValue: (u) => ROLE_LABELS[u.role],
+      },
+      {
+        id: 'status',
+        header: 'الحالة',
+        sortable: true,
+        sortValue: (u) => ((u.isActive ?? true) ? 1 : 0),
+        cell: (u) => (
+          <Badge variant={(u.isActive ?? true) ? 'success' : 'default'}>{(u.isActive ?? true) ? 'نشط' : 'موقوف'}</Badge>
+        ),
+        exportValue: (u) => ((u.isActive ?? true) ? 'نشط' : 'موقوف'),
+      },
+      {
+        id: 'email',
+        header: 'البريد الجامعي',
+        defaultHidden: true,
+        cell: (u) => (
+          <span dir="ltr" className="text-xs text-muted-foreground">
+            {u.collegeEmail}
+          </span>
+        ),
+        exportValue: (u) => u.collegeEmail,
+      },
+    ],
+    [currentUser?._id],
+  );
+
+  const prefs = useColumnPrefs(columns);
 
   return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div className="relative max-w-sm flex-1">
-          <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-          <Input
-            placeholder="ابحث بالاسم أو الرقم الجامعي أو البريد الإلكتروني"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="ps-9"
+    <div className="space-y-3">
+      <DataTableToolbar
+        searchInput={tq.searchInput}
+        onSearchChange={tq.setSearchInput}
+        searchPlaceholder="ابحث بالاسم أو الرقم الجامعي أو البريد الإلكتروني"
+        total={total}
+        density={prefs.density}
+        onDensityChange={prefs.setDensity}
+        columns={columns}
+        visibleColumnIds={prefs.visibleColumnIds}
+        onVisibleColumnsChange={prefs.setVisibleColumnIds}
+        onExport={() => exportCsv('المستخدمون', columns, rows)}
+        filters={
+          <button
+            onClick={() => tq.setFilter('verified', unverifiedOnly ? null : 'false')}
+            className={cn(
+              'inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border px-2.5 text-xs font-medium transition-colors',
+              unverifiedOnly
+                ? 'border-warning/40 bg-warning/10 text-warning'
+                : 'border-strong text-muted-foreground hover:text-foreground',
+            )}
+          >
+            <MailWarning className="h-3.5 w-3.5" />
+            بريد غير موثّق
+          </button>
+        }
+        selectedCount={selected.size}
+        onClearSelection={() => setSelected(new Set())}
+        bulkActions={
+          <Dropdown
+            menuLabel="إجراء جماعي"
+            trigger={
+              <span className="inline-flex h-7 items-center gap-1 rounded-md bg-accent/10 px-2.5 text-xs font-medium text-accent hover:bg-accent/15">
+                إجراء جماعي
+              </span>
+            }
+            items={[
+              { label: 'تفعيل المحددين', icon: UserCheck, onClick: () => setBulkAction('activate') },
+              { label: 'إيقاف المحددين', icon: UserX, onClick: () => setBulkAction('deactivate') },
+              { label: 'حذف المحددين', icon: Trash2, destructive: true, onClick: () => setBulkAction('delete') },
+            ]}
           />
-        </div>
-        <button
-          onClick={() => setUnverifiedOnly(!unverifiedOnly)}
-          className={cn(
-            'flex shrink-0 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
-            unverifiedOnly
-              ? 'border-warning/40 bg-warning/10 text-warning'
-              : 'border-border text-muted-foreground hover:text-foreground',
-          )}
-        >
-          <MailWarning className="h-3.5 w-3.5" />
-          بريد غير موثّق فقط
-        </button>
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2 rounded-xl border border-accent/30 bg-accent/5 px-3 py-1.5">
-            <span className="text-sm font-medium text-foreground">{selected.size} محدد</span>
-            <Dropdown
-              trigger={
-                <span className="flex items-center gap-1 rounded-lg px-2 py-1 text-sm font-medium text-accent hover:bg-accent/10">
-                  إجراء جماعي
-                  <ChevronDown className="h-3.5 w-3.5" />
-                </span>
-              }
-              items={[
-                { label: 'تفعيل المحددين', icon: UserCheck, onClick: () => setBulkAction('activate') },
-                { label: 'إيقاف المحددين', icon: UserX, onClick: () => setBulkAction('deactivate') },
-                { label: 'حذف المحددين', icon: Trash2, destructive: true, onClick: () => setBulkAction('delete') },
-              ]}
-            />
-          </div>
-        )}
-      </div>
+        }
+      />
 
-      <Card className="overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Spinner className="h-6 w-6" />
-          </div>
-        ) : users.length === 0 ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">
-            {unverifiedOnly ? 'لا توجد حسابات بانتظار توثيق البريد.' : 'لا يوجد مستخدمون.'}
-          </p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[720px] text-start text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="w-10 px-4 py-3">
-                    <input
-                      type="checkbox"
-                      checked={allSelected}
-                      onChange={toggleSelectAll}
-                      disabled={selectableUsers.length === 0}
-                      className="h-4 w-4 rounded border-border accent-accent"
+      <DataTable
+        columns={columns}
+        rows={rows}
+        rowKey={(u) => u._id}
+        loading={loading}
+        error={error}
+        onRetry={retry}
+        sort={tq.sort}
+        onToggleSort={tq.toggleSort}
+        selectable
+        selectedIds={selected}
+        onSelectedChange={setSelected}
+        isRowSelectable={(u) => u._id !== currentUser?._id}
+        onRowClick={setDetail}
+        density={prefs.density}
+        visibleColumnIds={prefs.visibleColumnIds}
+        emptyState={
+          <EmptyState
+            icon={Users}
+            title={unverifiedOnly ? 'لا حسابات بانتظار التوثيق' : 'لا يوجد مستخدمون'}
+            description="لا نتائج مطابقة."
+          />
+        }
+      />
+
+      <Pagination page={tq.page} total={total} limit={tq.limit} onPageChange={tq.setPage} />
+
+      <DetailDrawer
+        open={!!detailRow}
+        onOpenChange={(o) => !o && setDetail(null)}
+        title={detailRow?.name}
+        description={detailRow ? ROLE_LABELS[detailRow.role] : undefined}
+        footer={
+          detailRow &&
+          detailRow._id !== currentUser?._id && (
+            <Button variant="danger" fullWidth onClick={() => setPendingDelete(detailRow)}>
+              <Trash2 className="h-4 w-4" />
+              حذف الحساب
+            </Button>
+          )
+        }
+      >
+        {detailRow &&
+          (() => {
+            const u = detailRow;
+            const isSelf = u._id === currentUser?._id;
+            const active = u.isActive ?? true;
+            const busy = busyId === u._id;
+            return (
+              <div className="space-y-4 text-sm">
+                <PersonCell name={u.name} photoUrl={u.photoUrl} />
+                <dl className="space-y-2 text-xs">
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">الرقم الجامعي</dt>
+                    <dd>
+                      <MonoId value={u.collegeId} />
+                    </dd>
+                  </div>
+                  <div className="flex items-center justify-between gap-2">
+                    <dt className="text-muted-foreground">البريد الجامعي</dt>
+                    <dd className="flex items-center gap-1" dir="ltr">
+                      <span className="truncate text-foreground">{u.collegeEmail}</span>
+                      {u.collegeEmailVerifiedAt && <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-success" />}
+                    </dd>
+                  </div>
+                  <div className="flex justify-between">
+                    <dt className="text-muted-foreground">أُنشئ</dt>
+                    <dd className="text-foreground">
+                      <TimeCell value={u.createdAt} />
+                    </dd>
+                  </div>
+                </dl>
+
+                <div className="space-y-3 rounded-xl border border-border/70 p-3">
+                  <label className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-foreground">الدور</span>
+                    <select
+                      value={u.role}
+                      disabled={busy || isSelf}
+                      onChange={(e) => changeRole(u, e.target.value as Role)}
+                      className="h-8 rounded-lg border border-border bg-surface px-2 text-xs font-medium text-foreground disabled:opacity-60"
+                    >
+                      {ROLE_OPTIONS.map((r) => (
+                        <option key={r} value={r}>
+                          {ROLE_LABELS[r]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="text-xs font-medium text-foreground">الحساب مفعّل</span>
+                    <Switch checked={active} onCheckedChange={() => toggleActive(u)} disabled={busy || isSelf} />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3">
+                    <span className="flex items-center gap-1.5 text-xs font-medium text-foreground">
+                      {u.isSuperAdmin ? <ShieldCheck className="h-3.5 w-3.5 text-accent" /> : <Shield className="h-3.5 w-3.5" />}
+                      مدير عام
+                    </span>
+                    <Switch
+                      checked={!!u.isSuperAdmin}
+                      onCheckedChange={() => toggleSuperAdmin(u)}
+                      disabled={busy || isSelf}
                     />
-                  </th>
-                  <th className="px-4 py-3 font-medium">المستخدم</th>
-                  <th className="px-4 py-3 font-medium">الرقم الجامعي</th>
-                  <th className="px-4 py-3 font-medium">الدور</th>
-                  <th className="px-4 py-3 font-medium">الحالة</th>
-                  <th className="px-4 py-3 font-medium text-end">إجراءات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {users.map((u) => {
-                  const isSelf = u._id === currentUser?._id;
-                  const isBusy = busyId === u._id;
-                  const active = u.isActive ?? true;
-                  return (
-                    <tr key={u._id} className="border-b border-border last:border-0">
-                      <td className="px-4 py-3">
-                        {!isSelf && (
-                          <input
-                            type="checkbox"
-                            checked={selected.has(u._id)}
-                            onChange={() => toggleSelect(u._id)}
-                            className="h-4 w-4 rounded border-border accent-accent"
-                          />
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-3">
-                          <Avatar src={assetUrl(u.photoUrl)} name={u.name} size="sm" />
-                          <div className="min-w-0">
-                            <p className="flex items-center gap-1.5 truncate font-medium text-foreground">
-                              <span className="truncate">{u.name}</span>
-                              {isSelf && <span className="text-xs font-normal text-muted-foreground">(أنت)</span>}
-                              {u.isSuperAdmin && (
-                                <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
-                                  <ShieldCheck className="h-3 w-3" />
-                                  مدير عام
-                                </span>
-                              )}
-                            </p>
-                            <p className="flex items-center gap-1 truncate text-xs text-muted-foreground">
-                              <bdi dir="ltr">{u.collegeEmail}</bdi>
-                              {u.collegeEmailVerifiedAt && (
-                                <BadgeCheck className="h-3.5 w-3.5 shrink-0 text-emerald-600" aria-label="بريد موثّق" />
-                              )}
-                            </p>
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 text-muted-foreground">{u.collegeId}</td>
-                      <td className="px-4 py-3">
-                        <select
-                          value={u.role}
-                          disabled={isBusy || isSelf}
-                          onChange={(e) => handleRoleChange(u, e.target.value as Role)}
-                          className={cn(
-                            'h-8 rounded-lg border border-border bg-surface px-2 text-xs font-medium text-foreground',
-                            'focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20',
-                            (isBusy || isSelf) && 'cursor-not-allowed opacity-60',
-                          )}
-                        >
-                          {ROLE_OPTIONS.map((r) => (
-                            <option key={r} value={r}>
-                              {ROLE_LABELS[r]}
-                            </option>
-                          ))}
-                        </select>
-                      </td>
-                      <td className="px-4 py-3">
-                        <Badge variant={active ? 'success' : 'default'}>{active ? 'نشط' : 'موقوف'}</Badge>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center justify-end gap-1">
-                          {!u.collegeEmailVerifiedAt && (
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              title="توثيق البريد الجامعي مباشرة"
-                              disabled={isBusy}
-                              onClick={() => handleVerifyEmail(u)}
-                            >
-                              <BadgeCheck className="h-4 w-4" />
-                            </Button>
-                          )}
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="إعادة تعيين كلمة المرور"
-                            disabled={isBusy}
-                            onClick={() => setPasswordTarget(u)}
-                          >
-                            <KeyRound className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title={u.isSuperAdmin ? 'إزالة صلاحية المدير العام' : 'ترقية إلى مدير عام'}
-                            disabled={isBusy || isSelf}
-                            onClick={() => handleToggleSuperAdmin(u)}
-                            className={cn(u.isSuperAdmin && 'text-accent')}
-                          >
-                            {u.isSuperAdmin ? <ShieldCheck className="h-4 w-4" /> : <Shield className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title={active ? 'إيقاف الحساب' : 'إعادة تفعيل الحساب'}
-                            disabled={isBusy || isSelf}
-                            onClick={() => handleToggleActive(u)}
-                          >
-                            {active ? <UserX className="h-4 w-4" /> : <UserCheck className="h-4 w-4" />}
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            title="حذف الحساب"
-                            disabled={isBusy || isSelf}
-                            onClick={() => setPendingDelete(u)}
-                            className="hover:bg-danger/10 hover:text-danger"
-                          >
-                            <Trash2 className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </Card>
+                  </div>
+                </div>
 
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <p>
-            صفحة {page} من {totalPages} &middot; {total} مستخدمًا
-          </p>
-          <div className="flex gap-2">
-            <Button variant="outline" size="sm" disabled={page <= 1} onClick={() => setPage((p) => p - 1)}>
-              السابق
-            </Button>
-            <Button variant="outline" size="sm" disabled={page >= totalPages} onClick={() => setPage((p) => p + 1)}>
-              التالي
-            </Button>
-          </div>
-        </div>
-      )}
+                <div className="flex flex-wrap gap-2">
+                  {!u.collegeEmailVerifiedAt && (
+                    <Button variant="outline" size="sm" disabled={busy} onClick={() => verifyEmail(u)}>
+                      <BadgeCheck className="h-4 w-4" />
+                      توثيق البريد
+                    </Button>
+                  )}
+                  <Button variant="outline" size="sm" disabled={busy} onClick={() => setPasswordTarget(u)}>
+                    <KeyRound className="h-4 w-4" />
+                    كلمة المرور
+                  </Button>
+                </div>
+              </div>
+            );
+          })()}
+      </DetailDrawer>
 
       <ResetPasswordModal user={passwordTarget} onClose={() => setPasswordTarget(null)} />
 
@@ -433,9 +413,15 @@ export function AdminPanel({ unverifiedOnly: unverifiedOnlyProp, onUnverifiedOnl
       <ConfirmModal
         open={bulkAction !== null}
         onClose={() => setBulkAction(null)}
-        onConfirm={handleBulkAction}
-        title={bulkAction === 'delete' ? 'حذف الحسابات المحددة' : bulkAction === 'activate' ? 'تفعيل الحسابات المحددة' : 'إيقاف الحسابات المحددة'}
-        message={`سيُطبَّق هذا الإجراء على ${selected.size} حساب.${bulkAction === 'delete' ? ' لا يمكن التراجع عن هذا الإجراء.' : ''}`}
+        onConfirm={runBulk}
+        title={
+          bulkAction === 'delete'
+            ? 'حذف الحسابات المحددة'
+            : bulkAction === 'activate'
+              ? 'تفعيل الحسابات المحددة'
+              : 'إيقاف الحسابات المحددة'
+        }
+        message={`سيُطبَّق هذا الإجراء على ${nf(selected.size)} حساب.${bulkAction === 'delete' ? ' لا يمكن التراجع عن هذا الإجراء.' : ''}`}
         confirmLabel={bulkAction === 'delete' ? 'حذف' : 'تأكيد'}
         destructive={bulkAction === 'delete'}
         loading={bulkBusy}

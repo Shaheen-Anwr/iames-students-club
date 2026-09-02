@@ -1,40 +1,71 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
+  Area,
   CartesianGrid,
   Cell,
+  ComposedChart,
   Legend,
   Line,
-  LineChart,
   Pie,
   PieChart,
   ResponsiveContainer,
-  Tooltip,
+  Tooltip as RTooltip,
   XAxis,
   YAxis,
 } from 'recharts';
-import { Activity, MailWarning, MessageSquareText, Radio, Trophy, Users } from 'lucide-react';
+import {
+  Activity,
+  CalendarClock,
+  ChevronLeft,
+  LayoutDashboard,
+  type LucideIcon,
+  MailWarning,
+  MessageSquareText,
+  Radio,
+  Trophy,
+  Users,
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { Card } from '@/components/ui/Card';
 import { Avatar } from '@/components/ui/Avatar';
-import { Spinner } from '@/components/ui/Spinner';
-import { StatTile } from './AdminStats';
-import { api } from '@/lib/api';
+import { Segmented } from '@/components/ui/Segmented';
+import { useRawQuery } from '@/lib/query';
 import { useSocket } from '@/lib/socket-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
+import { delta as calcDelta, nf } from '@/lib/format';
+import { transitions } from '@/lib/motion';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
-import { ROLE_LABELS, type AdminActivityEvent, type AdminStats, type LeaderboardEntry } from '@/lib/types';
+import {
+  ROLE_LABELS,
+  type AdminActivityEvent,
+  type AdminTrends,
+  type DailyCount,
+  type LeaderboardEntry,
+} from '@/lib/types';
+import { PageHeader } from './ui/PageHeader';
+import { StatCard } from './ui/StatCard';
+import { Heatmap } from './ui/Heatmap';
+import { DashboardSkeleton } from './AdminSkeletons';
+import { useAdminStats } from './AdminStatsProvider';
 
-// Semantic theme tokens (see app/globals.css) resolved as CSS color strings so charts stay
-// correct in both light/dark without any client-side theme detection.
 const CHART_COLORS = [
   'rgb(var(--accent))',
   'rgb(var(--accent-2))',
-  'rgb(var(--gold))',
   'rgb(var(--success))',
+  'rgb(var(--gold))',
   'rgb(var(--warning))',
   'rgb(var(--danger))',
 ];
+
+const TOOLTIP_STYLE = {
+  background: 'rgb(var(--surface))',
+  border: '1px solid rgb(var(--border))',
+  borderRadius: 10,
+  fontSize: 12,
+} as const;
 
 const ACTIVITY_LABEL: Record<AdminActivityEvent['type'], string> = {
   signup: 'تسجيل جديد',
@@ -42,35 +73,53 @@ const ACTIVITY_LABEL: Record<AdminActivityEvent['type'], string> = {
   moderation: 'إجراء إداري',
 };
 
-export function AdminOverview({ onViewPendingVerifications }: { onViewPendingVerifications?: () => void }) {
+const RANGE_OPTIONS = [
+  { value: '7', label: '٧ أيام' },
+  { value: '14', label: '١٤ يومًا' },
+  { value: '30', label: '٣٠ يومًا' },
+  { value: '90', label: '٩٠ يومًا' },
+];
+
+type SegmentView = 'roles' | 'departments';
+
+const trimDate = (iso: string) => iso.slice(5);
+
+export function AdminOverview() {
+  const { stats, isLoading: statsLoading } = useAdminStats();
   const { socket } = useSocket();
-  const [stats, setStats] = useState<AdminStats | null>(null);
-  const [leaderboard, setLeaderboard] = useState<LeaderboardEntry[]>([]);
-  const [loading, setLoading] = useState(true);
+
+  const [range, setRange] = useState('14');
+  const [segView, setSegView] = useState<SegmentView>('roles');
   const [onlineNow, setOnlineNow] = useState<number | null>(null);
+  const [onlineSeries, setOnlineSeries] = useState<DailyCount[]>([]);
   const [activity, setActivity] = useState<AdminActivityEvent[]>([]);
 
+  const trendsQuery = useRawQuery<AdminTrends>(['admin-trends', range], `/admin/stats/trends?range=${range}`, {
+    staleTime: 60_000,
+  });
+  // The heatmap always wants the long window regardless of the range control (dedupes at 90).
+  const heatQuery = useRawQuery<AdminTrends>(['admin-trends', '90'], '/admin/stats/trends?range=90', {
+    staleTime: 5 * 60_000,
+  });
+  const leaderboardQuery = useRawQuery<LeaderboardEntry[]>(
+    ['admin-leaderboard'],
+    '/admin/gamification/leaderboard?limit=5',
+    { staleTime: 60_000 },
+  );
+
+  const trends = trendsQuery.data;
+
   useEffect(() => {
-    let cancelled = false;
-    Promise.all([api.get<AdminStats>('/admin/stats'), api.get<LeaderboardEntry[]>('/admin/gamification/leaderboard?limit=5')])
-      .then(([s, l]) => {
-        if (cancelled) return;
-        setStats(s);
-        setOnlineNow(s.users.online);
-        setLeaderboard(l);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    if (stats?.users.online != null) setOnlineNow((prev) => prev ?? stats.users.online);
+  }, [stats?.users.online]);
 
   useEffect(() => {
     if (!socket) return;
-    const onPresence = (payload: { online: number }) => setOnlineNow(payload.online);
-    const onActivity = (event: AdminActivityEvent) => setActivity((prev) => [event, ...prev].slice(0, 20));
+    const onPresence = (p: { online: number }) => {
+      setOnlineNow(p.online);
+      setOnlineSeries((prev) => [...prev, { date: new Date().toISOString(), count: p.online }].slice(-40));
+    };
+    const onActivity = (e: AdminActivityEvent) => setActivity((prev) => [e, ...prev].slice(0, 20));
     socket.on('admin:presence', onPresence);
     socket.on('admin:activity', onActivity);
     return () => {
@@ -79,18 +128,15 @@ export function AdminOverview({ onViewPendingVerifications }: { onViewPendingVer
     };
   }, [socket]);
 
-  const trendData = useMemo(() => {
-    if (!stats) return [];
-    const { dailySignups } = stats.users;
-    const { dailyPosts } = stats.posts;
-    const { dailyAttempts } = stats.quizzes;
-    return dailySignups.map((d, i) => ({
-      date: d.date.slice(5),
+  const engagementData = useMemo(() => {
+    if (!trends) return [];
+    return trends.signups.series.map((d, i) => ({
+      date: trimDate(d.date),
       تسجيلات: d.count,
-      منشورات: dailyPosts[i]?.count ?? 0,
-      محاولات_اختبارات: dailyAttempts[i]?.count ?? 0,
+      منشورات: trends.posts.series[i]?.count ?? 0,
+      'رسائل الدردشة': trends.chatMessages.series[i]?.count ?? 0,
     }));
-  }, [stats]);
+  }, [trends]);
 
   const roleData = useMemo(() => {
     if (!stats) return [];
@@ -103,153 +149,239 @@ export function AdminOverview({ onViewPendingVerifications }: { onViewPendingVer
 
   const departmentData = useMemo(() => {
     if (!stats) return [];
-    return Object.entries(stats.users.byDepartment).map(([dept, count]) => ({
-      name: DEPARTMENT_LABELS[dept as keyof typeof DEPARTMENT_LABELS] ?? dept,
-      value: count,
-    }));
+    return Object.entries(stats.users.byDepartment)
+      .map(([dept, count]) => ({
+        name: DEPARTMENT_LABELS[dept as keyof typeof DEPARTMENT_LABELS] ?? dept,
+        value: count,
+      }))
+      .sort((a, b) => b.value - a.value);
   }, [stats]);
 
-  if (loading) {
-    return (
-      <div className="flex justify-center py-16">
-        <Spinner className="h-6 w-6" />
-      </div>
-    );
-  }
-
+  if (!stats && statsLoading) return <DashboardSkeleton />;
   if (!stats) {
     return <p className="py-16 text-center text-sm text-muted-foreground">تعذّر تحميل النظرة العامة.</p>;
   }
 
   const pendingVerifications = Math.max(0, stats.users.total - stats.users.verified);
+  const segData = segView === 'roles' ? roleData : departmentData;
+
+  const attentionRows: { icon: LucideIcon; label: string; count: number; href: string; tone: string }[] = [
+    {
+      icon: MailWarning,
+      label: 'بريد بانتظار التوثيق',
+      count: pendingVerifications,
+      href: '/admin/users?verified=false',
+      tone: 'text-warning bg-warning/10',
+    },
+    {
+      icon: MessageSquareText,
+      label: 'أسئلة بلا إجابة',
+      count: stats.qa.unanswered,
+      href: '/admin/content/qa',
+      tone: 'text-accent bg-accent/10',
+    },
+    {
+      icon: CalendarClock,
+      label: 'واجبات فات موعدها',
+      count: stats.assignments.overdue,
+      href: '/admin/learning/assignments',
+      tone: 'text-danger bg-danger/10',
+    },
+  ];
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
+      <PageHeader
+        icon={LayoutDashboard}
+        title="نظرة عامة"
+        description="نبض المنصة خلال الفترة المحددة."
+        actions={<Segmented size="sm" value={range} onChange={setRange} options={RANGE_OPTIONS} />}
+      />
+
+      {/* KPI row */}
       <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        <Card className="flex items-center gap-3 p-4">
-          <div className="relative flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-success/10 text-success">
-            <Radio className="h-5 w-5" />
-            <span className="absolute -top-0.5 end-0 h-2.5 w-2.5 rounded-full bg-success ring-2 ring-surface animate-pulse" />
-          </div>
-          <div className="min-w-0">
-            <p className="text-xl font-semibold text-foreground">{(onlineNow ?? 0).toLocaleString('ar-EG')}</p>
-            <p className="truncate text-xs text-muted-foreground">متصلون الآن</p>
-          </div>
-        </Card>
-        <StatTile icon={Users} label="إجمالي المستخدمين" value={stats.users.total} />
-        <button
-          onClick={onViewPendingVerifications}
-          disabled={!onViewPendingVerifications}
-          className="block text-start"
-        >
-          <Card
-            className={cn(
-              'flex items-center gap-3 p-4 transition-colors',
-              pendingVerifications > 0 && 'border-warning/30 bg-warning/5',
-              onViewPendingVerifications && 'hover:bg-surface-2',
-            )}
-          >
-            <div
-              className={cn(
-                'flex h-11 w-11 shrink-0 items-center justify-center rounded-full',
-                pendingVerifications > 0 ? 'bg-warning/10 text-warning' : 'bg-accent/10 text-accent',
-              )}
-            >
-              <MailWarning className="h-5 w-5" />
-            </div>
-            <div className="min-w-0">
-              <p className="text-xl font-semibold text-foreground">{pendingVerifications.toLocaleString('ar-EG')}</p>
-              <p className="truncate text-xs text-muted-foreground">بريد بانتظار التوثيق</p>
-            </div>
-          </Card>
-        </button>
-        <StatTile icon={MessageSquareText} label="المنشورات" value={stats.posts.totalPosts} />
-        <StatTile icon={Activity} label="رسائل الدردشة" value={stats.chat.totalMessages} />
-        <StatTile icon={Trophy} label="نقاط ممنوحة" value={stats.gamification.totalPointsAwarded} />
+        <StatCard
+          icon={Radio}
+          tone="success"
+          label="متصلون الآن"
+          value={onlineNow ?? stats.users.online}
+          series={onlineSeries.length > 2 ? onlineSeries : undefined}
+          exact
+        />
+        <StatCard
+          icon={Users}
+          tone="accent"
+          label="إجمالي المستخدمين"
+          value={stats.users.total}
+          href="/admin/users/stats"
+          series={trends?.signups.series}
+          delta={trends ? calcDelta(trends.signups.current, trends.signups.previous) : undefined}
+        />
+        <StatCard
+          icon={MailWarning}
+          tone="warning"
+          label="بريد بانتظار التوثيق"
+          value={pendingVerifications}
+          href="/admin/users?verified=false"
+          exact
+        />
+        <StatCard
+          icon={MessageSquareText}
+          tone="accent"
+          label="المنشورات"
+          value={stats.posts.totalPosts}
+          href="/admin/content/posts"
+          series={trends?.posts.series}
+          delta={trends ? calcDelta(trends.posts.current, trends.posts.previous) : undefined}
+        />
+        <StatCard
+          icon={Activity}
+          tone="accent"
+          label="رسائل الدردشة"
+          value={stats.chat.totalMessages}
+          href="/admin/community/chat"
+          series={trends?.chatMessages.series}
+          delta={trends ? calcDelta(trends.chatMessages.current, trends.chatMessages.previous) : undefined}
+        />
+        <StatCard
+          icon={Trophy}
+          tone="gold"
+          label="نقاط ممنوحة"
+          value={stats.gamification.totalPointsAwarded}
+          href="/admin/community/gamification"
+        />
       </div>
 
+      {/* Engagement + segments */}
       <div className="grid gap-4 lg:grid-cols-3">
         <Card className="p-4 lg:col-span-2">
-          <p className="mb-3 text-sm font-medium text-foreground">النشاط خلال 14 يومًا</p>
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={trendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border))" />
-              <XAxis dataKey="date" tick={{ fontSize: 11, fill: 'rgb(var(--muted-foreground))' }} axisLine={{ stroke: 'rgb(var(--border))' }} />
-              <YAxis tick={{ fontSize: 11, fill: 'rgb(var(--muted-foreground))' }} axisLine={{ stroke: 'rgb(var(--border))' }} allowDecimals={false} />
-              <Tooltip
-                contentStyle={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--border))', borderRadius: 8, fontSize: 12 }}
-              />
-              <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="تسجيلات" stroke={CHART_COLORS[0]} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="منشورات" stroke={CHART_COLORS[1]} strokeWidth={2} dot={false} />
-              <Line type="monotone" dataKey="محاولات_اختبارات" stroke={CHART_COLORS[2]} strokeWidth={2} dot={false} />
-            </LineChart>
-          </ResponsiveContainer>
+          <p className="mb-3 text-sm font-semibold text-foreground">النشاط خلال الفترة</p>
+          {trendsQuery.isPending ? (
+            <div className="h-[260px] animate-pulse rounded-xl bg-surface-2" />
+          ) : (
+            <ResponsiveContainer width="100%" height={260}>
+              <ComposedChart data={engagementData}>
+                <defs>
+                  <linearGradient id="ov-signups" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={CHART_COLORS[0]} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={CHART_COLORS[0]} stopOpacity={0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgb(var(--border))" vertical={false} />
+                <XAxis
+                  dataKey="date"
+                  tick={{ fontSize: 11, fill: 'rgb(var(--muted-foreground))' }}
+                  axisLine={{ stroke: 'rgb(var(--border))' }}
+                  tickLine={false}
+                />
+                <YAxis
+                  tick={{ fontSize: 11, fill: 'rgb(var(--muted-foreground))' }}
+                  axisLine={false}
+                  tickLine={false}
+                  allowDecimals={false}
+                  width={28}
+                />
+                <RTooltip contentStyle={TOOLTIP_STYLE} />
+                <Legend wrapperStyle={{ fontSize: 12 }} />
+                <Area type="monotone" dataKey="تسجيلات" stroke={CHART_COLORS[0]} strokeWidth={2} fill="url(#ov-signups)" />
+                <Line type="monotone" dataKey="منشورات" stroke={CHART_COLORS[1]} strokeWidth={2} dot={false} />
+                <Line type="monotone" dataKey="رسائل الدردشة" stroke={CHART_COLORS[2]} strokeWidth={2} dot={false} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          )}
         </Card>
 
         <Card className="p-4">
-          <p className="mb-3 text-sm font-medium text-foreground">توزيع الأدوار</p>
-          <ResponsiveContainer width="100%" height={120}>
+          <div className="mb-3 flex items-center justify-between gap-2">
+            <p className="text-sm font-semibold text-foreground">التوزيع</p>
+            <Segmented
+              size="sm"
+              value={segView}
+              onChange={(v) => setSegView(v as SegmentView)}
+              options={[
+                { value: 'roles', label: 'الأدوار' },
+                { value: 'departments', label: 'الشُعب' },
+              ]}
+            />
+          </div>
+          <ResponsiveContainer width="100%" height={170}>
             <PieChart>
-              <Pie data={roleData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={50} paddingAngle={2}>
-                {roleData.map((_, i) => (
+              <Pie data={segData} dataKey="value" nameKey="name" innerRadius={42} outerRadius={68} paddingAngle={2}>
+                {segData.map((_, i) => (
                   <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                 ))}
               </Pie>
-              <Tooltip contentStyle={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--border))', borderRadius: 8, fontSize: 12 }} />
+              <RTooltip contentStyle={TOOLTIP_STYLE} />
             </PieChart>
           </ResponsiveContainer>
-          <div className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            {roleData.map((d, i) => (
+          <div className="mt-2 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+            {segData.map((d, i) => (
               <span key={d.name} className="flex items-center gap-1">
                 <span className="h-2 w-2 rounded-full" style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                {d.name} ({d.value})
+                {d.name} ({nf(d.value)})
               </span>
             ))}
           </div>
-
-          {departmentData.length > 0 && (
-            <>
-              <p className="mb-2 mt-4 text-sm font-medium text-foreground">توزيع الشُعب</p>
-              <ResponsiveContainer width="100%" height={120}>
-                <PieChart>
-                  <Pie data={departmentData} dataKey="value" nameKey="name" innerRadius={30} outerRadius={50} paddingAngle={2}>
-                    {departmentData.map((_, i) => (
-                      <Cell key={i} fill={CHART_COLORS[(i + 3) % CHART_COLORS.length]} />
-                    ))}
-                  </Pie>
-                  <Tooltip contentStyle={{ background: 'rgb(var(--surface))', border: '1px solid rgb(var(--border))', borderRadius: 8, fontSize: 12 }} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div className="mt-1 flex flex-wrap justify-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-                {departmentData.map((d, i) => (
-                  <span key={d.name} className="flex items-center gap-1">
-                    <span className="h-2 w-2 rounded-full" style={{ background: CHART_COLORS[(i + 3) % CHART_COLORS.length] }} />
-                    {d.name} ({d.value})
-                  </span>
-                ))}
-              </div>
-            </>
-          )}
         </Card>
       </div>
 
+      {/* Heatmap + needs attention */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        <Card className="p-4 lg:col-span-2">
+          <p className="mb-3 text-sm font-semibold text-foreground">تسجيلات آخر ٩٠ يومًا</p>
+          {heatQuery.data ? (
+            <Heatmap data={heatQuery.data.signups.series} />
+          ) : (
+            <div className="h-24 animate-pulse rounded-xl bg-surface-2" />
+          )}
+        </Card>
+
+        <Card className="p-4">
+          <p className="mb-3 text-sm font-semibold text-foreground">يحتاج انتباهك</p>
+          <ul className="space-y-1">
+            {attentionRows.map((row) => (
+              <li key={row.label}>
+                <Link
+                  href={row.href}
+                  className="flex items-center gap-2.5 rounded-lg px-2 py-2 transition-colors hover:bg-surface-2"
+                >
+                  <span className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', row.tone)}>
+                    <row.icon className="h-4 w-4" />
+                  </span>
+                  <span className="flex-1 truncate text-[13px] text-foreground">{row.label}</span>
+                  <span
+                    className={cn(
+                      'text-sm font-bold tabular-nums',
+                      row.count > 0 ? 'text-foreground' : 'text-muted-foreground',
+                    )}
+                  >
+                    {nf(row.count)}
+                  </span>
+                  <ChevronLeft className="h-4 w-4 shrink-0 text-muted-foreground/60" />
+                </Link>
+              </li>
+            ))}
+          </ul>
+        </Card>
+      </div>
+
+      {/* Leaderboard + live feed */}
       <div className="grid gap-4 lg:grid-cols-2">
         <Card className="p-4">
-          <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
             <Trophy className="h-4 w-4 text-gold" />
             المتصدرون
           </p>
-          {leaderboard.length === 0 ? (
+          {!leaderboardQuery.data || leaderboardQuery.data.length === 0 ? (
             <p className="py-6 text-center text-sm text-muted-foreground">لا توجد بيانات بعد.</p>
           ) : (
-            <ul className="space-y-2">
-              {leaderboard.map((entry, i) => (
-                <li key={entry._id} className="flex items-center gap-2.5">
-                  <span className="w-4 text-xs text-muted-foreground">{i + 1}</span>
+            <ul className="space-y-1.5">
+              {leaderboardQuery.data.map((entry, i) => (
+                <li key={entry._id} className="flex items-center gap-2.5 rounded-lg px-1 py-1">
+                  <span className="w-4 text-center text-xs font-semibold text-muted-foreground">{nf(i + 1)}</span>
                   <Avatar src={assetUrl(entry.photoUrl)} name={entry.name} size="sm" />
-                  <p className="min-w-0 flex-1 truncate text-sm text-foreground">{entry.name}</p>
-                  <span className="text-xs font-medium text-accent">{entry.points.toLocaleString('ar-EG')}</span>
+                  <p className="min-w-0 flex-1 truncate text-[13px] text-foreground">{entry.name}</p>
+                  <span className="text-xs font-semibold tabular-nums text-accent">{nf(entry.points)}</span>
                 </li>
               ))}
             </ul>
@@ -257,25 +389,33 @@ export function AdminOverview({ onViewPendingVerifications }: { onViewPendingVer
         </Card>
 
         <Card className="p-4">
-          <p className="mb-3 flex items-center gap-1.5 text-sm font-medium text-foreground">
+          <p className="mb-3 flex items-center gap-1.5 text-sm font-semibold text-foreground">
             <Activity className="h-4 w-4 text-accent" />
             نشاط مباشر
           </p>
           {activity.length === 0 ? (
-            <p className="py-6 text-center text-sm text-muted-foreground">بانتظار أحداث جديدة...</p>
+            <p className="py-6 text-center text-sm text-muted-foreground">بانتظار أحداث جديدة…</p>
           ) : (
-            <ul className="max-h-64 space-y-2 overflow-y-auto scrollbar-thin">
-              {activity.map((event, i) => (
-                <li key={i} className="flex items-start gap-2 text-sm">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
-                  <div className="min-w-0">
-                    <p className="truncate text-foreground">{event.summary}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {ACTIVITY_LABEL[event.type]} &middot; {timeAgo(event.at)}
-                    </p>
-                  </div>
-                </li>
-              ))}
+            <ul className="max-h-64 space-y-1.5 overflow-y-auto scrollbar-thin">
+              <AnimatePresence initial={false}>
+                {activity.map((event, i) => (
+                  <motion.li
+                    key={`${event.at}-${i}`}
+                    initial={{ opacity: 0, x: -8 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    transition={transitions.snappy}
+                    className="flex items-start gap-2 text-[13px]"
+                  >
+                    <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                    <div className="min-w-0">
+                      <p className="truncate text-foreground">{event.summary}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {ACTIVITY_LABEL[event.type]} · {timeAgo(event.at)}
+                      </p>
+                    </div>
+                  </motion.li>
+                ))}
+              </AnimatePresence>
             </ul>
           )}
         </Card>

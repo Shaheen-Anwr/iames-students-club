@@ -19,7 +19,7 @@ import { ProgressBar } from '@/components/ui/ProgressBar';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError, fetchConversionObjectUrl, fetchConversionsZip } from '@/lib/api';
-import { useQuery } from '@/lib/use-query';
+import { useRawQuery } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { cn } from '@/lib/utils';
 import type { ConversionRecord, ConversionStatus, ConvertCapabilities } from '@/lib/types';
@@ -27,6 +27,22 @@ import type { ConversionRecord, ConversionStatus, ConvertCapabilities } from '@/
 function extOf(name: string): string {
   return (name.includes('.') ? name.split('.').pop()! : name).trim().toLowerCase();
 }
+
+// Android's document picker filters by MIME type, not extension — a bare `.docx`/`.pptx`/`.xlsx`
+// in `accept` makes it grey out every file so nothing is selectable. Pairing each extension with
+// its MIME type fixes mobile while keeping the desktop dialog filtered.
+const MIME_BY_EXT: Record<string, string> = {
+  pdf: 'application/pdf',
+  doc: 'application/msword',
+  docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  ppt: 'application/vnd.ms-powerpoint',
+  pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  xls: 'application/vnd.ms-excel',
+  xlsx: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  txt: 'text/plain',
+  csv: 'text/csv',
+  rtf: 'application/rtf',
+};
 function formatBytes(n: number): string {
   if (!n) return '';
   if (n < 1024) return `${n} ب`;
@@ -83,12 +99,8 @@ const STATUS_TO_PHASE: Record<ConversionStatus, Phase> = {
 
 export function FileConverter() {
   const { showToast } = useToast();
-  const caps = useQuery<ConvertCapabilities>('convert/capabilities', () =>
-    api.get<ConvertCapabilities>('/convert/capabilities'),
-  );
-  const history = useQuery<ConversionRecord[]>('convert/history', () =>
-    api.get<ConversionRecord[]>('/convert/history'),
-  );
+  const caps = useRawQuery<ConvertCapabilities>(['convert', 'capabilities'], '/convert/capabilities');
+  const history = useRawQuery<ConversionRecord[]>(['convert', 'history'], '/convert/history');
 
   const [items, setItems] = useState<QueueItem[]>([]);
   const [dragging, setDragging] = useState(false);
@@ -108,7 +120,13 @@ export function FileConverter() {
   );
   const acceptAttr = useMemo(() => {
     const exts = Object.keys(matrix);
-    return exts.length ? exts.map((e) => `.${e}`).join(',') : undefined;
+    if (!exts.length) return undefined;
+    const tokens = new Set<string>();
+    for (const e of exts) {
+      tokens.add(`.${e}`);
+      if (MIME_BY_EXT[e]) tokens.add(MIME_BY_EXT[e]);
+    }
+    return [...tokens].join(',');
   }, [matrix]);
 
   const patch = useCallback((key: string, p: Partial<QueueItem>) => {
@@ -293,12 +311,16 @@ export function FileConverter() {
             </button>
           </p>
         )}
+        {/* Visually hidden rather than display:none — some in-app webviews (Instagram/Facebook,
+            older Android WebView) refuse a programmatic .click() on a display:none input. */}
         <input
           ref={inputRef}
           type="file"
           multiple
           accept={acceptAttr}
-          className="hidden"
+          className="sr-only"
+          tabIndex={-1}
+          aria-hidden="true"
           onChange={(e) => {
             if (e.target.files?.length) addFiles(e.target.files);
             e.target.value = '';

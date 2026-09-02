@@ -18,8 +18,29 @@ import { ScheduleService, ScheduleStats } from '../schedule/schedule.service';
 import { PlannerService, PlannerStats } from '../planner/planner.service';
 import { NotificationsService, NotificationStats } from '../notifications/notifications.service';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
+import { TrendSeries } from '../common/utils/daily-counts.util';
 
 const SALT_ROUNDS = 10;
+
+// Selectable windows for GET /api/admin/trends -- clamped server-side so an arbitrary ?range=
+// can't drive an unbounded aggregation.
+const ALLOWED_TREND_RANGES: readonly number[] = [7, 14, 30, 90];
+const DEFAULT_TREND_RANGE = 14;
+
+export function clampTrendRange(raw?: string): number {
+  const n = Number(raw);
+  return ALLOWED_TREND_RANGES.includes(n) ? n : DEFAULT_TREND_RANGE;
+}
+
+export interface AdminTrends {
+  range: number;
+  signups: TrendSeries;
+  posts: TrendSeries;
+  comments: TrendSeries;
+  quizAttempts: TrendSeries;
+  chatMessages: TrendSeries;
+  aiMessages: TrendSeries;
+}
 
 export interface AdminOverviewStats {
   users: UserStats;
@@ -125,6 +146,20 @@ export class AdminService {
       planner,
       notifications,
     };
+  }
+
+  // Period-over-period activity trends for the admin console dashboard. Separate from getStats()
+  // (which stays range-fixed) so the range control can refetch just this, cheaply.
+  async getTrends(days: number): Promise<AdminTrends> {
+    const [signups, posts, comments, quizAttempts, chatMessages, aiMessages] = await Promise.all([
+      this.usersService.getSignupTrend(days),
+      this.postsService.getPostTrend(days),
+      this.postsService.getCommentTrend(days),
+      this.quizzesService.getAttemptTrend(days),
+      this.chatService.getMessageTrend(days),
+      this.aiConversationsService.getMessageTrend(days),
+    ]);
+    return { range: days, signups, posts, comments, quizAttempts, chatMessages, aiMessages };
   }
 
   async updateRole(id: string, role: Role, actor: AuthenticatedUser): Promise<UserDocument> {

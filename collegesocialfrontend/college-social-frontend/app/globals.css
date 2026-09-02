@@ -180,6 +180,24 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+  /* The `*` selector above doesn't reach the view-transition pseudo-elements -- kill them here
+     so route changes snap instantly for anyone who asked for reduced motion. */
+  ::view-transition-group(*),
+  ::view-transition-old(*),
+  ::view-transition-new(*) {
+    animation: none !important;
+  }
+}
+
+/* Client-side route transitions (next-view-transitions). The browser cross-fades the whole
+   page by default; this just tightens the timing to match the app's motion tokens. Named
+   element morphs (avatar -> profile header, etc.) layer on top of this per-element later. */
+@media (prefers-reduced-motion: no-preference) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 220ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
 }
 
 @layer utilities {

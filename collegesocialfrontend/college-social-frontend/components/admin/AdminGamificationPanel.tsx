@@ -1,17 +1,23 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Award, Flame, Minus, Plus } from 'lucide-react';
-import { Avatar } from '@/components/ui/Avatar';
-import { Card } from '@/components/ui/Card';
+import { useEffect, useMemo, useState } from 'react';
+import { Award, Flame, Minus, Trophy } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
-import { Spinner } from '@/components/ui/Spinner';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { RoleBadge } from '@/components/ui/Badge';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
-import { assetUrl } from '@/lib/utils';
+import { nf } from '@/lib/format';
 import { BADGE_META, type BadgeId, type LeaderboardEntry } from '@/lib/types';
+import { DataTable } from './ui/DataTable';
+import { DataTableToolbar } from './ui/DataTableToolbar';
+import { DetailDrawer } from './ui/DetailDrawer';
+import { exportCsv } from './ui/exportCsv';
+import { useColumnPrefs } from './ui/useColumnPrefs';
+import { PersonCell } from './ui/cells';
+import type { Column } from './ui/types';
+import type { TableSort } from './ui/useTableQuery';
 
 const BADGE_IDS = Object.keys(BADGE_META) as BadgeId[];
 
@@ -20,177 +26,227 @@ export function AdminGamificationPanel() {
 
   const [entries, setEntries] = useState<LeaderboardEntry[]>([]);
   const [loading, setLoading] = useState(true);
-  const [busyId, setBusyId] = useState<string | null>(null);
-  const [pointsDelta, setPointsDelta] = useState<Record<string, string>>({});
-  const [selectedBadge, setSelectedBadge] = useState<Record<string, BadgeId>>({});
+  const [error, setError] = useState<Error | null>(null);
+  const [reloadKey, setReloadKey] = useState(0);
+  const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<TableSort | null>({ id: 'points', dir: 'desc' });
 
-  function load() {
-    setLoading(true);
-    api
-      .get<LeaderboardEntry[]>('/admin/gamification/leaderboard?limit=50')
-      .then(setEntries)
-      .finally(() => setLoading(false));
-  }
+  const [detail, setDetail] = useState<LeaderboardEntry | null>(null);
+  const [pointsDelta, setPointsDelta] = useState('');
+  const [badgeId, setBadgeId] = useState<BadgeId>(BADGE_IDS[0]);
+  const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    load();
-  }, []);
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    api
+      .get<LeaderboardEntry[]>('/admin/gamification/leaderboard?limit=50')
+      .then((res) => !cancelled && setEntries(res))
+      .catch((e) => !cancelled && setError(e instanceof Error ? e : new Error('تعذّر التحميل.')))
+      .finally(() => !cancelled && setLoading(false));
+    return () => {
+      cancelled = true;
+    };
+  }, [reloadKey]);
 
-  async function handleAdjustPoints(entry: LeaderboardEntry) {
-    const raw = pointsDelta[entry._id];
-    const delta = Number(raw);
-    if (!raw || Number.isNaN(delta) || delta === 0) {
-      showToast('أدخل قيمة نقاط صحيحة أولًا.', 'error');
+  const filtered = useMemo(() => {
+    const q = search.trim().toLowerCase();
+    return q ? entries.filter((e) => e.name.toLowerCase().includes(q)) : entries;
+  }, [entries, search]);
+
+  const detailRow = detail ? (entries.find((e) => e._id === detail._id) ?? detail) : null;
+
+  function patchEntry(id: string, patch: Partial<LeaderboardEntry>) {
+    setEntries((prev) => prev.map((e) => (e._id === id ? { ...e, ...patch } : e)));
+  }
+
+  async function adjustPoints(entry: LeaderboardEntry) {
+    const delta = Number(pointsDelta);
+    if (!pointsDelta || Number.isNaN(delta) || delta === 0) {
+      showToast('أدخل قيمة نقاط صحيحة.', 'error');
       return;
     }
-    setBusyId(entry._id);
+    setBusy(true);
     try {
-      const updated = await api.patch<{ points: number }>(`/admin/gamification/${entry._id}/points`, { delta });
-      setEntries((prev) => prev.map((e) => (e._id === entry._id ? { ...e, points: updated.points } : e)));
-      setPointsDelta((prev) => ({ ...prev, [entry._id]: '' }));
+      const res = await api.patch<{ points: number }>(`/admin/gamification/${entry._id}/points`, { delta });
+      patchEntry(entry._id, { points: res.points });
+      setPointsDelta('');
       showToast(`تم تعديل نقاط ${entry.name}.`);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر تعديل النقاط.', 'error');
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   }
 
-  async function handleGrantBadge(entry: LeaderboardEntry) {
-    const badgeId = selectedBadge[entry._id] ?? BADGE_IDS[0];
-    setBusyId(entry._id);
+  async function grantBadge(entry: LeaderboardEntry) {
+    setBusy(true);
     try {
       await api.post(`/admin/gamification/${entry._id}/badges`, { badgeId });
       showToast(`تم منح ${entry.name} شارة ${BADGE_META[badgeId].label}.`);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر منح الشارة.', 'error');
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   }
 
-  async function handleRevokeBadge(entry: LeaderboardEntry) {
-    const badgeId = selectedBadge[entry._id] ?? BADGE_IDS[0];
-    setBusyId(entry._id);
+  async function revokeBadge(entry: LeaderboardEntry) {
+    setBusy(true);
     try {
       await api.delete(`/admin/gamification/${entry._id}/badges/${badgeId}`);
       showToast(`تم سحب شارة ${BADGE_META[badgeId].label} من ${entry.name}.`);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر سحب الشارة.', 'error');
     } finally {
-      setBusyId(null);
+      setBusy(false);
     }
   }
 
-  return (
-    <div className="space-y-4">
-      <Card className="overflow-hidden">
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <Spinner className="h-6 w-6" />
+  const columns = useMemo<Column<LeaderboardEntry>[]>(
+    () => [
+      {
+        id: 'rank',
+        header: '#',
+        width: '3rem',
+        noExport: true,
+        cell: (e) => {
+          const rank = entries.findIndex((x) => x._id === e._id) + 1;
+          return <span className="tabular-nums text-xs text-muted-foreground">{nf(rank)}</span>;
+        },
+      },
+      {
+        id: 'name',
+        header: 'المستخدم',
+        sortable: true,
+        sortValue: (e) => e.name,
+        cell: (e) => (
+          <div className="flex items-center gap-2.5">
+            <PersonCell name={e.name} photoUrl={e.photoUrl} />
+            <RoleBadge role={e.role} />
           </div>
-        ) : entries.length === 0 ? (
-          <p className="py-16 text-center text-sm text-muted-foreground">لا يوجد مستخدمون.</p>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full min-w-[820px] text-start text-sm">
-              <thead>
-                <tr className="border-b border-border text-xs uppercase tracking-wide text-muted-foreground">
-                  <th className="px-4 py-3 font-medium">المستخدم</th>
-                  <th className="px-4 py-3 font-medium">النقاط</th>
-                  <th className="px-4 py-3 font-medium">التتابع</th>
-                  <th className="px-4 py-3 font-medium">تعديل النقاط</th>
-                  <th className="px-4 py-3 font-medium">الشارات</th>
-                </tr>
-              </thead>
-              <tbody>
-                {entries.map((entry, i) => {
-                  const isBusy = busyId === entry._id;
-                  return (
-                    <tr key={entry._id} className="border-b border-border last:border-0">
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-2.5">
-                          <span className="w-5 shrink-0 text-xs text-muted-foreground">{i + 1}</span>
-                          <Avatar src={assetUrl(entry.photoUrl)} name={entry.name} size="sm" />
-                          <div className="min-w-0">
-                            <p className="truncate font-medium text-foreground">{entry.name}</p>
-                            <RoleBadge role={entry.role} />
-                          </div>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3 font-medium text-foreground">{entry.points.toLocaleString('ar-EG')}</td>
-                      <td className="px-4 py-3 text-muted-foreground">
-                        <span className="flex items-center gap-1">
-                          <Flame className="h-3.5 w-3.5" />
-                          {entry.streakCount}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <Input
-                            type="number"
-                            value={pointsDelta[entry._id] ?? ''}
-                            onChange={(e) => setPointsDelta((prev) => ({ ...prev, [entry._id]: e.target.value }))}
-                            placeholder="±"
-                            className="h-8 w-20 px-2 text-xs"
-                            disabled={isBusy}
-                          />
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            title="تطبيق"
-                            disabled={isBusy}
-                            onClick={() => handleAdjustPoints(entry)}
-                          >
-                            <Plus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <select
-                            value={selectedBadge[entry._id] ?? BADGE_IDS[0]}
-                            onChange={(e) => setSelectedBadge((prev) => ({ ...prev, [entry._id]: e.target.value as BadgeId }))}
-                            disabled={isBusy}
-                            className="h-8 rounded-lg border border-border bg-surface px-2 text-xs text-foreground focus:border-accent focus:outline-none"
-                          >
-                            {BADGE_IDS.map((id) => (
-                              <option key={id} value={id}>
-                                {BADGE_META[id].icon} {BADGE_META[id].label}
-                              </option>
-                            ))}
-                          </select>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8"
-                            title="منح الشارة"
-                            disabled={isBusy}
-                            onClick={() => handleGrantBadge(entry)}
-                          >
-                            <Award className="h-4 w-4" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="h-8 w-8 hover:bg-danger/10 hover:text-danger"
-                            title="سحب الشارة"
-                            disabled={isBusy}
-                            onClick={() => handleRevokeBadge(entry)}
-                          >
-                            <Minus className="h-4 w-4" />
-                          </Button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
+        ),
+        exportValue: (e) => e.name,
+      },
+      {
+        id: 'points',
+        header: 'النقاط',
+        sortable: true,
+        sortValue: (e) => e.points,
+        cell: (e) => <span className="font-semibold tabular-nums text-foreground">{nf(e.points)}</span>,
+        exportValue: (e) => e.points,
+      },
+      {
+        id: 'streakCount',
+        header: 'التتابع',
+        sortable: true,
+        sortValue: (e) => e.streakCount,
+        cell: (e) => (
+          <span className="flex items-center gap-1 text-muted-foreground">
+            <Flame className="h-3.5 w-3.5" />
+            {nf(e.streakCount)}
+          </span>
+        ),
+        exportValue: (e) => e.streakCount,
+      },
+    ],
+    [entries],
+  );
+
+  const prefs = useColumnPrefs(columns);
+
+  return (
+    <div className="space-y-3">
+      <DataTableToolbar
+        searchInput={search}
+        onSearchChange={setSearch}
+        searchPlaceholder="ابحث بالاسم"
+        total={filtered.length}
+        density={prefs.density}
+        onDensityChange={prefs.setDensity}
+        columns={columns}
+        visibleColumnIds={prefs.visibleColumnIds}
+        onVisibleColumnsChange={prefs.setVisibleColumnIds}
+        onExport={() => exportCsv('النقاط', columns, filtered)}
+      />
+
+      <DataTable
+        columns={columns}
+        rows={filtered}
+        rowKey={(e) => e._id}
+        loading={loading}
+        error={error}
+        onRetry={() => setReloadKey((k) => k + 1)}
+        sort={sort}
+        onToggleSort={(id) =>
+          setSort((s) => (s?.id !== id ? { id, dir: 'asc' } : s.dir === 'asc' ? { id, dir: 'desc' } : null))
+        }
+        onRowClick={setDetail}
+        density={prefs.density}
+        visibleColumnIds={prefs.visibleColumnIds}
+        emptyState={<EmptyState icon={Trophy} title="لا يوجد مستخدمون" />}
+      />
+
+      <DetailDrawer
+        open={!!detailRow}
+        onOpenChange={(o) => !o && setDetail(null)}
+        title={detailRow?.name}
+        description={detailRow ? `${nf(detailRow.points)} نقطة · تتابع ${nf(detailRow.streakCount)}` : undefined}
+      >
+        {detailRow && (
+          <div className="space-y-5 text-sm">
+            <PersonCell name={detailRow.name} photoUrl={detailRow.photoUrl} />
+
+            <div className="space-y-2 rounded-xl border border-border/70 p-3">
+              <p className="text-xs font-semibold text-foreground">تعديل النقاط</p>
+              <div className="flex items-center gap-2">
+                <Input
+                  type="number"
+                  value={pointsDelta}
+                  onChange={(e) => setPointsDelta(e.target.value)}
+                  placeholder="±"
+                  className="h-9 w-24"
+                />
+                <Button size="sm" loading={busy} onClick={() => adjustPoints(detailRow)}>
+                  تطبيق
+                </Button>
+              </div>
+            </div>
+
+            <div className="space-y-2 rounded-xl border border-border/70 p-3">
+              <p className="text-xs font-semibold text-foreground">الشارات</p>
+              <select
+                value={badgeId}
+                onChange={(e) => setBadgeId(e.target.value as BadgeId)}
+                className="h-9 w-full rounded-lg border border-border bg-surface px-2 text-xs text-foreground"
+              >
+                {BADGE_IDS.map((id) => (
+                  <option key={id} value={id}>
+                    {BADGE_META[id].icon} {BADGE_META[id].label}
+                  </option>
+                ))}
+              </select>
+              <div className="flex gap-2">
+                <Button size="sm" variant="outline" loading={busy} onClick={() => grantBadge(detailRow)}>
+                  <Award className="h-4 w-4" />
+                  منح
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  loading={busy}
+                  onClick={() => revokeBadge(detailRow)}
+                  className="hover:bg-danger/10 hover:text-danger"
+                >
+                  <Minus className="h-4 w-4" />
+                  سحب
+                </Button>
+              </div>
+            </div>
           </div>
         )}
-      </Card>
+      </DetailDrawer>
     </div>
   );
 }

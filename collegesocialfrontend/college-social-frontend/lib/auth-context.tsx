@@ -30,6 +30,39 @@ function notifyNewBadges(user: User, showToast: (message: string, variant?: 'suc
   }
 }
 
+// Last-known user snapshot, kept so the app shell can paint instantly on the next cold load
+// instead of waiting on /users/me (a cold Render backend round-trips in ~1s). Versioned key: a
+// shape change just misses the cache and revalidates rather than hydrating something stale.
+const USER_CACHE_KEY = 'iaems:user:v1';
+
+function readUserCache(): User | null {
+  if (typeof window === 'undefined') return null;
+  try {
+    const raw = window.localStorage.getItem(USER_CACHE_KEY);
+    return raw ? (JSON.parse(raw) as User) : null;
+  } catch {
+    return null;
+  }
+}
+
+function writeUserCache(user: User) {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.setItem(USER_CACHE_KEY, JSON.stringify(user));
+  } catch {
+    /* quota exceeded / private mode -- the app just falls back to the spinner path */
+  }
+}
+
+function clearUserCache() {
+  if (typeof window === 'undefined') return;
+  try {
+    window.localStorage.removeItem(USER_CACHE_KEY);
+  } catch {
+    /* no-op */
+  }
+}
+
 interface RegisterInput {
   collegeId: string;
   password: string;
@@ -67,9 +100,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     try {
       const me = await api.get<User>('/users/me');
       setUser(me);
+      writeUserCache(me);
       notifyNewBadges(me, showToast);
     } catch {
       clearToken();
+      clearUserCache();
       setUser(null);
     } finally {
       setLoading(false);
@@ -77,6 +112,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [showToast]);
 
   useEffect(() => {
+    // Instant shell: paint from the last-known snapshot so a returning visitor never sits on the
+    // full-screen spinner while /users/me is in flight. The revalidation below still runs and
+    // reconciles -- it will log the user out if the session has genuinely expired.
+    const cached = readUserCache();
+    if (cached) {
+      setUser(cached);
+      setLoading(false);
+    }
     refreshUser();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -87,6 +130,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setToken(res.accessToken);
       const me = await api.get<User>('/users/me');
       setUser(me);
+      writeUserCache(me);
       if ((me.streakCount ?? 0) >= 2) {
         showToast(`🔥 استمر! يومك رقم ${me.streakCount} على التوالي`);
       }
@@ -115,6 +159,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
     const me = await api.get<User>('/users/me');
     setUser(me);
+    writeUserCache(me);
     return me;
   }, [showToast]);
 
@@ -126,11 +171,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       // Best-effort -- still clear local state below even if the network call fails.
     }
     clearToken();
+    clearUserCache();
     setUser(null);
   }, []);
 
   const updateLocalUser = useCallback((patch: Partial<User>) => {
-    setUser((prev) => (prev ? { ...prev, ...patch } : prev));
+    setUser((prev) => {
+      if (!prev) return prev;
+      const next = { ...prev, ...patch };
+      writeUserCache(next);
+      return next;
+    });
   }, []);
 
   return (

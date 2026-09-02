@@ -30,3 +30,21 @@ export function getNavItems(role?: Role) {
   if (role === 'professor') return [...NAV_ITEMS, TEACH_NAV_ITEM];
   return NAV_ITEMS;
 }
+
+// The 4 destinations a student is in every session. Everything else in NAV_ITEMS is one tap
+// away via "المزيد" (the mobile sheet) or the ⌘K command palette (desktop). Kept at 4 so the
+// mobile bar -- 4 items + a "More" button -- never wraps, even at 320px.
+export const PRIMARY_HREFS = ['/home', '/study', '/feed', '/chat'] as const;
+
+export function getPrimaryNavItems(role?: Role) {
+  const all = getNavItems(role);
+  return PRIMARY_HREFS.map((href) => all.find((i) => i.href === href)).filter(
+    (i): i is (typeof NAV_ITEMS)[number] => Boolean(i),
+  );
+}
+
+export function getSecondaryNavItems(role?: Role) {
+  return getNavItems(role).filter(
+    (i) => !(PRIMARY_HREFS as readonly string[]).includes(i.href),
+  );
+}

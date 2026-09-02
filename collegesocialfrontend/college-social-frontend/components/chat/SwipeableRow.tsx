@@ -30,23 +30,38 @@ export function SwipeableRow({ actions, children, className }: SwipeableRowProps
   const startX = useRef(0);
   const startDragX = useRef(0);
   const pointerId = useRef<number | null>(null);
+  // Set once a press crosses the drag threshold; a plain click never trips it.
+  const didDrag = useRef(false);
 
   const maxOffset = actions.length * ACTION_WIDTH;
 
   function onPointerDown(e: React.PointerEvent) {
     if (e.pointerType === 'mouse' && e.button !== 0) return;
-    // Capture so fast drags keep reporting to this element even once the translated row's
-    // bounding box has moved out from under the pointer.
-    e.currentTarget.setPointerCapture(e.pointerId);
+    // Deliberately NOT capturing the pointer here: setPointerCapture on a plain press
+    // retargets the follow-up `click` to this wrapper, so a nested <Link>/<button> never
+    // sees it and navigation silently fails (desktop especially). Capture is deferred to
+    // onPointerMove, once an actual drag has begun.
     pointerId.current = e.pointerId;
     startX.current = e.clientX;
     startDragX.current = dragX;
-    setDragging(true);
+    didDrag.current = false;
   }
 
   function onPointerMove(e: React.PointerEvent) {
     if (pointerId.current !== e.pointerId) return;
     const delta = e.clientX - startX.current;
+    if (!didDrag.current) {
+      if (Math.abs(delta) < DRAG_THRESHOLD) return;
+      didDrag.current = true;
+      setDragging(true);
+      // Now that we're really dragging, capture so fast drags keep reporting here even
+      // once the translated row's box has moved out from under the pointer.
+      try {
+        e.currentTarget.setPointerCapture(e.pointerId);
+      } catch {
+        /* pointer already gone */
+      }
+    }
     const next = Math.max(-maxOffset, Math.min(maxOffset, startDragX.current + delta));
     setDragX(next);
   }
@@ -55,15 +70,21 @@ export function SwipeableRow({ actions, children, className }: SwipeableRowProps
     if (pointerId.current !== e.pointerId) return;
     pointerId.current = null;
     setDragging(false);
+    try {
+      e.currentTarget.releasePointerCapture(e.pointerId);
+    } catch {
+      /* was never captured */
+    }
     setDragX((current) => (Math.abs(current) > maxOffset / 2 ? Math.sign(current) * maxOffset : 0));
   }
 
-  // While the row is swiped open, the first tap should close it instead of following the link/button
-  // underneath -- otherwise a stray tap right after swiping would trigger a navigation nobody wanted.
+  // After a swipe, swallow the trailing click so it doesn't follow the link/button underneath --
+  // whether the row settled open (dragX !== 0) or snapped back closed (didDrag).
   function onClickCapture(e: React.MouseEvent) {
-    if (dragX !== 0) {
+    if (didDrag.current || dragX !== 0) {
       e.preventDefault();
       e.stopPropagation();
+      didDrag.current = false;
       setDragX(0);
     }
   }

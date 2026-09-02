@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { useRouter } from 'next/navigation';
+import { useTransitionRouter } from '@/components/ui/TransitionLink';
 import { FileText, HelpCircle, Search, Users, User as UserIcon } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { api } from '@/lib/api';
@@ -21,7 +21,7 @@ type Row =
   | { kind: 'group'; key: string; label: string; href: string };
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
-  const router = useRouter();
+  const router = useTransitionRouter();
   const { user } = useAuth();
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<SearchResults>(EMPTY_RESULTS);

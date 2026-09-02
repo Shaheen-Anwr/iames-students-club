@@ -9,7 +9,13 @@ import { Role } from '../common/enums/role.enum';
 import { getAcademicYearsForDepartment } from '../common/enums/academic-year.enum';
 import { SPECIALIZATIONS_BY_DEPARTMENT } from '../common/enums/specialization.enum';
 import { EmailService } from '../email/email.service';
-import { DailyCount, daysAgoStart, fillDailyCounts } from '../common/utils/daily-counts.util';
+import {
+  DailyCount,
+  daysAgoStart,
+  fillDailyCounts,
+  previousWindowMatch,
+  TrendSeries,
+} from '../common/utils/daily-counts.util';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -596,5 +602,15 @@ export class UsersService {
       ])
       .exec();
     return fillDailyCounts(rows, days);
+  }
+
+  // Signups over the trailing `days` window + period-over-period totals for the admin console.
+  async getSignupTrend(days: number): Promise<TrendSeries> {
+    const [series, current, previous] = await Promise.all([
+      this.dailySignups(days),
+      this.userModel.countDocuments({ createdAt: { $gte: daysAgoStart(days) } }).exec(),
+      this.userModel.countDocuments({ createdAt: previousWindowMatch(days) }).exec(),
+    ]);
+    return { series, current, previous };
   }
 }
