@@ -457,18 +457,18 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     <div className="flex h-full min-h-0 flex-col bg-surface">
       {/* Header */}
       <div className="border-b border-border bg-surface">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-3 px-4 py-3.5">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-2 py-3.5 sm:gap-3 sm:px-4">
         <Link
           href="/chat"
-          className="rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground lg:hidden"
+          className="shrink-0 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground lg:hidden"
         >
           <ArrowRight className="h-5 w-5" />
         </Link>
-        <button onClick={() => setInfoOpen(true)} className="flex min-w-0 flex-1 items-center gap-3 text-start">
+        <button onClick={() => setInfoOpen(true)} className="flex min-w-0 flex-1 items-center gap-2 text-start sm:gap-3">
           <Avatar src={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)} name={title} size="sm" />
           <div className="min-w-0 flex-1">
-            <p className="truncate text-sm font-semibold text-foreground">{title}</p>
-            <p className="text-xs text-muted-foreground">
+            <p dir="auto" className="truncate text-sm font-semibold text-foreground">{title}</p>
+            <p className="truncate text-xs text-muted-foreground">
               {typing ? (
                 <span className="animate-fade-in text-accent">يكتب الآن…</span>
               ) : conversation?.isGroup ? (
@@ -485,13 +485,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           <>
             <button
               onClick={() => handleCall('audio')}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent sm:h-9 sm:w-9"
             >
               <Phone className="h-4 w-4" />
             </button>
             <button
               onClick={() => handleCall('video')}
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent sm:h-9 sm:w-9"
             >
               <Video className="h-4 w-4" />
             </button>
