@@ -131,7 +131,7 @@ export const AiMessageBubble = memo(function AiMessageBubble({
         )}
         <div
           className={cn(
-            'relative min-w-0 max-w-full animate-bubble-in break-words [overflow-wrap:anywhere] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
+            'relative min-w-0 max-w-full animate-bubble-in break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
             // The assistant path renders Markdown, which controls its own spacing -- `pre-wrap`
             // there would double every blank line. The user path is plain text and needs it.
             isUser
