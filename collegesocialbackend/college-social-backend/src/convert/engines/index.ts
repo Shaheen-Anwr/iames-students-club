@@ -4,12 +4,13 @@
 //
 //   * -> PDF  (docx/pptx/xlsx -> pdf): Adobe Create PDF (identical to Office's own "Save as PDF")
 //       -> headless LibreOffice -> pdfkit redraw (last resort).
-//   PDF -> Word/PowerPoint: by default every page is rendered to an image and laid full-bleed onto
-//       a same-size page/slide with an invisible text layer behind it ("looks exactly like the
-//       PDF", MuPDF/WASM). Opt out with CONVERT_PDF_KEEP_TEXT=1 for editable text, which then runs
-//       LlamaParse structural recovery -> Adobe Export PDF + Arabic clean-up -> LibreOffice PDF
-//       import (writer_pdf_import / impress_pdf_import) -> flat block pipeline. The page-image path
-//       also falls back to that chain if rasterising fails.
+//   PDF -> Word/PowerPoint: by default, editable-text recovery -- LlamaParse structural recovery
+//       -> Adobe Export PDF + Arabic clean-up -> LibreOffice PDF import (writer_pdf_import /
+//       impress_pdf_import) -> flat block pipeline. This reflows correctly in every reader, phones
+//       included. Set CONVERT_PDF_PAGE_IMAGE=1 to instead render each page to an image laid
+//       full-bleed onto a same-size page/slide with an invisible text layer behind it ("looks
+//       exactly like the PDF", MuPDF/WASM) -- pixel-exact, but only in desktop Word / LibreOffice;
+//       it falls back to the editable chain if rasterising fails.
 //   Word/PowerPoint/Excel -> Word/PowerPoint: LibreOffice renders the source to a PDF, then that
 //       PDF is recovered into the target (Adobe Export PDF, else LibreOffice's PDF import); no
 //       soffice -> Adobe's own Create+Export round-trip; else the flat block pipeline. This trades
@@ -151,9 +152,11 @@ async function pdfToOffice(input: Buffer, target: ConvertFormat, onProgress: Pro
 // when officeToPaged hands us a LibreOffice-rendered intermediate (that source already has clean
 // structure, and the page-image / LlamaParse round-trips would just add cost and lose editability).
 //
-//   viaPageImage  -> reproduce every page as an image ("looks exactly like the PDF"); the DEFAULT.
-//   viaLlamaParse -> LLM structural recovery to editable text; used when page-image is opted out
-//                    (CONVERT_PDF_KEEP_TEXT=1) or fails.
+//   viaLlamaParse -> LLM structural recovery to editable text; the DEFAULT -- reflows in any
+//                    reader, phones included.
+//   viaPageImage  -> reproduce every page as an image ("looks exactly like the PDF"); opt-in via
+//                    CONVERT_PDF_PAGE_IMAGE=1, and only faithful in desktop Word / LibreOffice.
+//                    Falls through to the editable chain below if it's off or rasterising fails.
 async function pdfToPaged(
   input: Buffer,
   target: 'docx' | 'pptx',
