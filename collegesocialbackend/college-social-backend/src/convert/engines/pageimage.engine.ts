@@ -6,9 +6,12 @@
 // the image as an invisible layer, so the output is still selectable and Ctrl+F searchable even
 // though the body is a picture.
 //
-// This is the DEFAULT for pdf->docx / pdf->pptx because it's the only path that guarantees "looks
-// exactly like the PDF" for designed, multi-column, RTL decks. Set CONVERT_PDF_KEEP_TEXT=1 to
-// prefer the editable-text recovery pipeline (LlamaParse / Adobe) instead.
+// OPT-IN via CONVERT_PDF_PAGE_IMAGE=1. It's the only path that guarantees "looks exactly like the
+// PDF" for designed, multi-column, RTL decks, but the output is a wall of pictures: it renders
+// faithfully only in desktop Word / LibreOffice -- mobile Office viewers (Google Docs, Drive
+// preview, WPS, Files "Quick Look") ignore the hidden-text flag and mangle it. So the DEFAULT
+// pdf->docx / pdf->pptx path is now editable-text recovery (LlamaParse / Adobe), which reflows
+// correctly everywhere. Flip this on only where every reader is on desktop.
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Logger } = require('@nestjs/common');
@@ -32,9 +35,10 @@ function loadMupdf(): Promise<any> {
 }
 
 export function pageImageAvailable(): boolean {
-  // mupdf is a hard dependency; the only real failure is the WASM refusing to load, which the
-  // caller's try/catch handles. Honour the opt-out here so index.ts stays simple.
-  return process.env.CONVERT_PDF_KEEP_TEXT !== '1';
+  // Page-image reproduction is opt-in now (see the file header): editable-text recovery is the
+  // default because the page-image .docx/.pptx only renders right in desktop Word / LibreOffice.
+  // `CONVERT_PDF_KEEP_TEXT=1` is still honoured as a no-op alias for "give me editable text".
+  return process.env.CONVERT_PDF_PAGE_IMAGE === '1' && process.env.CONVERT_PDF_KEEP_TEXT !== '1';
 }
 
 const DPI = Math.min(300, Math.max(96, Number(process.env.CONVERT_PDF_IMAGE_DPI) || 144));
@@ -170,13 +174,21 @@ function buildDocx(pages: RenderedPage[]): Buffer {
       const n = idx + 1;
       const cx = Math.round(p.wPt * EMU_PER_PT);
       const cy = Math.round(p.hPt * EMU_PER_PT);
+      // The searchable text layer behind the page image. Belt-and-braces so a viewer that
+      // renders it anyway (Google Docs / Drive preview / WPS / mobile "Quick Look" all ignore
+      // <w:vanish/>) still shows next to nothing rather than a full-size wall of OCR text over
+      // the page: hidden + white + 1pt for BOTH Latin (w:sz) and complex-script/Arabic
+      // (w:szCs -- without it Arabic stays at the default ~10pt no matter what w:sz says).
       const hidden = p.text.trim()
-        ? `<w:r><w:rPr><w:vanish/><w:sz w:val="2"/></w:rPr><w:t xml:space="preserve">${xml(
+        ? `<w:r><w:rPr><w:vanish/><w:color w:val="FFFFFF"/><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:t xml:space="preserve">${xml(
             p.text.replace(/\s+/g, ' ').trim(),
           )}</w:t></w:r>`
         : '';
-      const pageBreak = idx < pages.length - 1 ? `<w:r><w:rPr><w:sz w:val="2"/></w:rPr><w:br w:type="page"/></w:r>` : '';
-      return `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:sz w:val="2"/></w:rPr></w:pPr><w:r><w:rPr><w:sz w:val="2"/></w:rPr>${inlineDrawing(
+      const pageBreak =
+        idx < pages.length - 1
+          ? `<w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:br w:type="page"/></w:r>`
+          : '';
+      return `<w:p><w:pPr><w:spacing w:before="0" w:after="0" w:line="240" w:lineRule="auto"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr><w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr>${inlineDrawing(
         n,
         cx,
         cy,
