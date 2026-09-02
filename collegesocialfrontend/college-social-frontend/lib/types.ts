@@ -959,6 +959,15 @@ export interface AiConversation {
   updatedAt?: string;
 }
 
+// GET /ai/usage -- today's assistant message quota for the signed-in student. Resets at
+// `resetsAt` (next local midnight). `remaining` is clamped at 0.
+export interface AiUsage {
+  used: number;
+  limit: number;
+  remaining: number;
+  resetsAt: string;
+}
+
 export type AiMessageRole = 'user' | 'assistant';
 
 export interface AiMessageSource {

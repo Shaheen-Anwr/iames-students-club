@@ -8,6 +8,7 @@ import { cn } from '@/lib/utils';
 import { useAi } from '@/lib/ai-context';
 import { AiChatPanel } from './AiChatPanel';
 import { AiConversationSwitcher } from './AiConversationSwitcher';
+import { AiUsageMeter } from './AiUsageMeter';
 import { AiAvatar } from './AiAvatar';
 
 const STORAGE_KEY = 'ai-fab-position';
@@ -42,7 +43,7 @@ function clampToViewport(p: Point): Point {
 
 export function AiFab() {
   const pathname = usePathname();
-  const { conversations, panelOpen: open, setPanelOpen: setOpen } = useAi();
+  const { conversations, usage, panelOpen: open, setPanelOpen: setOpen } = useAi();
   const [activeId, setActiveId] = useState<string | null>(null);
   // 'chat' = the live conversation; 'history' = the switch-between / delete list.
   const [view, setView] = useState<'chat' | 'history'>('chat');
@@ -182,7 +183,7 @@ export function AiFab() {
       {open && (
         <div
           style={{ ...panelStyle, transformOrigin }}
-          className={`glass fixed z-40 flex h-[28rem] w-[22rem] max-w-[90vw] flex-col overflow-hidden rounded-xl2 shadow-card animate-bubble-in ${
+          className={`glass fixed z-40 flex h-[28rem] max-h-[70dvh] w-[22rem] max-w-[calc(100vw-1.5rem)] flex-col overflow-hidden rounded-xl2 shadow-card animate-bubble-in ${
             !pos ? 'bottom-[calc(9rem+env(safe-area-inset-bottom))] end-4 md:bottom-24' : ''
           }`}
         >
@@ -194,6 +195,7 @@ export function AiFab() {
                 <span className="absolute -end-0.5 -bottom-0.5 h-2 w-2 rounded-full bg-success ring-2 ring-surface" />
               </div>
               <p className="text-sm font-semibold text-foreground">المساعد الذكي</p>
+              {usage && <AiUsageMeter used={usage.used} limit={usage.limit} size={18} />}
             </div>
             <div className="flex items-center gap-1">
               <button

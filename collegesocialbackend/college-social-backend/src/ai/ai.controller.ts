@@ -38,6 +38,12 @@ export class AiController {
     return this.aiConversationsService.listMine(user.userId);
   }
 
+  // Today's message-quota usage for the signed-in student -- powers the client-side usage meter.
+  @Get('usage')
+  async usage(@CurrentUser() user: AuthenticatedUser) {
+    return this.aiConversationsService.getDailyUsage(user.userId);
+  }
+
   @Post('conversations')
   async createConversation(@CurrentUser() user: AuthenticatedUser) {
     return this.aiConversationsService.create(user.userId);

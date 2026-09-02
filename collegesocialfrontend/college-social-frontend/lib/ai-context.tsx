@@ -3,7 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from './auth-context';
-import type { AiConversation, Post } from '@/lib/types';
+import type { AiConversation, AiUsage, Post } from '@/lib/types';
 
 interface AiContextValue {
   conversations: AiConversation[];
@@ -12,6 +12,12 @@ interface AiContextValue {
   findConversation: (id: string) => AiConversation | undefined;
   addConversation: (conversation: AiConversation) => void;
   removeConversation: (id: string) => void;
+  // Today's message-quota usage -- drives the usage meter and the "out for today" state. Null
+  // until first loaded (or when signed out).
+  usage: AiUsage | null;
+  refreshUsage: () => Promise<void>;
+  // Optimistic +1 right after a message is sent, so the meter moves without waiting on a refetch.
+  bumpUsage: () => void;
   // Shared open/closed state for the AI panel -- lets a "Share with AI" action elsewhere in the
   // app (e.g. PostCard) pop the floating AiFab open, since AiFab used to own `open` purely as
   // local state with no way for another component to trigger it.
@@ -34,6 +40,7 @@ export function AiProvider({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   const [conversations, setConversations] = useState<AiConversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [usage, setUsage] = useState<AiUsage | null>(null);
   const [panelOpen, setPanelOpen] = useState(false);
   const [pendingShare, setPendingShare] = useState<Post | null>(null);
 
@@ -48,9 +55,26 @@ export function AiProvider({ children }: { children: React.ReactNode }) {
     setLoading(false);
   }, [user]);
 
+  const refreshUsage = useCallback(async () => {
+    if (!user) {
+      setUsage(null);
+      return;
+    }
+    try {
+      setUsage(await api.get<AiUsage>('/ai/usage'));
+    } catch {
+      // A failed usage fetch shouldn't block the chat -- leave the last known value (or null).
+    }
+  }, [user]);
+
   useEffect(() => {
     refresh();
-  }, [refresh]);
+    refreshUsage();
+  }, [refresh, refreshUsage]);
+
+  const bumpUsage = useCallback(() => {
+    setUsage((u) => (u ? { ...u, used: u.used + 1, remaining: Math.max(0, u.remaining - 1) } : u));
+  }, []);
 
   const findConversation = useCallback((id: string) => conversations.find((c) => c._id === id), [conversations]);
 
@@ -78,6 +102,9 @@ export function AiProvider({ children }: { children: React.ReactNode }) {
         findConversation,
         addConversation,
         removeConversation,
+        usage,
+        refreshUsage,
+        bumpUsage,
         panelOpen,
         setPanelOpen,
         pendingShare,
