@@ -191,7 +191,8 @@ export function MessageInput({
   const formattedRecordTime = `${Math.floor(recordSeconds / 60)}:${(recordSeconds % 60).toString().padStart(2, '0')}`;
 
   return (
-    <div className="border-t border-border bg-surface p-4">
+    <div className="border-t border-border bg-surface">
+      <div className="mx-auto w-full max-w-3xl p-4">
       {editingMessage && (
         <div className="mb-3 flex items-center gap-2.5 rounded-xl2 bg-accent/10 px-3.5 py-2 text-sm">
           <Pencil className="h-4 w-4 shrink-0 text-accent" />
@@ -335,6 +336,7 @@ export function MessageInput({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
