@@ -173,6 +173,16 @@ export class User {
   // on for the day. Toggled from profile > "إشعارات الهاتف".
   @Prop({ default: false })
   dailyDigestOptOut: boolean;
+
+  // The student personalises their AI assistant. `aiAssistantName` is the name they gave it
+  // (shown in the chat header; the assistant introduces itself with it). `aiPreferredName` is
+  // what the assistant should call the student (defaults to the first word of `name`). Both are
+  // set from the assistant's first-run card or its settings -- see AiConversationsService.runTurn.
+  @Prop({ type: String, default: null, trim: true })
+  aiAssistantName: string | null;
+
+  @Prop({ type: String, default: null, trim: true })
+  aiPreferredName: string | null;
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

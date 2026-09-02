@@ -16,6 +16,7 @@ import {
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError, regenerateAiMessage, streamAiMessage, type AiMessageAttachment, type AiStreamEvent } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
+import { useAuth } from '@/lib/auth-context';
 import { useAi } from '@/lib/ai-context';
 import { cn } from '@/lib/utils';
 import type { AiConversation, AiMessage, UploadResult } from '@/lib/types';
@@ -24,6 +25,7 @@ import { AiAuroraBackground } from './AiAuroraBackground';
 import { AiAvatar } from './AiAvatar';
 import { AiMarkdown } from './AiMarkdown';
 import { AiUsageMeter } from './AiUsageMeter';
+import { AiPersonalizeCard, assistantDisplayName, personalizeDismissed } from './AiPersonalizeCard';
 import { AiMessageBubble } from './AiMessageBubble';
 
 const SUGGESTIONS = [
@@ -165,7 +167,13 @@ export function AiChatPanel({
   onConversationCreated: (conversation: AiConversation) => void;
 }) {
   const { addConversation, pendingShare, clearPendingShare, usage, bumpUsage, refreshUsage } = useAi();
+  const { user } = useAuth();
   const { showToast } = useToast();
+
+  // First-run "name me / name you" card in the empty state, until the student fills it or skips.
+  const [personalizeSkipped, setPersonalizeSkipped] = useState(false);
+  useEffect(() => setPersonalizeSkipped(personalizeDismissed()), []);
+  const showPersonalize = !user?.aiAssistantName && !personalizeSkipped;
 
   // Daily question quota is spent -- block sending and show a "come back after N hours" notice.
   const exhausted = !!usage && usage.remaining <= 0;
@@ -425,9 +433,17 @@ export function AiChatPanel({
               <AiAvatar size={34} />
             </div>
             <div>
-              <p className="text-sm font-medium text-foreground">أهلًا! أنا مساعدك الذكي</p>
+              <p className="text-sm font-medium text-foreground">
+                {user?.aiPreferredName ? `أهلًا ${user.aiPreferredName}! ` : 'أهلًا! '}
+                أنا {assistantDisplayName(user)}
+              </p>
               <p className="mt-1 text-sm text-muted-foreground">اسأل عن واجباتك أو محاضراتك، أو اختر أحد الاقتراحات:</p>
             </div>
+            {showPersonalize && (
+              <div className="w-full max-w-xs">
+                <AiPersonalizeCard onSkip={() => setPersonalizeSkipped(true)} />
+              </div>
+            )}
             <div className="grid w-full max-w-xs grid-cols-1 gap-2">
               {SUGGESTIONS.map(({ text: s, icon: Icon }) => (
                 <button

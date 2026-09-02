@@ -31,4 +31,15 @@ export class UpdateUserDto {
   @IsOptional()
   @IsIn(SPECIALIZATIONS, { message: 'الرجاء اختيار تخصص صحيح' })
   specialization?: Specialization;
+
+  // AI assistant personalisation (see User schema). An empty string clears back to the defaults.
+  @IsOptional()
+  @IsString()
+  @MaxLength(40, { message: 'الاسم طويل جدًا' })
+  aiAssistantName?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(40, { message: 'الاسم طويل جدًا' })
+  aiPreferredName?: string;
 }

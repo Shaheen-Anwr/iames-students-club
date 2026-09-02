@@ -3,13 +3,14 @@
 import { useId } from 'react';
 
 /**
- * The assistant's mark: a faceted "spark prism" — a cut-gem hexagon with a four-point AI spark at
- * its core and a small orbiting sparkle. Drawn in `currentColor` (white on the gradient FAB,
- * accent on chips) with layered opacity facets so it reads as premium at any size. Gently bobs;
- * the core twinkles on hover / when the panel opens (`waving`).
+ * The assistant's mark: a four-point guiding star ("north star") inside a slow orbit ring — a
+ * calm guidance metaphor. Drawn in `currentColor` (white on the gradient FAB, accent on chips)
+ * so it works at every size it's used (18px avatars → 48px FAB). The halo breathes; on hover /
+ * when the panel opens (`waving`) it pulses brighter and the orbit keeps drifting.
  */
 export function AiAvatar({ size = 28, waving = false }: { size?: number; waving?: boolean }) {
   const gid = useId();
+  const spin = { transformBox: 'fill-box', transformOrigin: 'center' } as const;
 
   return (
     <svg
@@ -21,38 +22,45 @@ export function AiAvatar({ size = 28, waving = false }: { size?: number; waving?
       aria-hidden="true"
     >
       <defs>
-        <linearGradient id={gid} x1="4" y1="3" x2="20" y2="21" gradientUnits="userSpaceOnUse">
-          <stop stopColor="currentColor" stopOpacity="0.28" />
-          <stop offset="1" stopColor="currentColor" stopOpacity="0.08" />
-        </linearGradient>
+        <radialGradient id={gid} cx="50%" cy="50%" r="50%">
+          <stop offset="0%" stopColor="currentColor" stopOpacity="0.5" />
+          <stop offset="55%" stopColor="currentColor" stopOpacity="0.12" />
+          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
+        </radialGradient>
       </defs>
 
-      {/* gem body */}
-      <path
-        d="M12 2.5 20.5 7.2V16.8L12 21.5 3.5 16.8V7.2L12 2.5Z"
+      {/* soft glow halo */}
+      <circle
+        cx="12"
+        cy="12"
+        r="10"
         fill={`url(#${gid})`}
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinejoin="round"
-      />
-      {/* crown + pavilion facets */}
-      <path d="M12 2.5 20.5 7.2 12 11.9 3.5 7.2 12 2.5Z" fill="currentColor" fillOpacity="0.18" />
-      <path d="M3.5 7.2 12 11.9V21.5L3.5 16.8V7.2Z" fill="currentColor" fillOpacity="0.1" />
-
-      {/* core AI spark */}
-      <path
-        d="M12 8.4c.4 2.7 1.5 3.8 4.2 4.2-2.7.4-3.8 1.5-4.2 4.2-.4-2.7-1.5-3.8-4.2-4.2 2.7-.4 3.8-1.5 4.2-4.2Z"
-        fill="currentColor"
-        className={waving ? 'origin-center motion-safe:animate-pulse' : ''}
-        style={{ transformOrigin: '12px 12.6px' }}
+        style={spin}
+        className={waving ? 'motion-safe:animate-pulse' : 'motion-safe:animate-breathe'}
       />
 
-      {/* orbiting sparkle */}
+      {/* drifting orbit + its node */}
+      <g style={spin} className="motion-safe:[animation:spin_16s_linear_infinite]">
+        <circle
+          cx="12"
+          cy="12"
+          r="8.6"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1"
+          strokeOpacity="0.4"
+          strokeLinecap="round"
+          strokeDasharray="1.4 3.6"
+        />
+        <circle cx="12" cy="3.4" r="1.15" fill="currentColor" />
+      </g>
+
+      {/* four-point guiding star */}
       <path
-        d="M17.6 6.6c.16 1.05.56 1.45 1.6 1.6-1.04.16-1.44.56-1.6 1.6-.16-1.04-.56-1.44-1.6-1.6 1.04-.15 1.44-.55 1.6-1.6Z"
+        d="M12 4.1c.6 4.3 3 6.7 7.3 7.3C15 12 12.6 14.4 12 18.7c-.6-4.3-3-6.7-7.3-7.3C9 10.8 11.4 8.4 12 4.1Z"
         fill="currentColor"
-        fillOpacity="0.9"
       />
+      <circle cx="12" cy="11.6" r="1.3" fill="currentColor" fillOpacity="0.55" />
     </svg>
   );
 }
