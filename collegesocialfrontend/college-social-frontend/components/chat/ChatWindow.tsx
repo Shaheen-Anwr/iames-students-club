@@ -7,6 +7,7 @@ import {
   ArrowRight,
   Image as ImageIcon,
   MessageCircle,
+  MoreVertical,
   Phone,
   Search,
   ShieldOff,
@@ -14,6 +15,7 @@ import {
   X,
 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { Dropdown } from '@/components/ui/Dropdown';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { Input } from '@/components/ui/Input';
@@ -481,35 +483,61 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </p>
           </div>
         </button>
-        {!conversation?.isGroup && (
-          <>
-            <button
-              onClick={() => handleCall('audio')}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent sm:h-9 sm:w-9"
-            >
-              <Phone className="h-4 w-4" />
-            </button>
-            <button
-              onClick={() => handleCall('video')}
-              className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent sm:h-9 sm:w-9"
-            >
-              <Video className="h-4 w-4" />
-            </button>
-          </>
-        )}
-        <button
-          onClick={() => setBackgroundModalOpen(true)}
-          title="خلفية المحادثة"
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
-        >
-          <ImageIcon className="h-4 w-4" />
-        </button>
-        <button
-          onClick={() => setSearchOpen((v) => !v)}
-          className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
-        >
-          <Search className="h-4 w-4" />
-        </button>
+        {/* Desktop: actions inline. Mobile: one overflow menu, so the name/status never gets crushed. */}
+        <div className="hidden shrink-0 items-center gap-1 sm:flex">
+          {!conversation?.isGroup && (
+            <>
+              <button
+                onClick={() => handleCall('audio')}
+                title="مكالمة صوتية"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+              >
+                <Phone className="h-4 w-4" />
+              </button>
+              <button
+                onClick={() => handleCall('video')}
+                title="مكالمة فيديو"
+                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+              >
+                <Video className="h-4 w-4" />
+              </button>
+            </>
+          )}
+          <button
+            onClick={() => setBackgroundModalOpen(true)}
+            title="خلفية المحادثة"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+          >
+            <ImageIcon className="h-4 w-4" />
+          </button>
+          <button
+            onClick={() => setSearchOpen((v) => !v)}
+            title="بحث في المحادثة"
+            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
+          >
+            <Search className="h-4 w-4" />
+          </button>
+        </div>
+        <div className="shrink-0 sm:hidden">
+          <Dropdown
+            menuLabel="إجراءات المحادثة"
+            trigger={
+              <span className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent">
+                <MoreVertical className="h-4 w-4" />
+              </span>
+            }
+            items={[
+              { label: 'بحث في المحادثة', icon: Search, onClick: () => setSearchOpen(true) },
+              ...(!conversation?.isGroup
+                ? [
+                    { label: 'مكالمة صوتية', icon: Phone, onClick: () => handleCall('audio') },
+                    { label: 'مكالمة فيديو', icon: Video, onClick: () => handleCall('video') },
+                  ]
+                : []),
+              { label: 'خلفية المحادثة', icon: ImageIcon, onClick: () => setBackgroundModalOpen(true) },
+            ]}
+          />
+        </div>
       </div>
       </div>
 

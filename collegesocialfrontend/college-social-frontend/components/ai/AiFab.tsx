@@ -45,6 +45,9 @@ export function AiFab() {
   const pathname = usePathname();
   const { conversations, usage, panelOpen: open, setPanelOpen: setOpen } = useAi();
   const [activeId, setActiveId] = useState<string | null>(null);
+  // Opening the bubble resumes the most recent conversation; `newChat` is the explicit "start
+  // fresh" state (the + button) that must override that fallback until a message is actually sent.
+  const [newChat, setNewChat] = useState(false);
   // 'chat' = the live conversation; 'history' = the switch-between / delete list.
   const [view, setView] = useState<'chat' | 'history'>('chat');
   const [pos, setPos] = useState<Point | null>(null);
@@ -73,9 +76,12 @@ export function AiFab() {
     }
   }, []);
 
-  // Always reopen on the chat, not wherever the history toggle was left.
+  // Always reopen on the chat (not the history list), resuming the most recent conversation.
   useEffect(() => {
-    if (!open) setView('chat');
+    if (!open) {
+      setView('chat');
+      setNewChat(false);
+    }
   }, [open]);
 
   useEffect(() => {
@@ -136,7 +142,7 @@ export function AiFab() {
     dragStateRef.current.moved = false;
   }
 
-  const conversationId = activeId ?? conversations[0]?._id ?? null;
+  const conversationId = newChat ? null : (activeId ?? conversations[0]?._id ?? null);
 
   const buttonStyle: React.CSSProperties = pos
     ? { left: pos.x, top: pos.y, right: 'auto', bottom: 'auto' }
@@ -201,6 +207,7 @@ export function AiFab() {
               <button
                 onClick={() => {
                   setActiveId(null);
+                  setNewChat(true);
                   setView('chat');
                 }}
                 title="محادثة جديدة"
@@ -235,16 +242,24 @@ export function AiFab() {
                 activeId={conversationId}
                 onSelect={(id) => {
                   setActiveId(id);
+                  setNewChat(false);
                   setView('chat');
                 }}
                 onNew={() => {
                   setActiveId(null);
+                  setNewChat(true);
                   setView('chat');
                 }}
                 onDeleteActive={() => setActiveId(null)}
               />
             ) : (
-              <AiChatPanel conversationId={conversationId} onConversationCreated={(c) => setActiveId(c._id)} />
+              <AiChatPanel
+                conversationId={conversationId}
+                onConversationCreated={(c) => {
+                  setActiveId(c._id);
+                  setNewChat(false);
+                }}
+              />
             )}
           </div>
         </div>
