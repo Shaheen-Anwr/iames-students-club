@@ -8,7 +8,7 @@
 //
 // Bump VERSION on any change here so `activate` drops the old caches.
 
-const VERSION = 'v2';
+const VERSION = 'v3';
 const STATIC_CACHE = `iaems-static-${VERSION}`;
 const PAGES_CACHE = `iaems-pages-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
@@ -71,6 +71,10 @@ self.addEventListener('fetch', (event) => {
   if (request.method !== 'GET') return;
 
   const url = new URL(request.url);
+  // Only ever touch real http(s) requests. A download that iOS turns into a navigation to a
+  // blob:/data: URL must reach the browser untouched -- if we intercept it we can't fetch it
+  // from here and end up serving offline.html over the app.
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') return;
   if (url.origin !== self.location.origin) return;
   if (url.pathname.startsWith('/api/')) return;
 

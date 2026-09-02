@@ -63,13 +63,14 @@ export async function fetchAttachmentObjectUrl(postId: string, isRetry = false):
   return URL.createObjectURL(await res.blob());
 }
 
-// Fetches a converted file (see the backend's src/convert) and returns a short-lived blob: object
-// URL plus the server-set download filename. Same auth + refresh-on-401 discipline as
-// fetchAttachmentObjectUrl(); the caller owns the URL and must URL.revokeObjectURL() it.
-export async function fetchConversionObjectUrl(
+// Fetches a converted file (see the backend's src/convert) as a Blob plus the server-set download
+// filename. Same auth + refresh-on-401 discipline as fetchAttachmentObjectUrl(). Returns the raw
+// Blob (not an object URL) so the caller can hand it to saveBlob(), which needs a real File to
+// offer the native share sheet -- the only way to save a file inside a standalone iOS PWA.
+export async function fetchConversionBlob(
   id: string,
   isRetry = false,
-): Promise<{ url: string; filename: string }> {
+): Promise<{ blob: Blob; filename: string }> {
   const token = getToken();
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -79,7 +80,7 @@ export async function fetchConversionObjectUrl(
   if (res.status === 401 && !isRetry) {
     try {
       await refreshAccessToken();
-      return fetchConversionObjectUrl(id, true);
+      return fetchConversionBlob(id, true);
     } catch {
       clearToken();
       // fall through -- report the original 401 below
@@ -95,7 +96,7 @@ export async function fetchConversionObjectUrl(
   const plain = /filename="?([^";]+)"?/i.exec(disposition);
   const filename = star ? decodeURIComponent(star[1]) : plain ? plain[1] : 'converted';
 
-  return { url: URL.createObjectURL(await res.blob()), filename };
+  return { blob: await res.blob(), filename };
 }
 
 export class ApiError extends Error {
@@ -495,9 +496,9 @@ export const api = {
   },
 };
 
-// Fetches a ZIP of several finished conversions and returns a blob: URL for it (auth +
-// refresh-on-401). The caller owns the URL and must URL.revokeObjectURL() it.
-export async function fetchConversionsZip(ids: string[], isRetry = false): Promise<string> {
+// Fetches a ZIP of several finished conversions as a Blob (auth + refresh-on-401). Returns the
+// raw Blob so the caller can route it through saveBlob() (see fetchConversionBlob above).
+export async function fetchConversionsZipBlob(ids: string[], isRetry = false): Promise<Blob> {
   const token = getToken();
   const headers = new Headers({ 'Content-Type': 'application/json' });
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -510,11 +511,11 @@ export async function fetchConversionsZip(ids: string[], isRetry = false): Promi
   if (res.status === 401 && !isRetry) {
     try {
       await refreshAccessToken();
-      return fetchConversionsZip(ids, true);
+      return fetchConversionsZipBlob(ids, true);
     } catch {
       clearToken();
     }
   }
   if (!res.ok) throw new ApiError(res.status, `فشل تجهيز الملف المضغوط (${res.status})`);
-  return URL.createObjectURL(await res.blob());
+  return res.blob();
 }
