@@ -90,7 +90,12 @@ export const AiMessageBubble = memo(function AiMessageBubble({
           <AiAvatar size={18} />
         </div>
       )}
-      <div className={cn('flex flex-col gap-1', isUser ? 'max-w-[80%] items-end' : 'max-w-[85%] items-start')}>
+      <div
+        className={cn(
+          'flex min-w-0 flex-col gap-1',
+          isUser ? 'max-w-[85%] items-end sm:max-w-[80%]' : 'max-w-[calc(100%-2.5rem)] items-start sm:max-w-[85%]',
+        )}
+      >
         {message.sharedPostId && (
           <span className="flex items-center gap-1.5 rounded-xl border border-border bg-surface-2/70 px-3 py-1.5 text-xs text-muted-foreground">
             <FileStack className="h-3.5 w-3.5" />
@@ -104,7 +109,7 @@ export const AiMessageBubble = memo(function AiMessageBubble({
               <img
                 src={cldOptimize(message.attachmentUrl, { width: 800 })}
                 alt=""
-                className="max-h-48 rounded-xl border border-border object-cover"
+                className="max-h-48 max-w-full rounded-xl border border-border object-cover"
               />
             </ViewablePhoto>
           ) : (
@@ -126,7 +131,7 @@ export const AiMessageBubble = memo(function AiMessageBubble({
         )}
         <div
           className={cn(
-            'relative animate-bubble-in break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
+            'relative min-w-0 max-w-full animate-bubble-in break-words [overflow-wrap:anywhere] rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
             // The assistant path renders Markdown, which controls its own spacing -- `pre-wrap`
             // there would double every blank line. The user path is plain text and needs it.
             isUser

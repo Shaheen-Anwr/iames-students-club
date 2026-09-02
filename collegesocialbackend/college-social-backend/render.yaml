@@ -67,6 +67,9 @@ services:
         value: https://api.groq.com/openai/v1
       - key: AI_MODEL
         value: openai/gpt-oss-20b
+      # Per-student AI questions allowed per calendar day (resets at local midnight).
+      - key: AI_DAILY_MESSAGE_QUOTA
+        value: 100
       # Cloudflare Stream (video hosting for reels). Set all three on the dashboard -> new reels
       # upload to Stream instead of Cloudinary. Unset -> reels stay on Cloudinary. The frontend
       # also needs NEXT_PUBLIC_STREAM_ENABLED=1 (see the frontend's .env.production).

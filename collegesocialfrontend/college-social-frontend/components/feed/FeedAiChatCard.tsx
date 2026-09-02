@@ -8,12 +8,13 @@ import { cn } from '@/lib/utils';
 import { useAi } from '@/lib/ai-context';
 import { AiChatPanel } from '@/components/ai/AiChatPanel';
 import { AiConversationSwitcher } from '@/components/ai/AiConversationSwitcher';
+import { AiUsageMeter } from '@/components/ai/AiUsageMeter';
 import { AiAvatar } from '@/components/ai/AiAvatar';
 
 // Left rail: the AI assistant embedded as a full chat box next to the create-post box,
 // shown only at `lg:` and up (AiFab covers the assistant on smaller screens instead).
 export function FeedAiChatCard() {
-  const { conversations } = useAi();
+  const { conversations, usage } = useAi();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [view, setView] = useState<'chat' | 'history'>('chat');
   const conversationId = activeId ?? conversations[0]?._id ?? null;
@@ -28,6 +29,7 @@ export function FeedAiChatCard() {
             <span className="absolute -end-0.5 -bottom-0.5 h-2.5 w-2.5 rounded-full bg-success ring-2 ring-surface" />
           </div>
           <p className="text-sm font-semibold text-foreground">المساعد الذكي</p>
+          {usage && <AiUsageMeter used={usage.used} limit={usage.limit} size={18} />}
         </div>
         <div className="flex items-center gap-1">
           <button

@@ -73,7 +73,7 @@ export class AiConversationsService {
     config: ConfigService,
   ) {
     this.visionModel = config.get<string>('ai.visionModel') ?? '';
-    this.dailyMessageQuota = config.get<number>('ai.dailyMessageQuota') ?? 40;
+    this.dailyMessageQuota = config.get<number>('ai.dailyMessageQuota') ?? 100;
     this.historyWindowMessages = config.get<number>('ai.historyWindowMessages') ?? 30;
   }
 
@@ -83,6 +83,27 @@ export class AiConversationsService {
     return this.messageModel
       .countDocuments({ owner: new Types.ObjectId(ownerId), role: 'user', createdAt: { $gte: daysAgoStart(1) } })
       .exec();
+  }
+
+  // Where today's quota window closes -- the next local midnight, when countMessagesToday resets.
+  private nextResetAt(): Date {
+    const at = new Date();
+    at.setHours(24, 0, 0, 0);
+    return at;
+  }
+
+  // Today's AI-assistant usage for this student -- feeds the client-side quota meter and the
+  // "you're out for today" state. `remaining` is clamped at 0.
+  async getDailyUsage(
+    ownerId: string,
+  ): Promise<{ used: number; limit: number; remaining: number; resetsAt: string }> {
+    const used = await this.countMessagesToday(ownerId);
+    return {
+      used,
+      limit: this.dailyMessageQuota,
+      remaining: Math.max(0, this.dailyMessageQuota - used),
+      resetsAt: this.nextResetAt().toISOString(),
+    };
   }
 
   async listMine(ownerId: string): Promise<AiConversationDocument[]> {
@@ -124,9 +145,12 @@ export class AiConversationsService {
 
     const usedToday = await this.countMessagesToday(ownerId);
     if (usedToday >= this.dailyMessageQuota) {
+      const hours = Math.max(1, Math.ceil((this.nextResetAt().getTime() - Date.now()) / 3_600_000));
       yield {
         type: 'error',
-        message: `لقد استنفدت الحد الأقصى لعدد الرسائل اليومية مع المساعد الذكي (${this.dailyMessageQuota} رسالة). حاول مرة أخرى غدًا.`,
+        message:
+          `لقد بلغت الحد الأقصى اليومي للأسئلة مع المساعد الذكي (${this.dailyMessageQuota} سؤالًا). ` +
+          `يتجدّد رصيدك بعد منتصف الليل — انتظر نحو ${hours} ساعة ثم حاول مجددًا.`,
       };
       return;
     }

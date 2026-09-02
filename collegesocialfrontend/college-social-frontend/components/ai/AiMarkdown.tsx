@@ -30,7 +30,7 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
   return (
     <div
       dir="ltr"
-      className="my-3 overflow-hidden rounded-xl border border-border bg-background/70 text-left first:mt-0 last:mb-0"
+      className="my-3 max-w-full overflow-hidden rounded-xl border border-border bg-background/70 text-left first:mt-0 last:mb-0"
     >
       <div className="flex items-center justify-between border-b border-border/70 bg-surface-2/50 px-3 py-1.5">
         <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{lang || 'code'}</span>
@@ -43,8 +43,8 @@ function CodeBlock({ code, lang }: { code: string; lang?: string }) {
           {copied ? 'تم النسخ' : 'نسخ'}
         </button>
       </div>
-      <pre className="overflow-x-auto px-3 py-2.5 text-[13px] leading-relaxed scrollbar-thin">
-        <code>{code}</code>
+      <pre className="max-w-full overflow-x-auto px-3 py-2.5 text-[13px] leading-relaxed scrollbar-thin">
+        <code className="[overflow-wrap:normal]">{code}</code>
       </pre>
     </div>
   );
@@ -131,7 +131,7 @@ function splitRow(line: string): string[] {
 function Table({ rows, keyPrefix }: { rows: string[][]; keyPrefix: string }) {
   const [head, ...body] = rows;
   return (
-    <div className="my-3 overflow-x-auto first:mt-0 last:mb-0 scrollbar-thin">
+    <div className="my-3 max-w-full overflow-x-auto first:mt-0 last:mb-0 scrollbar-thin">
       <table className="w-full border-collapse text-[13px]">
         <thead>
           <tr className="border-b border-border">
@@ -314,5 +314,9 @@ export function AiMarkdown({ text }: { text: string }) {
     if (code !== undefined) blocks.push(<CodeBlock key={`c-${i}`} code={code.replace(/\n$/, '')} lang={lang} />);
   }
 
-  return <div className="[&>*:first-child]:mt-0 [&>*:last-child]:mb-0">{blocks}</div>;
+  return (
+    <div className="min-w-0 max-w-full break-words [overflow-wrap:anywhere] [&>*:first-child]:mt-0 [&>*:last-child]:mb-0">
+      {blocks}
+    </div>
+  );
 }

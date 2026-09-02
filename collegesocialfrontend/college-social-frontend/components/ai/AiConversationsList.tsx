@@ -12,6 +12,7 @@ import { useToast } from '@/lib/toast-context';
 import { cn, timeAgo } from '@/lib/utils';
 import type { AiConversation } from '@/lib/types';
 import { AiAuroraBackground } from './AiAuroraBackground';
+import { AiUsageMeter } from './AiUsageMeter';
 
 const GROUP_LABELS = { today: 'اليوم', yesterday: 'أمس', earlier: 'أقدم' } as const;
 type GroupKey = keyof typeof GROUP_LABELS;
@@ -29,7 +30,7 @@ function groupConversations(conversations: AiConversation[]): [GroupKey, AiConve
 }
 
 export function AiConversationsList() {
-  const { conversations, loading, removeConversation } = useAi();
+  const { conversations, loading, removeConversation, usage } = useAi();
   const router = useRouter();
   const pathname = usePathname();
   const { showToast } = useToast();
@@ -65,7 +66,10 @@ export function AiConversationsList() {
       <AiAuroraBackground />
       <div className="h-[2px] w-full shrink-0 bg-gradient-accent" />
       <div className="flex items-center justify-between border-b border-border px-4 py-4">
-        <h1 className="text-lg font-semibold text-foreground">المساعد الذكي</h1>
+        <div className="flex items-center gap-2.5">
+          <h1 className="text-lg font-semibold text-foreground">المساعد الذكي</h1>
+          {usage && <AiUsageMeter used={usage.used} limit={usage.limit} showLabel />}
+        </div>
         <Link
           href="/ai"
           className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:scale-110 active:scale-95"

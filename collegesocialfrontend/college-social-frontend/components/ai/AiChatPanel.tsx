@@ -23,6 +23,7 @@ import { SharedPostPreview } from '@/components/feed/SharedPostPreview';
 import { AiAuroraBackground } from './AiAuroraBackground';
 import { AiAvatar } from './AiAvatar';
 import { AiMarkdown } from './AiMarkdown';
+import { AiUsageMeter } from './AiUsageMeter';
 import { AiMessageBubble } from './AiMessageBubble';
 
 const SUGGESTIONS = [
@@ -114,7 +115,7 @@ function AiStreamingBubble({ store, onTextChange }: { store: StreamingStore; onT
         <AiAvatar size={18} />
       </div>
       {text ? (
-        <div className="flex max-w-[85%] flex-col gap-1 items-start">
+        <div className="flex min-w-0 max-w-[calc(100%-2.5rem)] flex-col items-start gap-1 sm:max-w-[85%]">
           {stub && (
             <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-3 w-3" />
@@ -123,7 +124,7 @@ function AiStreamingBubble({ store, onTextChange }: { store: StreamingStore; onT
           )}
           <div
             className={cn(
-              'relative rounded-2xl rounded-br-md border px-4 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm',
+              'relative min-w-0 max-w-full break-words [overflow-wrap:anywhere] rounded-2xl rounded-br-md border px-4 py-2.5 text-[15px] leading-relaxed backdrop-blur-sm',
               stub
                 ? 'border-amber-500/30 border-s-2 border-s-amber-500/60 bg-amber-500/10 text-foreground'
                 : 'border-border border-s-2 border-s-accent/50 bg-surface-2/60 text-foreground',
@@ -163,8 +164,14 @@ export function AiChatPanel({
   conversationId: string | null;
   onConversationCreated: (conversation: AiConversation) => void;
 }) {
-  const { addConversation, pendingShare, clearPendingShare } = useAi();
+  const { addConversation, pendingShare, clearPendingShare, usage, bumpUsage, refreshUsage } = useAi();
   const { showToast } = useToast();
+
+  // Daily question quota is spent -- block sending and show a "come back after N hours" notice.
+  const exhausted = !!usage && usage.remaining <= 0;
+  const hoursToReset = usage
+    ? Math.max(1, Math.ceil((new Date(usage.resetsAt).getTime() - Date.now()) / 3_600_000))
+    : 24;
 
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [loading, setLoading] = useState(!!conversationId);
@@ -281,7 +288,7 @@ export function AiChatPanel({
   }
 
   async function sendText(trimmed: string, attachment?: PendingAttachment, sharedPostId?: string) {
-    if (!trimmed || sending) return;
+    if (!trimmed || sending || exhausted) return;
     setSending(true);
     setFailedId(null);
     streamingStore.reset();
@@ -302,6 +309,9 @@ export function AiChatPanel({
     setMessages((prev) => [...prev, optimisticUser]);
     setPendingAttachment(null);
     if (sharedPostId) clearPendingShare();
+    // The backend persists this user message immediately (so it already counts against the quota) --
+    // move the meter now; the finally-block refetch reconciles the exact number.
+    bumpUsage();
 
     const controller = new AbortController();
     abortRef.current = controller;
@@ -340,6 +350,8 @@ export function AiChatPanel({
     } finally {
       setSending(false);
       abortRef.current = null;
+      // Reconcile the optimistic bump (and pick up a server-side quota rejection) with the truth.
+      void refreshUsage();
     }
   }
 
@@ -397,7 +409,11 @@ export function AiChatPanel({
   return (
     <div className="relative flex h-full min-h-0 flex-col overflow-hidden">
       <AiAuroraBackground />
-      <div ref={scrollRef} onScroll={handleScroll} className="min-h-0 flex-1 space-y-4 overflow-y-auto px-4 py-4 scrollbar-thin">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="min-h-0 min-w-0 flex-1 space-y-4 overflow-y-auto overflow-x-hidden px-3 py-4 scrollbar-thin sm:px-4"
+      >
         {loading ? (
           <div className="flex h-full items-center justify-center">
             <Spinner className="h-6 w-6" />
@@ -462,8 +478,22 @@ export function AiChatPanel({
         onSubmit={handleSubmit}
         className="flex shrink-0 flex-col gap-2 border-t border-border p-3 backdrop-blur-sm transition-shadow focus-within:shadow-glow"
       >
+        {usage && (
+          <div className="flex items-center justify-between gap-2 px-1">
+            <span className="text-[11px] text-muted-foreground">
+              {exhausted ? 'انتهى رصيد اليوم' : 'أسئلة اليوم'}
+            </span>
+            <AiUsageMeter used={usage.used} limit={usage.limit} showLabel />
+          </div>
+        )}
+        {exhausted && (
+          <p className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] leading-relaxed text-danger">
+            بلغت الحد الأقصى اليومي ({usage!.limit} سؤالًا) للمساعد الذكي. يتجدّد رصيدك بعد منتصف الليل — عد بعد نحو{' '}
+            {hoursToReset} ساعة.
+          </p>
+        )}
         {pendingShare && (
-          <div className="relative max-h-40 overflow-y-auto">
+          <div className="relative max-h-40 overflow-y-auto overflow-x-hidden">
             <button
               type="button"
               onClick={clearPendingShare}
@@ -489,7 +519,7 @@ export function AiChatPanel({
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            disabled={uploading || sending}
+            disabled={uploading || sending || exhausted}
             title="إرفاق ملف أو صورة"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full border border-border bg-surface-2/70 text-muted-foreground transition-colors hover:text-foreground disabled:opacity-40"
           >
@@ -506,8 +536,9 @@ export function AiChatPanel({
               }
             }}
             rows={1}
-            placeholder="اسأل عن واجب أو محاضرة..."
-            className="max-h-32 min-w-0 flex-1 resize-none rounded-2xl border border-transparent bg-surface-2/70 px-4 py-2.5 text-sm leading-relaxed transition-colors focus:border-accent/40 focus:bg-surface focus:outline-none"
+            disabled={exhausted}
+            placeholder={exhausted ? 'عد غدًا لطرح المزيد من الأسئلة' : 'اسأل عن واجب أو محاضرة...'}
+            className="max-h-32 min-w-0 flex-1 resize-none rounded-2xl border border-transparent bg-surface-2/70 px-4 py-2.5 text-sm leading-relaxed transition-colors focus:border-accent/40 focus:bg-surface focus:outline-none disabled:cursor-not-allowed disabled:opacity-60"
           />
           {sending ? (
             <button
@@ -521,10 +552,10 @@ export function AiChatPanel({
           ) : (
             <button
               type="submit"
-              disabled={!text.trim()}
+              disabled={!text.trim() || exhausted}
               className={cn(
                 'flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:scale-110 hover:shadow-glow active:scale-95 disabled:opacity-40 disabled:hover:scale-100 disabled:hover:shadow-soft',
-                !!text.trim() && 'motion-safe:animate-breathe',
+                !!text.trim() && !exhausted && 'motion-safe:animate-breathe',
               )}
             >
               <Send className="h-4 w-4" />
