@@ -44,6 +44,24 @@ const MIME_BY_EXT: Record<string, string> = {
   csv: 'text/csv',
   rtf: 'application/rtf',
 };
+
+// The matrix normally comes from GET /api/convert/capabilities, but the feature must stay usable
+// if that one call fails (deploy blip, Cloudflare, flaky mobile connection) -- otherwise the
+// picker is disabled and every file reads as "unsupported". Mirrors the backend's
+// src/convert/formats.ts SUPPORTED map + FORMATS labels; keep them in sync.
+const FALLBACK_MATRIX: Record<string, string[]> = {
+  pdf: ['docx', 'pptx', 'xlsx'],
+  docx: ['pdf', 'pptx', 'xlsx'],
+  pptx: ['pdf', 'docx', 'xlsx'],
+  xlsx: ['pdf', 'docx', 'pptx'],
+};
+const FALLBACK_FORMATS = [
+  { ext: 'pdf', label: 'PDF' },
+  { ext: 'docx', label: 'Word' },
+  { ext: 'pptx', label: 'PowerPoint' },
+  { ext: 'xlsx', label: 'Excel' },
+];
+const FALLBACK_MAX_MB = 25;
 function formatBytes(n: number): string {
   if (!n) return '';
   if (n < 1024) return `${n} ب`;
@@ -107,11 +125,14 @@ export function FileConverter() {
   const refetchHistoryRef = useRef(history.refetch);
   refetchHistoryRef.current = history.refetch;
 
-  const matrix = caps.data?.matrix ?? {};
-  const maxSizeMb = caps.data?.maxSizeMb ?? 25;
+  // Fall back to the built-in matrix whenever capabilities hasn't (or can't) load, so picking +
+  // queuing always works; the server still re-validates every pair on upload.
+  const matrix = caps.data?.matrix && Object.keys(caps.data.matrix).length ? caps.data.matrix : FALLBACK_MATRIX;
+  const maxSizeMb = caps.data?.maxSizeMb ?? FALLBACK_MAX_MB;
+  const formats = caps.data?.formats?.length ? caps.data.formats : FALLBACK_FORMATS;
   const labelForExt = useCallback(
-    (ext: string) => caps.data?.formats.find((f) => f.ext === ext)?.label ?? `.${ext}`,
-    [caps.data],
+    (ext: string) => formats.find((f) => f.ext === ext)?.label ?? `.${ext}`,
+    [formats],
   );
   const acceptAttr = useMemo(() => {
     const exts = Object.keys(matrix);
@@ -288,18 +309,10 @@ export function FileConverter() {
         <p className="mt-1 text-xs text-muted-foreground">
           حتى {maxSizeMb} م.ب لكل ملف. يمكن اختيار عدة ملفات وتحويلها معًا.
         </p>
-        <Button className="mt-4" onClick={() => inputRef.current?.click()} disabled={caps.isLoading || (!caps.data && !!caps.error)}>
+        <Button className="mt-4" onClick={() => inputRef.current?.click()}>
           <FileUp className="h-4 w-4" />
           اختيار ملفات
         </Button>
-        {!caps.data && !!caps.error && (
-          <p className="mt-3 text-xs text-danger">
-            تعذّر تحميل صيغ التحويل.{' '}
-            <button onClick={() => caps.refetch()} className="underline hover:no-underline">
-              إعادة المحاولة
-            </button>
-          </p>
-        )}
         {/* Visually hidden rather than display:none — some in-app webviews (Instagram/Facebook,
             older Android WebView) refuse a programmatic .click() on a display:none input. */}
         <input
