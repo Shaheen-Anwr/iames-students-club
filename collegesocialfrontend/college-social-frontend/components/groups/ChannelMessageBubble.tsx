@@ -297,14 +297,14 @@ export function ChannelMessageBubble({
                   onJumpToReply(message.replyTo!._id);
                 }}
                 className={cn(
-                  'mb-1 w-full max-w-full rounded-xl border-s-4 border-accent bg-surface-2/60 px-3 py-1.5 text-start text-xs',
-                  isOwn && 'bg-white/15 text-white',
+                  'mb-1 w-full max-w-full rounded-xl border-s-4 border-accent bg-surface-2 px-3 py-1.5 text-start text-xs',
+                  isOwn && 'border-white/50 bg-black/20 text-white',
                 )}
               >
                 <p className={cn('font-medium', isOwn ? 'text-white' : 'text-accent')}>
                   {message.replyTo.sender?.name ?? 'مستخدم محذوف'}
                 </p>
-                <p className={cn('truncate', isOwn ? 'text-white/80' : 'text-muted-foreground')}>
+                <p className={cn('truncate', isOwn ? 'text-white/90' : 'text-foreground/75')}>
                   {message.replyTo.deletedForEveryone
                     ? 'تم حذف هذه الرسالة'
                     : message.replyTo.text ||
