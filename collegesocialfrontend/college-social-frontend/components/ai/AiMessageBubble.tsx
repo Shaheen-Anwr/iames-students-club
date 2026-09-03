@@ -126,7 +126,7 @@ export const AiMessageBubble = memo(function AiMessageBubble({
         {isStub && (
           <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
             <AlertTriangle className="h-3 w-3" />
-            المساعد الذكي غير مُفعّل بعد على الخادم
+            رافد غير مُفعّل بعد على الخادم
           </span>
         )}
         <div

@@ -78,7 +78,7 @@ export function AiConversationsList() {
         <div className="flex shrink-0 items-center gap-1">
           <button
             onClick={() => setPersonalizeOpen(true)}
-            title="تخصيص المساعد"
+            title="تخصيص رافد"
             className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
           >
             <Sparkles className="h-4 w-4" />
@@ -125,7 +125,7 @@ export function AiConversationsList() {
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-accent/10 text-accent">
               <Bot className="h-6 w-6" />
             </div>
-            <p className="text-sm">لا توجد محادثات بعد. ابدأ بسؤال المساعد الذكي.</p>
+            <p className="text-sm">لا توجد محادثات بعد. ابدأ بسؤال رافد.</p>
           </div>
         ) : filtered.length === 0 ? (
           <div className="flex flex-col items-center gap-2 px-6 py-16 text-center text-muted-foreground">
@@ -176,7 +176,7 @@ export function AiConversationsList() {
         )}
       </div>
 
-      <Modal open={personalizeOpen} onClose={() => setPersonalizeOpen(false)} title="تخصيص المساعد" className="max-w-sm">
+      <Modal open={personalizeOpen} onClose={() => setPersonalizeOpen(false)} title="تخصيص رافد" className="max-w-sm">
         <AiPersonalizeCard bare onDone={() => setPersonalizeOpen(false)} />
       </Modal>
     </div>

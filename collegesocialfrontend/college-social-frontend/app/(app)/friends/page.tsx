@@ -90,7 +90,7 @@ export default function FriendsPage() {
           return next;
         });
       })
-      .catch((err) => showToast(err instanceof ApiError ? err.message : 'تعذّر تحميل الأصدقاء.', 'error'))
+      .catch((err) => showToast(err instanceof ApiError ? err.message : 'تعذّر تحميل الأصحاب.', 'error'))
       .finally(() => setLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [user?._id]);
@@ -110,7 +110,7 @@ export default function FriendsPage() {
   const sentList = (user?.friendRequestsSent ?? []).map((id) => pool[id]).filter(Boolean);
 
   const TABS: { id: Tab; label: string; count?: number }[] = [
-    { id: 'friends', label: 'الأصدقاء', count: friendsList.length || undefined },
+    { id: 'friends', label: 'صحابي', count: friendsList.length || undefined },
     { id: 'requests', label: 'الطلبات', count: receivedList.length || undefined },
     { id: 'suggestions', label: 'اقتراحات' },
   ];
@@ -122,7 +122,7 @@ export default function FriendsPage() {
           <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-accent/10 text-accent">
             <UsersRound className="h-4 w-4" />
           </span>
-          الأصدقاء
+          صحابي
         </h1>
 
         <div className="flex gap-1 border-b border-border/70 pb-2">
@@ -156,7 +156,7 @@ export default function FriendsPage() {
           (!loaded ? (
             <GridSkeleton />
           ) : friendsList.length === 0 ? (
-            <EmptyState icon={UsersRound} text="لا يوجد أصدقاء بعد. أضف أصدقاء من الاقتراحات أدناه." />
+            <EmptyState icon={UsersRound} text="لا يوجد أصحاب بعد. أضف من الاقتراحات أدناه." />
           ) : (
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-3 md:grid-cols-4">
               {friendsList.map((f) => (
@@ -178,7 +178,7 @@ export default function FriendsPage() {
           (!loaded ? (
             <GridSkeleton />
           ) : receivedList.length === 0 && sentList.length === 0 ? (
-            <EmptyState icon={UsersRound} text="لا توجد طلبات صداقة معلّقة." />
+            <EmptyState icon={UsersRound} text="لا توجد طلبات صحبة معلّقة." />
           ) : (
             <div className="space-y-6">
               {receivedList.length > 0 && (

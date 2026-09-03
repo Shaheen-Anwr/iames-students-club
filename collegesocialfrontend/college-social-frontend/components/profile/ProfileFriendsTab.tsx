@@ -50,7 +50,7 @@ export function ProfileFriendsTab({ profileId, isOwn }: { profileId: string; isO
         if (!cancelled) setFriends(data);
       })
       .catch((err) => {
-        if (!cancelled) showToast(err instanceof ApiError ? err.message : 'تعذّر تحميل الأصدقاء.', 'error');
+        if (!cancelled) showToast(err instanceof ApiError ? err.message : 'تعذّر تحميل الأصحاب.', 'error');
       })
       .finally(() => {
         if (!cancelled) setLoading(false);
@@ -77,7 +77,7 @@ export function ProfileFriendsTab({ profileId, isOwn }: { profileId: string; isO
   if (friends.length === 0) {
     return (
       <div className="rounded-2xl border border-dashed border-border bg-surface-2/40">
-        <EmptyState icon={UsersRound} title="لا يوجد أصدقاء بعد" />
+        <EmptyState icon={UsersRound} title="لا يوجد أصحاب بعد" />
       </div>
     );
   }

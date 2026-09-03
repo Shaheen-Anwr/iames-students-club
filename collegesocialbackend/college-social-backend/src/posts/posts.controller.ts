@@ -46,6 +46,10 @@ export class PostsController {
   // GET /api/posts?page=1&limit=20&courseCode=CS101&author=<userId>&hasAttachment=true&scope=public|department
   // &department=&academicYear=&specialization= -- feed filter dropdowns; ignored when scope is
   // 'department' since that's already locked to the viewer's own department (see PostsService.feed()).
+  //
+  // Pass `before=<cursor>` (or `before=` on the first page) to use keyset pagination instead of
+  // page/skip -- the response is then `{ items, nextCursor }`. Omit it entirely for the legacy
+  // page-numbered response (a bare `PostDocument[]`). The feed UI uses the cursor form.
   @Get()
   async feed(
     @CurrentUser() user: AuthenticatedUser,
@@ -58,10 +62,9 @@ export class PostsController {
     @Query('department') department?: Department,
     @Query('academicYear') academicYear?: AcademicYear,
     @Query('specialization') specialization?: Specialization,
+    @Query('before') before?: string,
   ) {
-    return this.postsService.feed(
-      Number(page) || 1,
-      Number(limit) || 20,
+    const args = [
       courseCode,
       author,
       hasAttachment === 'true',
@@ -69,7 +72,12 @@ export class PostsController {
       user.department,
       { department, academicYear, specialization },
       user.userId,
-    );
+    ] as const;
+
+    if (before !== undefined) {
+      return this.postsService.feedCursor(before || undefined, Number(limit) || 20, ...args);
+    }
+    return this.postsService.feed(Number(page) || 1, Number(limit) || 20, ...args);
   }
 
   // GET /api/posts/courses -> distinct course codes that have attachments, for the course/lecture hub

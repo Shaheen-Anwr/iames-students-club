@@ -211,9 +211,9 @@ export function PostCard({
                   </span>
                 )}
                 {post.scope === 'friends' && (
-                  <span className="inline-flex items-center gap-1" title="مرئي للأصدقاء فقط">
+                  <span className="inline-flex items-center gap-1" title="مرئي للأصحاب فقط">
                     <Users className="h-3 w-3" />
-                    الأصدقاء
+                    الأصحاب
                   </span>
                 )}
                 {post.scope === 'private' && (
@@ -411,7 +411,7 @@ export function PostCard({
             </ActionIconButton>
           )}
 
-          <ActionIconButton onClick={() => shareToAi(post)} title="اسأل المساعد الذكي عن هذا المنشور">
+          <ActionIconButton onClick={() => shareToAi(post)} title="اسأل رافد عن هذا المنشور">
             <Bot className="h-5 w-5" />
           </ActionIconButton>
         </div>

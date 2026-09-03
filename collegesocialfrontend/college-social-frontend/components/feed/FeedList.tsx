@@ -8,7 +8,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
-import { useInfiniteApiList } from '@/lib/query';
+import { useCursorInfiniteList } from '@/lib/query';
 import { assetUrl } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departments';
@@ -78,14 +78,15 @@ export function FeedList() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useInfiniteApiList<Post>(`/posts?${baseQuery}`, { key: cacheKey, pageSize: PAGE_SIZE });
+  } = useCursorInfiniteList<Post>(`/posts?${baseQuery}`, { key: cacheKey, pageSize: PAGE_SIZE });
 
-  type FeedCache = InfiniteData<Post[], number>;
+  type FeedPage = { items: Post[]; nextCursor: string | null };
+  type FeedCache = InfiniteData<FeedPage, string | null>;
   const prependPost = (post: Post) =>
     qc.setQueryData<FeedCache>(cacheKey, (old) =>
       old
-        ? { ...old, pages: [[post, ...(old.pages[0] ?? [])], ...old.pages.slice(1)] }
-        : { pages: [[post]], pageParams: [1] },
+        ? { ...old, pages: old.pages.map((p, i) => (i === 0 ? { ...p, items: [post, ...p.items] } : p)) }
+        : { pages: [{ items: [post], nextCursor: null }], pageParams: [null] },
     );
 
   const sentinelRef = useRef<HTMLDivElement>(null);
@@ -131,7 +132,9 @@ export function FeedList() {
 
   function handleDeleted(id: string) {
     qc.setQueryData<FeedCache>(cacheKey, (old) =>
-      old ? { ...old, pages: old.pages.map((pg) => pg.filter((p) => p._id !== id)) } : old,
+      old
+        ? { ...old, pages: old.pages.map((pg) => ({ ...pg, items: pg.items.filter((p) => p._id !== id) })) }
+        : old,
     );
   }
 

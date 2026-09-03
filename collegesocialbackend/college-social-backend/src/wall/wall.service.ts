@@ -16,6 +16,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Department } from '../common/enums/department.enum';
 import { Role } from '../common/enums/role.enum';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { decodeCursor, keysetMatch, KEYSET_SORT, nextCursorFrom } from '../common/pagination/cursor.util';
 
 const MAX_BODY = 600;
 const DAILY_LIMIT = 5;
@@ -141,6 +142,10 @@ export class WallService {
     return this.toView(doc, user.userId, hash);
   }
 
+  private baseListFilter(user: AuthenticatedUser): Record<string, unknown> {
+    return { hidden: false, $or: [{ department: null }, { department: user.department ?? null }] };
+  }
+
   async list(
     user: AuthenticatedUser,
     page = 1,
@@ -148,18 +153,50 @@ export class WallService {
     sort: 'new' | 'top' = 'new',
   ): Promise<WallPostView[]> {
     const capped = Math.min(Math.max(limit, 1), 50);
-    const query = this.model
-      .find({
-        hidden: false,
-        $or: [{ department: null }, { department: user.department ?? null }],
-      })
+    const docs = await this.model
+      .find(this.baseListFilter(user))
       .sort(sort === 'top' ? { likes: -1, createdAt: -1 } : { createdAt: -1 })
       .skip((page - 1) * capped)
-      .limit(capped);
-
-    const docs = await query.exec();
+      .limit(capped)
+      .exec();
     const hash = this.hashFor(user.userId);
     return docs.map((d) => this.toView(d, user.userId, hash));
+  }
+
+  // Cursor-paginated wall. `sort: 'new'` uses a real keyset cursor on createdAt/_id (index range
+  // read at any depth). `sort: 'top'` sorts on the `likes` array (multikey -- can't keyset), so
+  // its "cursor" is just an opaque page token ("p2", "p3", ...) over the same skip/limit as list().
+  // Either way the response shape is the same: { items, nextCursor }.
+  async listCursor(
+    user: AuthenticatedUser,
+    before: string | undefined,
+    limit = 20,
+    sort: 'new' | 'top' = 'new',
+  ): Promise<{ items: WallPostView[]; nextCursor: string | null }> {
+    const capped = Math.min(Math.max(limit, 1), 50);
+    const hash = this.hashFor(user.userId);
+
+    if (sort === 'top') {
+      const page = before?.startsWith('p') ? Math.max(1, Number(before.slice(1)) || 1) : 1;
+      const docs = await this.model
+        .find(this.baseListFilter(user))
+        .sort({ likes: -1, createdAt: -1 })
+        .skip((page - 1) * capped)
+        .limit(capped)
+        .exec();
+      return {
+        items: docs.map((d) => this.toView(d, user.userId, hash)),
+        nextCursor: docs.length === capped ? `p${page + 1}` : null,
+      };
+    }
+
+    const cur = decodeCursor(before);
+    const filter = cur ? { ...this.baseListFilter(user), ...keysetMatch(cur) } : this.baseListFilter(user);
+    const docs = await this.model.find(filter).sort(KEYSET_SORT).limit(capped).exec();
+    return {
+      items: docs.map((d) => this.toView(d, user.userId, hash)),
+      nextCursor: nextCursorFrom(docs, capped),
+    };
   }
 
   async toggleLike(user: AuthenticatedUser, id: string): Promise<{ liked: boolean; likeCount: number }> {

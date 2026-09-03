@@ -14,15 +14,21 @@ import { CreateWallPostDto } from './dto/create-wall-post.dto';
 export class WallController {
   constructor(private readonly wall: WallService) {}
 
-  // GET /api/wall?page=1&limit=20&sort=new|top
+  // GET /api/wall?page=1&limit=20&sort=new|top  (legacy page form -> bare WallPostView[])
+  // GET /api/wall?before=<cursor>&limit=20&sort=new|top  -> { items, nextCursor }  (feed UI)
   @Get()
   list(
     @CurrentUser() user: AuthenticatedUser,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
     @Query('sort') sort?: string,
+    @Query('before') before?: string,
   ) {
-    return this.wall.list(user, Number(page) || 1, Number(limit) || 20, sort === 'top' ? 'top' : 'new');
+    const s = sort === 'top' ? 'top' : 'new';
+    if (before !== undefined) {
+      return this.wall.listCursor(user, before || undefined, Number(limit) || 20, s);
+    }
+    return this.wall.list(user, Number(page) || 1, Number(limit) || 20, s);
   }
 
   // One AI moderation call per post -- tighter than the global default.

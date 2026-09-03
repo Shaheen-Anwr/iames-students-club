@@ -35,14 +35,14 @@ import type { Post, PostAttachmentType, PostScope, UploadResult } from '@/lib/ty
 const SCOPE_TOAST: Record<PostScope, string> = {
   department: 'تم النشر في صفحة الشعبة.',
   public: 'تم النشر في الصفحة العامة.',
-  friends: 'تم النشر للأصدقاء.',
+  friends: 'تم النشر للأصحاب.',
   private: 'تم النشر لك فقط.',
 };
 
 // Labels for the audience dropdown. 'department' is filled in per-user (the department's own name).
 const SCOPE_LABEL: Record<Exclude<PostScope, 'department'>, string> = {
   public: 'عام',
-  friends: 'الأصدقاء',
+  friends: 'الأصحاب',
   private: 'أنا فقط',
 };
 

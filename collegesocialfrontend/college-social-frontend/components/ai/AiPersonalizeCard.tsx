@@ -21,9 +21,9 @@ export function personalizeDismissed(): boolean {
   }
 }
 
-/** The assistant's display name, or the generic label when the student hasn't named it. */
+/** The assistant's display name -- the student's custom name, or the default "رافد". */
 export function assistantDisplayName(user: Pick<User, 'aiAssistantName'> | null | undefined): string {
-  return user?.aiAssistantName?.trim() || 'المساعد الذكي';
+  return user?.aiAssistantName?.trim() || 'رافد';
 }
 
 /**
@@ -105,7 +105,7 @@ export function AiPersonalizeCard({
           label="وبماذا تحب أن تسمّيني؟"
           value={assistantName}
           onChange={(e) => setAssistantName(e.target.value)}
-          placeholder="مثال: رافد، نِبراس، مُرشد…"
+          placeholder="مثال: نِبراس، مُرشد، رفيق…"
           maxLength={40}
         />
       </div>
