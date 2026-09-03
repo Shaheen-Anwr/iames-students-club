@@ -151,9 +151,16 @@ export function FileConverter() {
 
   const addFiles = useCallback(
     (files: FileList | File[]) => {
+      // Snapshot to a real array *synchronously*, before returning to the caller. The <input>'s
+      // onChange resets `e.target.value` right after calling this, which empties the live
+      // FileList -- and React runs the setItems updater below later, during render. Reading
+      // `Array.from(files)` inside that deferred updater would then see zero files, which is why
+      // a picked file silently never showed up in the queue on mobile.
+      const picked = Array.from(files);
+      if (!picked.length) return;
       setItems((prev) => [
         ...prev,
-        ...Array.from(files).map((file) => {
+        ...picked.map((file) => {
           const sourceExt = extOf(file.name);
           const targets = matrix[sourceExt] ?? [];
           const it: QueueItem = {
@@ -293,8 +300,14 @@ export function FileConverter() {
     <div className="space-y-6">
       <SectionHeader icon={FileCog} title="محوّل الملفات" description="حوّل بين PDF وWord وPowerPoint وExcel" />
 
+      {/* Big tap target on touch: the whole card opens the picker. The <Button> inside is the
+          accessible/keyboard trigger, so the card stays a plain div (no nested button role). */}
       <Card
-        className={cn('border-2 border-dashed p-6 text-center transition-colors', dragging ? 'border-accent bg-accent/5' : 'border-strong')}
+        className={cn(
+          'border-2 border-dashed p-5 text-center transition-colors sm:p-6',
+          dragging ? 'border-accent bg-accent/5' : 'border-strong',
+        )}
+        onClick={() => inputRef.current?.click()}
         onDragOver={(e) => {
           e.preventDefault();
           setDragging(true);
@@ -309,23 +322,35 @@ export function FileConverter() {
         <p className="mt-1 text-xs text-muted-foreground">
           حتى {maxSizeMb} م.ب لكل ملف. يمكن اختيار عدة ملفات وتحويلها معًا.
         </p>
-        <Button className="mt-4" onClick={() => inputRef.current?.click()}>
+        <Button
+          className="mt-4"
+          onClick={(e) => {
+            e.stopPropagation(); // don't also trigger the card's onClick
+            inputRef.current?.click();
+          }}
+        >
           <FileUp className="h-4 w-4" />
           اختيار ملفات
         </Button>
-        {/* Visually hidden rather than display:none — some in-app webviews (Instagram/Facebook,
-            older Android WebView) refuse a programmatic .click() on a display:none input. */}
+        {/* Kept in the layout (not display:none, not `sr-only`'s clip()) — some in-app webviews
+            (Instagram/Facebook, older Android WebView) and iOS Safari refuse a programmatic
+            .click() on a clipped/hidden file input. opacity+absolute keeps it invisible but live.
+            stopPropagation on its own click stops the programmatic .click() from bubbling back to
+            the card's onClick (which would re-open the dialog). */}
         <input
           ref={inputRef}
           type="file"
           multiple
           accept={acceptAttr}
-          className="sr-only"
           tabIndex={-1}
           aria-hidden="true"
+          className="pointer-events-none absolute h-px w-px opacity-0"
+          onClick={(e) => e.stopPropagation()}
           onChange={(e) => {
-            if (e.target.files?.length) addFiles(e.target.files);
-            e.target.value = '';
+            const input = e.currentTarget;
+            const picked = input.files ? Array.from(input.files) : [];
+            if (picked.length) addFiles(picked);
+            input.value = '';
           }}
         />
       </Card>
@@ -339,9 +364,9 @@ export function FileConverter() {
 
       {items.length > 0 && (
         <div className="space-y-3">
-          <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
             <h3 className="text-sm font-semibold text-foreground">قائمة التحويل</h3>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <button onClick={() => setItems([])} className="text-xs text-muted-foreground hover:text-foreground">
                 مسح الكل
               </button>
