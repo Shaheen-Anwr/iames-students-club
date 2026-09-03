@@ -37,6 +37,7 @@ import { AiModule } from './ai/ai.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { CoursesModule } from './courses/courses.module';
 import { OnboardingModule } from './onboarding/onboarding.module';
+import { LectureNotesModule } from './lecture-notes/lecture-notes.module';
 import { DigestModule } from './digest/digest.module';
 import { BroadcastModule } from './broadcast/broadcast.module';
 import { ConvertModule } from './convert/convert.module';
@@ -105,6 +106,7 @@ import { AppController } from './app.controller';
     DashboardModule,
     CoursesModule,
     OnboardingModule,
+    LectureNotesModule,
     DigestModule,
     BroadcastModule,
     ConvertModule,

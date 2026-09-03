@@ -10,6 +10,7 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../push/push.service';
 import { buildAnnouncementPushPayload } from '../push/push-payload.util';
+import { pushSuppressed } from '../common/utils/notification-prefs.util';
 
 export interface PaginatedAnnouncements {
   data: AnnouncementDocument[];
@@ -71,7 +72,7 @@ export class AnnouncementsService {
     if (announcement.department !== null) recipientFilter.department = announcement.department;
 
     const [recipients, author] = await Promise.all([
-      this.userModel.find(recipientFilter).select('_id').lean().exec(),
+      this.userModel.find(recipientFilter).select('_id notificationPrefs').lean().exec(),
       this.userModel.findById(authorId).select('name photoUrl role').lean().exec(),
     ]);
     const ids = recipients.map((u) => u._id as Types.ObjectId);
@@ -89,9 +90,17 @@ export class AnnouncementsService {
       authorId,
     );
 
+    // The in-app bell reaches everyone; the PHONE push skips anyone muting announcements or
+    // currently in their quiet-hours window (profile > الإشعارات).
+    const offset = this.config.get<number>('appTzOffsetHours') ?? 3;
+    const pushIds = recipients
+      .filter((u) => !pushSuppressed(u.notificationPrefs, 'system_announcement', offset))
+      .map((u) => (u._id as Types.ObjectId).toString());
+    if (pushIds.length === 0) return;
+
     const frontendUrl = this.config.get<string>('frontendUrl')!;
     await this.pushService.sendToUsers(
-      ids.map((id) => id.toString()),
+      pushIds,
       buildAnnouncementPushPayload(announcement, frontendUrl, author?.name),
     );
   }
@@ -119,6 +128,19 @@ export class AnnouncementsService {
         $or: [{ department: null }, { department: viewerDepartment ?? null }],
       })
       .exec();
+  }
+
+  // One-tap "👍" toggle. Returns the new state for the caller to reflect optimistically.
+  async toggleLike(id: string, userId: string): Promise<{ liked: boolean; likeCount: number }> {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('الإعلان غير موجود');
+    const uid = new Types.ObjectId(userId);
+    const doc = await this.announcementModel.findById(id).select('likes').exec();
+    if (!doc) throw new NotFoundException('الإعلان غير موجود');
+    const idx = doc.likes.findIndex((l) => l.equals(uid));
+    if (idx >= 0) doc.likes.splice(idx, 1);
+    else doc.likes.push(uid);
+    await doc.save();
+    return { liked: idx < 0, likeCount: doc.likes.length };
   }
 
   // Used by CalendarService to pull the month's dated announcements.

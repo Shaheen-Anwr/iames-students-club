@@ -27,6 +27,12 @@ export class AnnouncementsController {
     return this.announcementsService.list(Number(page) || 1, Number(limit) || 20, user.department);
   }
 
+  // POST /api/announcements/:id/like -- one-tap 👍 toggle (any signed-in user)
+  @Post(':id/like')
+  async like(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.announcementsService.toggleLike(id, user.userId);
+  }
+
   // DELETE /api/announcements/:id -- author or admin
   @Delete(':id')
   async remove(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {

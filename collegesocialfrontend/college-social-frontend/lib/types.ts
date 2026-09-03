@@ -610,6 +610,8 @@ export interface Announcement {
   pinned: boolean;
   eventDate?: string | null;
   createdAt: string;
+  /** User ids who tapped 👍. Client derives likeCount + "did I like" from this. */
+  likes?: string[];
 }
 
 export type Urgency = 'overdue' | 'urgent' | 'normal' | 'completed';

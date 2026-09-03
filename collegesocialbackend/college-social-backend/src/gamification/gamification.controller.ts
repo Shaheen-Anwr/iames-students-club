@@ -21,4 +21,10 @@ export class GamificationController {
   async recap(@CurrentUser() user: AuthenticatedUser) {
     return this.gamification.getWeeklyRecap(user.userId, 1);
   }
+
+  // GET /api/gamification/friend-activity -> recent posts/quizzes/assignments by the caller's friends.
+  @Get('friend-activity')
+  async friendActivity(@CurrentUser() user: AuthenticatedUser) {
+    return this.gamification.getFriendActivity(user.userId, 15);
+  }
 }

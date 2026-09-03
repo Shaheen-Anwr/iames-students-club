@@ -270,6 +270,54 @@ export class GamificationService {
     return recap;
   }
 
+  // Recent activity by the caller's friends -- "X شارك محاضرة في علم الأمراض", "Y أكمل واجبًا".
+  // Reads the enriched points ledger (reason + meta) directly; no separate activity collection.
+  async getFriendActivity(
+    userId: string,
+    limit = 15,
+  ): Promise<
+    Array<{
+      actor: { _id: string; name: string; photoUrl: string | null };
+      reason: PointsReason;
+      meta: Record<string, unknown> | null;
+      createdAt: string;
+    }>
+  > {
+    const me = await this.userModel.findById(userId).select('friends').lean().exec();
+    const friendIds = (me?.friends ?? []).map((f) => new Types.ObjectId(f));
+    if (friendIds.length === 0) return [];
+
+    const since = new Date(Date.now() - 7 * 86_400_000);
+    const rows = await this.pointsEventModel
+      .aggregate<{
+        reason: PointsReason;
+        meta: Record<string, unknown> | null;
+        createdAt: Date;
+        u: { _id: Types.ObjectId; name: string; photoUrl: string | null };
+      }>([
+        {
+          $match: {
+            user: { $in: friendIds },
+            reason: { $in: ['post_created', 'reel_created', 'quiz_attempted', 'assignment_completed'] },
+            createdAt: { $gte: since },
+          },
+        },
+        { $sort: { createdAt: -1 } },
+        { $limit: limit },
+        { $lookup: { from: 'users', localField: 'user', foreignField: '_id', as: 'u' } },
+        { $unwind: '$u' },
+        { $project: { reason: 1, meta: 1, createdAt: 1, 'u._id': 1, 'u.name': 1, 'u.photoUrl': 1 } },
+      ])
+      .exec();
+
+    return rows.map((r) => ({
+      actor: { _id: r.u._id.toString(), name: r.u.name, photoUrl: r.u.photoUrl ?? null },
+      reason: r.reason,
+      meta: r.meta ?? null,
+      createdAt: new Date(r.createdAt).toISOString(),
+    }));
+  }
+
   async getWeeklyPoints(userId: string): Promise<number> {
     const rows = await this.pointsEventModel
       .aggregate<{ total: number }>([
