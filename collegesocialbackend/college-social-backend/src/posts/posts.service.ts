@@ -171,7 +171,7 @@ export class PostsService {
       department: post.department,
     });
 
-    await this.gamificationService.awardPoints(authorId, POINTS.POST_CREATED, 'post_created');
+    await this.gamificationService.awardPoints(authorId, POINTS.POST_CREATED, 'post_created', { postId: post.id, courseCode: post.courseCode ?? null });
     const postCount = await this.postModel.countDocuments({ author: post.author }).exec();
     if (postCount === 1) await this.gamificationService.maybeAwardBadge(authorId, 'first_post');
 

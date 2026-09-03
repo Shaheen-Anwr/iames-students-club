@@ -17,6 +17,7 @@ import { assetUrl, timeAgo } from '@/lib/utils';
 import type { Post } from '@/lib/types';
 import { LecturePdfLightbox } from './LecturePdfLightbox';
 import { LectureStudyToolsModal } from './LectureStudyToolsModal';
+import { LectureNote } from './LectureNote';
 
 export function LectureCard({
   post,
@@ -147,6 +148,8 @@ export function LectureCard({
           attachmentChunkCount={post.attachmentChunkCount}
         />
       </div>
+
+      <LectureNote postId={post._id} />
 
       {canFocus && post.attachmentUrl && (
         <LecturePdfLightbox

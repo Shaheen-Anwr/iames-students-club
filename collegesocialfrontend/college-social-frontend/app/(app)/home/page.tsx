@@ -16,6 +16,7 @@ import { QuickActions } from '@/components/home/QuickActions';
 import { NextClassCard } from '@/components/home/NextClassCard';
 import { TodayGlance } from '@/components/home/TodayGlance';
 import { OnlineNow } from '@/components/home/OnlineNow';
+import { FriendActivity } from '@/components/home/FriendActivity';
 import { TodayWidget } from '@/components/home/TodayWidget';
 import { CompactLeaderboard } from '@/components/home/CompactLeaderboard';
 import { MyAssignmentsCard } from '@/components/home/MyAssignmentsCard';
@@ -82,8 +83,9 @@ export default function HomePage() {
         </div>
 
         {!isProfessor && (
-          <div className="animate-slide-up" style={{ animationDelay: '160ms' }}>
+          <div className="animate-slide-up space-y-4" style={{ animationDelay: '160ms' }}>
             <OnlineNow />
+            <FriendActivity />
           </div>
         )}
 

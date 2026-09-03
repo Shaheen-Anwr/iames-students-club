@@ -1,6 +1,6 @@
 'use client';
 
-import { useApiQuery } from '@/lib/query';
+import { useApiQuery, useRawQuery } from '@/lib/query';
 
 export interface GamificationSummary {
   points: number;
@@ -42,5 +42,22 @@ export function useWeeklyRecap(enabled = true) {
     key: ['/gamification/recap'],
     enabled,
     staleTime: 30 * 60_000,
+  });
+}
+
+export type ActivityReason = 'post_created' | 'reel_created' | 'quiz_attempted' | 'assignment_completed';
+
+export interface FriendActivityItem {
+  actor: { _id: string; name: string; photoUrl: string | null };
+  reason: ActivityReason;
+  meta: { postId?: string; quizId?: string; assignmentId?: string; reelId?: string; courseCode?: string | null } | null;
+  createdAt: string;
+}
+
+// Recent activity by the signed-in student's friends (home "نشاط الأصدقاء" card).
+export function useFriendActivity(enabled = true) {
+  return useRawQuery<FriendActivityItem[]>(['/gamification/friend-activity'], '/gamification/friend-activity', {
+    enabled,
+    staleTime: 3 * 60_000,
   });
 }

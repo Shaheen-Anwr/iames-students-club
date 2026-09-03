@@ -163,7 +163,7 @@ export class AssignmentsService {
     await assignment.save();
 
     if (!alreadyCompleted) {
-      await this.gamificationService.awardPoints(userId, POINTS.ASSIGNMENT_COMPLETED, 'assignment_completed');
+      await this.gamificationService.awardPoints(userId, POINTS.ASSIGNMENT_COMPLETED, 'assignment_completed', { assignmentId: assignment.id, courseCode: assignment.courseCode ?? null });
       const completedCount = await this.assignmentModel.countDocuments({ completedBy: uid }).exec();
       if (completedCount >= 5) await this.gamificationService.maybeAwardBadge(userId, 'assignments_5');
     }

@@ -25,6 +25,11 @@ export class Announcement {
   // Optional -- when set, this announcement also shows up on CalendarService's aggregated view.
   @Prop({ type: Date, default: null, index: true })
   eventDate: Date | null;
+
+  // One-tap acknowledgement ("👍") -- lightweight engagement so students can register they've
+  // seen an announcement without a comment thread. See AnnouncementsService.toggleLike.
+  @Prop({ type: [{ type: Types.ObjectId, ref: 'User' }], default: [] })
+  likes: Types.ObjectId[];
 }
 
 export const AnnouncementSchema = SchemaFactory.createForClass(Announcement);

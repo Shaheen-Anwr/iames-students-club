@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Megaphone, Pin, Plus, Trash2 } from 'lucide-react';
+import { Megaphone, Pin, Plus, ThumbsUp, Trash2 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -9,7 +9,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
-import { assetUrl, timeAgo } from '@/lib/utils';
+import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import type { Announcement } from '@/lib/types';
 import { CreateAnnouncementModal } from '@/components/announcements/CreateAnnouncementModal';
 
@@ -49,6 +49,30 @@ export default function AnnouncementsPage() {
 
   function handleCreated(announcement: Announcement) {
     setAnnouncements((prev) => [announcement, ...prev]);
+  }
+
+  async function toggleLike(id: string) {
+    const me = user?._id;
+    if (!me) return;
+    setAnnouncements((prev) =>
+      prev.map((a) => {
+        if (a._id !== id) return a;
+        const likes = a.likes ?? [];
+        return { ...a, likes: likes.includes(me) ? likes.filter((u) => u !== me) : [...likes, me] };
+      }),
+    );
+    try {
+      await api.post(`/announcements/${id}/like`);
+    } catch {
+      // revert on failure
+      setAnnouncements((prev) =>
+        prev.map((a) => {
+          if (a._id !== id) return a;
+          const likes = a.likes ?? [];
+          return { ...a, likes: likes.includes(me) ? likes.filter((u) => u !== me) : [...likes, me] };
+        }),
+      );
+    }
   }
 
   async function handleDelete(id: string) {
@@ -93,11 +117,24 @@ export default function AnnouncementsPage() {
                   <div className="min-w-0 flex-1">
                     <p className="text-sm font-semibold text-foreground">{a.title}</p>
                     <p className="mt-1 whitespace-pre-wrap text-sm text-muted-foreground">{a.body}</p>
-                    <div className="mt-2 flex items-center gap-1.5">
+                    <div className="mt-2 flex items-center gap-2">
                       <Avatar src={assetUrl(a.author?.photoUrl)} name={a.author?.name ?? '؟'} size="xs" />
                       <p className="text-xs text-muted-foreground">
                         {a.author?.name ?? 'مستخدم محذوف'} · {timeAgo(a.createdAt)}
                       </p>
+                      <button
+                        type="button"
+                        onClick={() => toggleLike(a._id)}
+                        className={cn(
+                          'ms-auto flex items-center gap-1 rounded-full px-2 py-1 text-xs font-medium transition-colors',
+                          (a.likes ?? []).includes(user?._id ?? '')
+                            ? 'bg-accent/10 text-accent'
+                            : 'text-muted-foreground hover:bg-surface-2',
+                        )}
+                      >
+                        <ThumbsUp className="h-3.5 w-3.5" />
+                        {(a.likes?.length ?? 0) > 0 && a.likes!.length}
+                      </button>
                     </div>
                   </div>
                   {canDelete && (
