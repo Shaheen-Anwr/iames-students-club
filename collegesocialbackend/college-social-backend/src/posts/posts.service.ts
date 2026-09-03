@@ -171,7 +171,7 @@ export class PostsService {
       department: post.department,
     });
 
-    await this.gamificationService.awardPoints(authorId, POINTS.POST_CREATED);
+    await this.gamificationService.awardPoints(authorId, POINTS.POST_CREATED, 'post_created');
     const postCount = await this.postModel.countDocuments({ author: post.author }).exec();
     if (postCount === 1) await this.gamificationService.maybeAwardBadge(authorId, 'first_post');
 
@@ -652,7 +652,7 @@ export class PostsService {
     await post.save();
 
     if (isNewReaction) {
-      await this.gamificationService.awardPoints(userId, POINTS.REACTION_GIVEN);
+      await this.gamificationService.awardPoints(userId, POINTS.REACTION_GIVEN, 'reaction_given');
       if (post.reactions.length >= 10 && post.author) {
         await this.gamificationService.maybeAwardBadge(post.author._id.toString(), 'helpful_10');
       }
@@ -779,7 +779,7 @@ export class PostsService {
       mentions,
     }).save();
     await this.postModel.findByIdAndUpdate(postId, { $inc: { commentCount: 1 } }).exec();
-    await this.gamificationService.awardPoints(authorId, POINTS.COMMENT_ADDED);
+    await this.gamificationService.awardPoints(authorId, POINTS.COMMENT_ADDED, 'comment_added');
     if (post.author && post.author._id.toString() !== authorId) {
       await this.notificationsService.create({
         recipient: post.author._id,
@@ -830,7 +830,7 @@ export class PostsService {
       mentions,
     }).save();
     await this.commentModel.findByIdAndUpdate(parentCommentId, { $inc: { replyCount: 1 } }).exec();
-    await this.gamificationService.awardPoints(authorId, POINTS.REPLY_ADDED);
+    await this.gamificationService.awardPoints(authorId, POINTS.REPLY_ADDED, 'reply_added');
     if (parent.author.toString() !== authorId) {
       await this.notificationsService.create({
         recipient: parent.author,
@@ -882,7 +882,7 @@ export class PostsService {
     await comment.save();
 
     if (isNewReaction) {
-      await this.gamificationService.awardPoints(userId, POINTS.REACTION_GIVEN);
+      await this.gamificationService.awardPoints(userId, POINTS.REACTION_GIVEN, 'reaction_given');
       if (comment.author.toString() !== userId) {
         await this.notificationsService.create({
           recipient: comment.author,

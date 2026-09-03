@@ -29,6 +29,8 @@ export interface User {
   specialization?: Specialization | null;
   points?: number;
   streakCount?: number;
+  /** Stockpiled streak freezes -- each covers one missed day. One granted per active week. */
+  streakFreezes?: number;
   badges?: string[];
   referredBy?: string | null;
   referralCount?: number;

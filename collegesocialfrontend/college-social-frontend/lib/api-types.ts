@@ -420,6 +420,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/gamification/me": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["GamificationController_me"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -4050,6 +4066,7 @@ export interface operations {
             query: {
                 limit: string;
                 scope: string;
+                period: string;
             };
             header?: never;
             path?: never;
@@ -4062,7 +4079,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>[];
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -4273,6 +4290,25 @@ export interface operations {
                 };
                 content: {
                     "application/json": Record<string, never>[];
+                };
+            };
+        };
+    };
+    GamificationController_me: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
                 };
             };
         };

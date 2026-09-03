@@ -37,16 +37,21 @@ export class UsersController {
     return this.usersService.search(q ?? '');
   }
 
-  // GET /api/users/leaderboard?scope=dept -- NOTE: must stay above @Get(':id') or it gets swallowed
-  // as an id lookup. `scope=dept` narrows the board to the caller's own شعبة.
+  // GET /api/users/leaderboard?scope=dept&period=all|week -- NOTE: must stay above @Get(':id') or
+  // it gets swallowed as an id lookup. `scope=dept` narrows the board to the caller's own شعبة;
+  // `period=week` sums only points earned since the start of this week (Saturday).
   @Get('leaderboard')
   async leaderboard(
     @CurrentUser() user: AuthenticatedUser,
     @Query('limit') limit?: string,
     @Query('scope') scope?: string,
+    @Query('period') period?: string,
   ) {
     const department = scope === 'dept' ? user.department : undefined;
-    return this.gamificationService.getLeaderboard(Number(limit) || 20, department);
+    const take = Number(limit) || 20;
+    return period === 'week'
+      ? this.gamificationService.getWeeklyLeaderboard(take, department)
+      : this.gamificationService.getLeaderboard(take, department);
   }
 
   // GET /api/users/online -- classmates (same شعبة) with a live socket right now. Above @Get(':id').

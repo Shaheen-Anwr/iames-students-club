@@ -392,6 +392,14 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "period",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -400,10 +408,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "array",
-                  "items": {
-                    "type": "object"
-                  }
+                  "type": "object"
                 }
               }
             }
@@ -716,6 +721,27 @@
         },
         "tags": [
           "Users"
+        ]
+      }
+    },
+    "/gamification/me": {
+      "get": {
+        "operationId": "GamificationController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Gamification"
         ]
       }
     },

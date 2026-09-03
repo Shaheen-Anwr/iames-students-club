@@ -490,7 +490,7 @@ export class MilitaryService {
       await this.checkInModel.create({ user: new Types.ObjectId(userId), date: today });
       // Only reached when the row was newly created -- a duplicate throws below and is swallowed,
       // so points are never awarded twice for the same day.
-      await this.gamificationService.awardPoints(userId, POINTS.DAILY_LOGIN);
+      await this.gamificationService.awardPoints(userId, POINTS.DAILY_LOGIN, 'daily_active');
     } catch (err: unknown) {
       if ((err as { code?: number }).code !== 11000) throw err;
     }

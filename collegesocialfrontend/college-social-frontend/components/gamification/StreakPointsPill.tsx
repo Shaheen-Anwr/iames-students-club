@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Flame, Sparkles } from 'lucide-react';
+import { Flame, Snowflake, Sparkles } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { cn } from '@/lib/utils';
 import type { User } from '@/lib/types';
@@ -49,6 +49,7 @@ export function StreakPointsPill({
 
   const streak = user.streakCount ?? 0;
   const points = user.points ?? 0;
+  const freezes = user.streakFreezes ?? 0;
 
   if (size === 'lg') {
     return (
@@ -64,7 +65,15 @@ export function StreakPointsPill({
           </div>
           <div>
             <p className="text-lg font-bold leading-tight text-foreground">{streak}</p>
-            <p className="text-xs text-muted-foreground">يوم متتالي</p>
+            <p className="text-xs text-muted-foreground">
+              يوم متتالي
+              {freezes > 0 && (
+                <span className="ms-1.5 inline-flex items-center gap-0.5 text-sky-500" title="تجميدات متاحة — كلٌّ يغطّي يومًا فائتًا">
+                  <Snowflake className="h-3 w-3" />
+                  {freezes}
+                </span>
+              )}
+            </p>
           </div>
         </div>
         <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-surface-2/70 px-4 py-3">
@@ -86,6 +95,15 @@ export function StreakPointsPill({
         <Flame className="h-3.5 w-3.5 fill-warning/30" />
         {streak}
       </span>
+      {freezes > 0 && (
+        <>
+          <span className="h-3 w-px bg-border" />
+          <span className="flex items-center gap-1 text-sky-500" title="تجميدات السلسلة المتاحة — كلٌّ يغطّي يومًا فائتًا">
+            <Snowflake className="h-3.5 w-3.5" />
+            {freezes}
+          </span>
+        </>
+      )}
       <span className="h-3 w-px bg-border" />
       <span className="flex items-center gap-1 text-accent" title="النقاط">
         <Sparkles className="h-3.5 w-3.5" />

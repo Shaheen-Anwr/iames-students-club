@@ -105,6 +105,11 @@ export class AuthService {
 
     const user = await this.usersService.findById(session.user.toString());
 
+    // Advance the daily-activity streak on real usage, not only explicit sign-ins -- an open PWA
+    // refreshes its access token every ~15min. Fire-and-forget + same-day no-op inside, so it
+    // never slows the refresh.
+    void this.gamificationService.recordActivity(user.id).catch(() => undefined);
+
     const newSecret = crypto.randomBytes(32).toString('hex');
     session.refreshTokenHash = this.hashSecret(newSecret);
     session.lastUsedAt = new Date();
