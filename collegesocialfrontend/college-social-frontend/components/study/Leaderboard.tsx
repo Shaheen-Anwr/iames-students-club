@@ -13,6 +13,7 @@ import { assetUrl, cn } from '@/lib/utils';
 import type { LeaderboardEntry } from '@/lib/types';
 
 type Scope = 'dept' | 'all';
+type Period = 'week' | 'all';
 
 const MEDAL_STYLES = [
   'bg-gradient-to-br from-gold to-gold/70 text-background shadow-glow', // 1st
@@ -26,10 +27,13 @@ export function Leaderboard() {
   const { user } = useAuth();
   const hasDept = !!user?.department;
   const [scope, setScope] = useState<Scope>(hasDept ? 'dept' : 'all');
+  // Default to the weekly board -- a race that resets every Saturday gives everyone a live shot,
+  // which is far more motivating than a lifetime total nobody new can dent.
+  const [period, setPeriod] = useState<Period>('week');
 
   const { data: entries = [], isPending: loading } = useApiQuery<'/users/leaderboard', LeaderboardEntry[]>(
-    `/users/leaderboard?limit=20${scope === 'dept' ? '&scope=dept' : ''}`,
-    { key: ['/users/leaderboard', scope] },
+    `/users/leaderboard?limit=20${scope === 'dept' ? '&scope=dept' : ''}${period === 'week' ? '&period=week' : ''}`,
+    { key: ['/users/leaderboard', scope, period] },
   );
 
   return (
@@ -41,17 +45,31 @@ export function Leaderboard() {
         المتصدرون
       </h1>
 
-      {hasDept && (
+      <div className="flex flex-wrap items-center gap-2">
         <Segmented
           options={[
-            { value: 'dept', label: 'شعبتي' },
-            { value: 'all', label: 'كل الكلية' },
+            { value: 'week', label: 'هذا الأسبوع' },
+            { value: 'all', label: 'كل الوقت' },
           ]}
-          value={scope}
-          onChange={setScope}
+          value={period}
+          onChange={setPeriod}
           size="sm"
-          className="mb-1"
         />
+        {hasDept && (
+          <Segmented
+            options={[
+              { value: 'dept', label: 'شعبتي' },
+              { value: 'all', label: 'كل الكلية' },
+            ]}
+            value={scope}
+            onChange={setScope}
+            size="sm"
+          />
+        )}
+      </div>
+
+      {period === 'week' && (
+        <p className="px-0.5 text-[11px] text-muted-foreground">النقاط المكتسبة منذ السبت — يبدأ سباق جديد كل أسبوع.</p>
       )}
 
       {loading ? (

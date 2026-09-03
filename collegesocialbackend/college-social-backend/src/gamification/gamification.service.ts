@@ -1,9 +1,10 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { Department } from '../common/enums/department.enum';
 import { BADGES, BadgeId, POINTS, REFERRAL_TARGET } from './badges';
+import { PointsEvent, PointsEventDocument, PointsReason } from './schemas/points-event.schema';
 
 export interface GamificationStats {
   totalPointsAwarded: number;
@@ -13,45 +14,126 @@ export interface GamificationStats {
   badgeCounts: Record<string, number>;
 }
 
+export interface MySummary {
+  points: number;
+  weeklyPoints: number;
+  streakCount: number;
+  streakFreezes: number;
+}
+
+export interface WeeklyLeaderRow {
+  _id: Types.ObjectId;
+  name: string;
+  photoUrl: string | null;
+  role: string;
+  department: Department | null;
+  streakCount: number;
+  /** Points earned this week only. Named `points` too so the existing row renderer works as-is. */
+  points: number;
+  weeklyPoints: number;
+}
+
+// Cap on stockpiled streak freezes -- one is granted per active week, but they don't pile up
+// forever (that would defeat the "keep showing up" nudge).
+const STREAK_FREEZE_CAP = 2;
+
 function isSameDay(a: Date, b: Date): boolean {
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
 
-function isYesterday(prev: Date, today: Date): boolean {
-  const yesterday = new Date(today);
-  yesterday.setDate(yesterday.getDate() - 1);
-  return isSameDay(prev, yesterday);
+/** Whole calendar days from a -> b (a=b -> 0, a=yesterday -> 1). */
+function calendarDaysBetween(a: Date, b: Date): number {
+  const da = new Date(a.getFullYear(), a.getMonth(), a.getDate()).getTime();
+  const db = new Date(b.getFullYear(), b.getMonth(), b.getDate()).getTime();
+  return Math.round((db - da) / 86_400_000);
+}
+
+// Weeks start Saturday (regional convention). Server clock is UTC on Render; a few hours' skew
+// from Damascus is immaterial for a weekly leaderboard window.
+function startOfWeek(now: Date): Date {
+  const d = new Date(now);
+  d.setHours(0, 0, 0, 0);
+  d.setDate(d.getDate() - ((d.getDay() + 1) % 7)); // getDay: 0=Sun..6=Sat
+  return d;
+}
+function weekKey(now: Date): string {
+  const s = startOfWeek(now);
+  return `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`;
 }
 
 @Injectable()
 export class GamificationService {
-  constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
+  constructor(
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
+    @InjectModel(PointsEvent.name) private pointsEventModel: Model<PointsEventDocument>,
+  ) {}
 
-  // Called on login. Consecutive-day streak, grandfathering today's repeat logins as a no-op.
+  // Called on login/register and (fire-and-forget) on every token refresh, so a streak advances
+  // with real daily use, not only explicit sign-ins. No-ops for a repeat visit the same day.
   async recordActivity(userId: string): Promise<void> {
     const user = await this.userModel.findById(userId).exec();
     if (!user) return;
 
     const now = new Date();
-    if (user.lastActiveDate && isSameDay(user.lastActiveDate, now)) {
-      return; // already recorded today
+    if (user.lastActiveDate && isSameDay(user.lastActiveDate, now)) return;
+
+    // Grant the weekly free freeze -- idempotent per week via the stored week key.
+    const wk = weekKey(now);
+    if (user.streakFreezeWeekKey !== wk) {
+      user.streakFreezes = Math.min((user.streakFreezes ?? 0) + 1, STREAK_FREEZE_CAP);
+      user.streakFreezeWeekKey = wk;
     }
 
-    user.streakCount = user.lastActiveDate && isYesterday(user.lastActiveDate, now) ? user.streakCount + 1 : 1;
+    let freezeUsed = false;
+    if (!user.lastActiveDate) {
+      user.streakCount = 1;
+    } else {
+      const gap = calendarDaysBetween(user.lastActiveDate, now);
+      if (gap === 1) {
+        user.streakCount += 1;
+      } else if (gap === 2 && (user.streakFreezes ?? 0) > 0) {
+        // Exactly one day missed and a freeze available -> spend it, keep the streak alive.
+        user.streakFreezes -= 1;
+        user.streakCount += 1;
+        freezeUsed = true;
+      } else {
+        user.streakCount = 1;
+      }
+    }
     user.lastActiveDate = now;
     await user.save();
+
+    if (freezeUsed) {
+      void this.logPointsEvent(userId, 0, 'streak_freeze_used', { streak: user.streakCount });
+    }
+    void this.awardPoints(userId, POINTS.DAILY_LOGIN, 'daily_active');
 
     if (user.streakCount >= 7) await this.maybeAwardBadge(userId, 'active_streak_7');
   }
 
-  async awardPoints(userId: string, amount: number): Promise<void> {
-    await this.userModel.findByIdAndUpdate(userId, { $inc: { points: amount } }).exec();
+  private async logPointsEvent(
+    userId: string,
+    delta: number,
+    reason: PointsReason,
+    meta?: Record<string, unknown>,
+  ): Promise<void> {
+    await this.pointsEventModel
+      .create({ user: new Types.ObjectId(userId), delta, reason, meta: meta ?? null })
+      .catch(() => undefined);
   }
 
-  // Called once per accepted invite (a new account signed up with `referrerId`'s code).
-  // Bumps the running count; the first time it reaches REFERRAL_TARGET the user earns the
-  // referral_5 badge plus a one-time points bonus. Using the post-update count with an
-  // equality check keeps the bonus one-time even if the count keeps climbing past the target.
+  // Bumps the denormalised lifetime total AND appends a ledger row. The ledger write is
+  // best-effort: a hiccup there must never break the post/comment/quiz flow that awarded the points.
+  async awardPoints(
+    userId: string,
+    amount: number,
+    reason: PointsReason = 'other',
+    meta?: Record<string, unknown>,
+  ): Promise<void> {
+    await this.userModel.findByIdAndUpdate(userId, { $inc: { points: amount } }).exec();
+    await this.logPointsEvent(userId, amount, reason, meta);
+  }
+
   async recordReferral(referrerId: string): Promise<void> {
     const user = await this.userModel
       .findByIdAndUpdate(referrerId, { $inc: { referralCount: 1 } }, { new: true })
@@ -59,7 +141,7 @@ export class GamificationService {
     if (!user) return;
 
     if (user.referralCount === REFERRAL_TARGET && !user.badges.includes('referral_5')) {
-      await this.awardPoints(referrerId, POINTS.REFERRAL_MILESTONE);
+      await this.awardPoints(referrerId, POINTS.REFERRAL_MILESTONE, 'referral_milestone');
       await this.maybeAwardBadge(referrerId, 'referral_5');
     }
   }
@@ -68,9 +150,32 @@ export class GamificationService {
     await this.userModel.findByIdAndUpdate(userId, { $addToSet: { badges: badgeId } }).exec();
   }
 
-  // `department` (when passed and non-null) narrows the board to one شعبة -- a "leaderboard I can
-  // actually top" is far more motivating than a whole-college one. A null/undefined department
-  // keeps the college-wide board (admin panel, and students without a شعبة set).
+  // --- Reads ---
+
+  async getMySummary(userId: string): Promise<MySummary> {
+    const [user, weeklyPoints] = await Promise.all([
+      this.userModel.findById(userId).select('points streakCount streakFreezes').lean().exec(),
+      this.getWeeklyPoints(userId),
+    ]);
+    return {
+      points: user?.points ?? 0,
+      weeklyPoints,
+      streakCount: user?.streakCount ?? 0,
+      streakFreezes: user?.streakFreezes ?? 0,
+    };
+  }
+
+  async getWeeklyPoints(userId: string): Promise<number> {
+    const rows = await this.pointsEventModel
+      .aggregate<{ total: number }>([
+        { $match: { user: new Types.ObjectId(userId), createdAt: { $gte: startOfWeek(new Date()) } } },
+        { $group: { _id: null, total: { $sum: '$delta' } } },
+      ])
+      .exec();
+    return rows[0]?.total ?? 0;
+  }
+
+  // All-time board -- reads the denormalised `points` total for O(1) per row.
   async getLeaderboard(limit = 20, department?: Department | null): Promise<UserDocument[]> {
     const filter = department ? { department } : {};
     return this.userModel
@@ -81,17 +186,51 @@ export class GamificationService {
       .exec();
   }
 
+  // This-week board -- sums the ledger over the current week window (so it "resets" simply by the
+  // window moving, no cron). `points` on each row IS the weekly total, so the client renders it
+  // with the same row component as the all-time board.
+  async getWeeklyLeaderboard(limit = 20, department?: Department | null): Promise<WeeklyLeaderRow[]> {
+    const since = startOfWeek(new Date());
+    const rows = await this.pointsEventModel
+      .aggregate<WeeklyLeaderRow>([
+        { $match: { createdAt: { $gte: since } } },
+        { $group: { _id: '$user', weeklyPoints: { $sum: '$delta' } } },
+        { $match: { weeklyPoints: { $gt: 0 } } },
+        { $sort: { weeklyPoints: -1 } },
+        // Over-fetch before the department filter (applied post-lookup) so it can still return
+        // `limit` rows for a شعبة.
+        { $limit: department ? limit * 5 : limit },
+        { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'u' } },
+        { $unwind: '$u' },
+        ...(department ? [{ $match: { 'u.department': department } }] : []),
+        { $limit: limit },
+        {
+          $project: {
+            _id: '$u._id',
+            name: '$u.name',
+            photoUrl: '$u.photoUrl',
+            role: '$u.role',
+            department: '$u.department',
+            streakCount: '$u.streakCount',
+            weeklyPoints: 1,
+            points: '$weeklyPoints',
+          },
+        },
+      ])
+      .exec();
+    return rows;
+  }
+
   // --- Admin-only operations (guarded at the controller level) ---
 
-  // Positive or negative -- lets an admin correct a points balance (e.g. after abuse or a bug),
-  // same $inc mechanism as awardPoints() but with an admin-chosen delta instead of a fixed reward.
-  async adminAdjustPoints(userId: string, delta: number): Promise<UserDocument> {
+  async adminAdjustPoints(userId: string, delta: number, adminId?: string): Promise<UserDocument> {
     const user = await this.userModel.findByIdAndUpdate(userId, { $inc: { points: delta } }, { new: true }).exec();
     if (!user) throw new NotFoundException('المستخدم غير موجود');
     if (user.points < 0) {
       user.points = 0;
       await user.save();
     }
+    await this.logPointsEvent(userId, delta, 'admin_adjust', adminId ? { adminId } : undefined);
     return user;
   }
 

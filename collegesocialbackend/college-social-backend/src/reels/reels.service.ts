@@ -214,7 +214,7 @@ export class ReelsService {
       specialization: author.specialization ?? null,
     }).save();
 
-    await this.gamificationService.awardPoints(userId, POINTS.REEL_CREATED).catch(() => {});
+    await this.gamificationService.awardPoints(userId, POINTS.REEL_CREATED, 'reel_created').catch(() => {});
 
     for (const recipient of mentions) {
       await this.notificationsService

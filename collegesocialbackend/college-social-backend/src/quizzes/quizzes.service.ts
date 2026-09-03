@@ -119,7 +119,7 @@ export class QuizzesService {
     quiz.attempts.push({ user: uid, answers: dto.answers, score, submittedAt: new Date() } as QuizAttempt);
     await quiz.save();
 
-    await this.gamificationService.awardPoints(userId, POINTS.QUIZ_ATTEMPTED);
+    await this.gamificationService.awardPoints(userId, POINTS.QUIZ_ATTEMPTED, 'quiz_attempted');
     const attemptCount = await this.quizModel.countDocuments({ attempts: { $elemMatch: { user: uid } } }).exec();
     if (attemptCount >= 5) await this.gamificationService.maybeAwardBadge(userId, 'quizzes_5');
 

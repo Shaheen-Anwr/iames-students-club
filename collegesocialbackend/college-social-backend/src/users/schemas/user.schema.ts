@@ -122,6 +122,16 @@ export class User {
   @Prop({ type: Date, default: null })
   lastActiveDate: Date | null;
 
+  // Streak freeze: covers exactly one missed day so a single skipped day doesn't wipe a long
+  // streak (the #1 cause of a daily user dropping to weekly). One is granted per calendar week of
+  // activity, capped at STREAK_FREEZE_CAP; `streakFreezeWeekKey` is the ISO-week key of the last
+  // grant so the weekly grant is idempotent. See GamificationService.recordActivity.
+  @Prop({ default: 0 })
+  streakFreezes: number;
+
+  @Prop({ type: String, default: null })
+  streakFreezeWeekKey: string | null;
+
   // Badge IDs from a fixed, code-defined catalog (see gamification/badges.ts) -- not
   // DB-managed content, so no separate collection/schema for badges themselves.
   @Prop({ type: [String], default: [] })
