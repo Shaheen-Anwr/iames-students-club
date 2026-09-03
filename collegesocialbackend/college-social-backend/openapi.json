@@ -766,6 +766,20 @@
         ]
       }
     },
+    "/gamification/friend-activity": {
+      "get": {
+        "operationId": "GamificationController_friendActivity",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Gamification"
+        ]
+      }
+    },
     "/notifications": {
       "get": {
         "operationId": "NotificationsController_list",
@@ -6221,6 +6235,29 @@
         ]
       }
     },
+    "/announcements/{id}/like": {
+      "post": {
+        "operationId": "AnnouncementsController_like",
+        "parameters": [
+          {
+            "name": "id",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Announcements"
+        ]
+      }
+    },
     "/announcements/{id}": {
       "delete": {
         "operationId": "AnnouncementsController_remove",
@@ -6910,6 +6947,95 @@
         },
         "tags": [
           "Courses"
+        ]
+      }
+    },
+    "/onboarding": {
+      "get": {
+        "operationId": "OnboardingController_state",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Onboarding"
+        ]
+      }
+    },
+    "/onboarding/complete": {
+      "post": {
+        "operationId": "OnboardingController_complete",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Onboarding"
+        ]
+      }
+    },
+    "/lecture-notes/{postId}": {
+      "get": {
+        "operationId": "LectureNotesController_get",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LectureNotes"
+        ]
+      },
+      "put": {
+        "operationId": "LectureNotesController_put",
+        "parameters": [
+          {
+            "name": "postId",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PutNoteDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "LectureNotes"
         ]
       }
     },
@@ -7711,6 +7837,20 @@
                 }
               }
             }
+          }
+        },
+        "tags": [
+          "Rooms"
+        ]
+      }
+    },
+    "/rooms/me": {
+      "get": {
+        "operationId": "RoomsController_me",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
           }
         },
         "tags": [
@@ -9390,6 +9530,10 @@
           "date",
           "status"
         ]
+      },
+      "PutNoteDto": {
+        "type": "object",
+        "properties": {}
       },
       "ReleaseBroadcastDto": {
         "type": "object",

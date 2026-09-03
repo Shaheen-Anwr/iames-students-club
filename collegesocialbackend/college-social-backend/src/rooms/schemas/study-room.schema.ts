@@ -67,7 +67,22 @@ export class StudyRoom {
   // Bumped on any join / leave / timer action -- used to prune abandoned rooms.
   @Prop({ type: Date, default: () => new Date(), index: true })
   lastActiveAt: Date;
+
+  // Scheduled rooms: set when a student books a session ahead of time. Until this passes the room
+  // shows as "upcoming"; after, it's an ordinary live room. null = ad-hoc room, live immediately.
+  @Prop({ type: Date, default: null, index: true })
+  scheduledFor: Date | null;
+
+  // RoomsService.sendScheduledReminders stamps this once it has pushed the host's friends about
+  // an imminent scheduled session, so the cron never double-notifies.
+  @Prop({ type: Date, default: null })
+  reminderSentAt: Date | null;
+
+  // Friends already pinged "your friend is studying here" for THIS room, so a re-join doesn't spam.
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  notifiedUserIds: Types.ObjectId[];
 }
 
 export const StudyRoomSchema = SchemaFactory.createForClass(StudyRoom);
 StudyRoomSchema.index({ department: 1, lastActiveAt: -1 });
+StudyRoomSchema.index({ scheduledFor: 1, reminderSentAt: 1 });

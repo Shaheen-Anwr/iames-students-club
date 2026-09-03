@@ -1,6 +1,6 @@
 'use client';
 
-import { useApiQuery, useRawQuery } from '@/lib/query';
+import { useApiQuery } from '@/lib/query';
 
 export interface GamificationSummary {
   points: number;
@@ -56,7 +56,8 @@ export interface FriendActivityItem {
 
 // Recent activity by the signed-in student's friends (home "نشاط الأصدقاء" card).
 export function useFriendActivity(enabled = true) {
-  return useRawQuery<FriendActivityItem[]>(['/gamification/friend-activity'], '/gamification/friend-activity', {
+  return useApiQuery<'/gamification/friend-activity', FriendActivityItem[]>('/gamification/friend-activity', {
+    key: ['/gamification/friend-activity'],
     enabled,
     staleTime: 3 * 60_000,
   });

@@ -17,6 +17,12 @@ export class RoomsController {
     return this.rooms.list(user);
   }
 
+  // Must stay above @Get(':id'). -> { roomStreak } (consecutive days joining a study room).
+  @Get('me')
+  me(@CurrentUser() user: AuthenticatedUser) {
+    return this.rooms.getMyRoomStreak(user.userId);
+  }
+
   @Get(':id')
   get(@CurrentUser() user: AuthenticatedUser, @Param('id') id: string) {
     return this.rooms.get(user, id);
@@ -24,8 +30,11 @@ export class RoomsController {
 
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post()
-  create(@CurrentUser() user: AuthenticatedUser, @Body() body: { name: string; topic?: string }) {
-    return this.rooms.create(user, body?.name, body?.topic);
+  create(
+    @CurrentUser() user: AuthenticatedUser,
+    @Body() body: { name: string; topic?: string; scheduledFor?: string | null },
+  ) {
+    return this.rooms.create(user, body?.name, body?.topic, body?.scheduledFor);
   }
 
   @Post(':id/join')
