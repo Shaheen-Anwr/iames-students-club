@@ -10,6 +10,7 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule as CronScheduleModule } from '@nestjs/schedule';
 import { join } from 'path';
 import configuration from './config/configuration';
+import { CacheModule } from './common/cache/cache.module';
 import { AuthModule } from './auth/auth.module';
 import { UsersModule } from './users/users.module';
 import { UploadModule } from './upload/upload.module';
@@ -34,6 +35,7 @@ import { AnnouncementsModule } from './announcements/announcements.module';
 import { SearchModule } from './search/search.module';
 import { AiModule } from './ai/ai.module';
 import { DashboardModule } from './dashboard/dashboard.module';
+import { CoursesModule } from './courses/courses.module';
 import { DigestModule } from './digest/digest.module';
 import { BroadcastModule } from './broadcast/broadcast.module';
 import { ConvertModule } from './convert/convert.module';
@@ -65,6 +67,9 @@ import { AppController } from './app.controller';
       errorMessage: 'محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل',
     }),
     CronScheduleModule.forRoot(),
+    // Read-through cache for hot aggregate endpoints (Redis-backed when REDIS_URL is set, else a
+    // per-process TTL map). @Global -- inject CacheService anywhere without importing.
+    CacheModule,
     // Serves /uploads/** as static files, e.g. http://localhost:3001/uploads/photos/xyz.jpg
     // ServeStaticModule.forRoot() runs at module-load time, before DI, so this reads UPLOADS_DIR
     // straight from process.env (same default as configuration.ts's uploadsDir) rather than via
@@ -97,6 +102,7 @@ import { AppController } from './app.controller';
     SearchModule,
     AiModule,
     DashboardModule,
+    CoursesModule,
     DigestModule,
     BroadcastModule,
     ConvertModule,

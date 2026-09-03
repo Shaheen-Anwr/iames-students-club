@@ -63,3 +63,6 @@ export class Assignment {
 
 export const AssignmentSchema = SchemaFactory.createForClass(Assignment);
 AssignmentSchema.index({ group: 1, dueDate: 1 });
+// Global assignments board + course hub (AssignmentsService.findAll): non-group assignments,
+// optionally by course, military ones filtered out, sorted by due date.
+AssignmentSchema.index({ courseCode: 1, isMilitary: 1, dueDate: 1 });

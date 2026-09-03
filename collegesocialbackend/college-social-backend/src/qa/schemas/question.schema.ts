@@ -44,3 +44,7 @@ export class Question {
 export const QuestionSchema = SchemaFactory.createForClass(Question);
 QuestionSchema.index({ title: 'text', body: 'text' });
 QuestionSchema.index({ group: 1, createdAt: -1 });
+// Course hub Q&A (CoursesService.getOverview) and the public/شعبة feed (QaService.listQuestions):
+// non-group questions filtered by courseCode or scope+department, newest first.
+QuestionSchema.index({ group: 1, courseCode: 1, createdAt: -1 });
+QuestionSchema.index({ group: 1, scope: 1, department: 1, createdAt: -1 });

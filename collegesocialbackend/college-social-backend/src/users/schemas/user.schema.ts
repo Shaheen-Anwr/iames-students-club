@@ -186,3 +186,11 @@ export class User {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
+
+// Leaderboards (GamificationService.getLeaderboard): top-N by points, optionally within one شعبة.
+// The compound one also serves the plain { department } prefix.
+UserSchema.index({ department: 1, points: -1 });
+UserSchema.index({ points: -1 });
+// "Classmates online now" (UsersService.onlineInDepartment): online users in the viewer's شعبة,
+// most-recently-seen first.
+UserSchema.index({ isOnline: 1, department: 1, lastSeenAt: -1 });

@@ -1,10 +1,13 @@
 import { Injectable } from '@nestjs/common';
 import { Types } from 'mongoose';
+import { CacheService } from '../common/cache/cache.service';
 import { ScheduleService } from '../schedule/schedule.service';
 import { PlannerService } from '../planner/planner.service';
 import { AssignmentsService } from '../assignments/assignments.service';
 import { GamificationService } from '../gamification/gamification.service';
 import { AnnouncementsService } from '../announcements/announcements.service';
+import { GpaService } from '../gpa/gpa.service';
+import { AttendanceService } from '../attendance/attendance.service';
 import { ScheduleEntryDocument } from '../schedule/schemas/schedule-entry.schema';
 import { AnnouncementDocument } from '../announcements/schemas/announcement.schema';
 import { UserDocument } from '../users/schemas/user.schema';
@@ -33,14 +36,23 @@ const URGENCY_RANK: Record<Urgency, number> = { overdue: 0, urgent: 1, normal: 2
 @Injectable()
 export class DashboardService {
   constructor(
+    private readonly cache: CacheService,
     private readonly scheduleService: ScheduleService,
     private readonly plannerService: PlannerService,
     private readonly assignmentsService: AssignmentsService,
     private readonly gamificationService: GamificationService,
     private readonly announcementsService: AnnouncementsService,
+    private readonly gpaService: GpaService,
+    private readonly attendanceService: AttendanceService,
   ) {}
 
-  async getDashboard(user: AuthenticatedUser): Promise<DashboardResponse> {
+  getDashboard(user: AuthenticatedUser): Promise<DashboardResponse> {
+    // 10s per-user cache: pull-to-refresh giving ≤10s-old data is fine, and it absorbs the
+    // rapid re-fetches from route churn / the home screen's own polling widgets.
+    return this.cache.wrap(`dashboard:${user.userId}`, 10, () => this.buildDashboard(user));
+  }
+
+  private async buildDashboard(user: AuthenticatedUser): Promise<DashboardResponse> {
     const [schedule, plannerTasks, upcomingAssignments, leaderboard, announcements] = await Promise.all([
       this.scheduleService.findForUser(user.userId),
       this.plannerService.findAllForOwner(user.userId),
@@ -91,5 +103,25 @@ export class DashboardService {
       .slice(0, 8);
 
     return { todaySchedule, dueToday, leaderboard, announcements };
+  }
+
+  // One call for the student progress dashboard (ProgressDashboard.tsx) -- GPA, attendance and
+  // the full assignment list in a single round trip instead of three. Shape mirrors what the
+  // individual /gpa, /attendance/summary and /assignments endpoints return, so the client
+  // component's existing types still apply.
+  getStudyDashboard(user: AuthenticatedUser) {
+    return this.cache.wrap(`dashboard-study:${user.userId}`, 30, async () => {
+      const [gpaCourses, gpaSummary, attendance, assignments] = await Promise.all([
+        this.gpaService.findAllForOwner(user.userId),
+        this.gpaService.getSummaryForOwner(user.userId),
+        this.attendanceService.getSummaryForOwner(user.userId),
+        this.assignmentsService.findAll(1, 100, undefined, false, user.userId, false),
+      ]);
+      return {
+        gpa: { courses: gpaCourses, summary: gpaSummary },
+        attendance,
+        assignments,
+      };
+    });
   }
 }

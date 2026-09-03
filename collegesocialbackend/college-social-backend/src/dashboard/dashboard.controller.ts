@@ -16,4 +16,11 @@ export class DashboardController {
   async get(@CurrentUser() user: AuthenticatedUser) {
     return this.dashboardService.getDashboard(user);
   }
+
+  // GET /api/dashboard/study -> { gpa, attendance, assignments } for the progress dashboard,
+  // one round trip instead of three.
+  @Get('study')
+  async study(@CurrentUser() user: AuthenticatedUser) {
+    return this.dashboardService.getStudyDashboard(user);
+  }
 }

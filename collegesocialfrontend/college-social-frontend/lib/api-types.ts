@@ -1028,6 +1028,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/ai/usage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AiController_usage"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/ai/conversations/{id}/messages": {
         parameters: {
             query?: never;
@@ -1940,6 +1956,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/stream/direct-upload": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post: operations["StreamController_directUpload"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/stream/{uid}/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["StreamController_status"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/admin/users": {
         parameters: {
             query?: never;
@@ -2044,6 +2092,22 @@ export interface paths {
             cookie?: never;
         };
         get: operations["AdminStatsController_getStats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/admin/stats/trends": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["AdminStatsController_getTrends"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2756,6 +2820,38 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/study": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DashboardController_study"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/courses/{code}/overview": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["CoursesController_overview"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/digest/test": {
         parameters: {
             query?: never;
@@ -3241,6 +3337,8 @@ export interface components {
             academicYear?: "year1" | "year2" | "year3" | "year4" | "year5";
             /** @enum {string} */
             specialization?: "architecture" | "civil_engineering" | "electrical_power_engineering" | "communications_engineering" | "computer_engineering" | "media_institutions_management" | "accounting_finance" | "marketing_advertising" | "radio_tv_production" | "film_production" | "advertising_production" | "multimedia_internet" | "general_engineering" | "general_business_administration" | "general_media_science";
+            aiAssistantName?: string;
+            aiPreferredName?: string;
         };
         PushKeysDto: {
             p256dh: string;
@@ -3448,6 +3546,7 @@ export interface components {
         CreateReelDto: {
             publicIds?: string[];
             videoUrl?: string;
+            streamUid?: string;
             caption?: string;
             durationSec?: number;
             chunkCount?: number;
@@ -5219,6 +5318,23 @@ export interface operations {
                 content: {
                     "application/json": Record<string, never>;
                 };
+            };
+        };
+    };
+    AiController_usage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
@@ -7045,6 +7161,44 @@ export interface operations {
             };
         };
     };
+    StreamController_directUpload: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    StreamController_status: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                uid: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
     AdminController_listUsers: {
         parameters: {
             query: {
@@ -7202,6 +7356,27 @@ export interface operations {
     AdminStatsController_getStats: {
         parameters: {
             query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    AdminStatsController_getTrends: {
+        parameters: {
+            query: {
+                range: string;
+            };
             header?: never;
             path?: never;
             cookie?: never;
@@ -8318,6 +8493,42 @@ export interface operations {
                 content: {
                     "application/json": Record<string, never>;
                 };
+            };
+        };
+    };
+    DashboardController_study: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+        };
+    };
+    CoursesController_overview: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
         };
     };
