@@ -29,7 +29,7 @@ export function ProfileHeader({
   const rawCover = assetUrl(user.coverPhotoUrl);
 
   return (
-    <div className="overflow-hidden rounded-xl2 border border-border/80 bg-surface shadow-elev-1">
+    <div className="vt-profile-header overflow-hidden rounded-xl2 border border-border/80 bg-surface shadow-elev-1">
       {isOwn && onCoverPhotoUploaded ? (
         <CoverPhotoUploader coverPhotoUrl={rawCover} onUploaded={onCoverPhotoUploaded} />
       ) : rawCover ? (
