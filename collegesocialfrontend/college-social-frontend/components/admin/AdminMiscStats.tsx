@@ -25,8 +25,8 @@ export function AdminMiscStats({ section }: { section: Section }) {
     return (
       <div className="space-y-4">
         <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-          <StatCard icon={Bot} label="محادثات المساعد" value={stats.ai.totalConversations} exact />
-          <StatCard icon={MessageSquareText} label="رسائل المساعد" value={stats.ai.totalMessages} exact />
+          <StatCard icon={Bot} label="محادثات رافد" value={stats.ai.totalConversations} exact />
+          <StatCard icon={MessageSquareText} label="رسائل رافد" value={stats.ai.totalMessages} exact />
           <StatCard icon={Files} label="مقتطفات مفهرسة" value={stats.ai.lectureIndex.totalChunks} exact />
           <StatCard icon={BookOpen} label="مصادر مفهرسة" value={stats.ai.lectureIndex.indexedSources} exact />
         </div>

@@ -5,6 +5,7 @@ import { Message, MessageSchema } from './schemas/message.schema';
 import { ChatService } from './chat.service';
 import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
+import { ChatPresenceService } from './chat-presence.service';
 import { LinkPreviewService } from './link-preview.service';
 import { AuthModule } from '../auth/auth.module';
 import { GroupsModule } from '../groups/groups.module';
@@ -23,7 +24,7 @@ import { UsersModule } from '../users/users.module';
     UsersModule, // presence (online/last-seen) tracking on connect/disconnect
   ],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway, LinkPreviewService],
+  providers: [ChatService, ChatGateway, ChatPresenceService, LinkPreviewService],
   exports: [ChatService],
 })
 export class ChatModule {}

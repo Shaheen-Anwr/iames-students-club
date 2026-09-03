@@ -13,6 +13,7 @@ import {
 } from '@nestjs/websockets';
 import { Server, Socket } from 'socket.io';
 import { ChatService } from './chat.service';
+import { ChatPresenceService } from './chat-presence.service';
 import { CreateMessageDto } from './dto/create-message.dto';
 import { EditMessageDto } from './dto/edit-message.dto';
 import { ReactMessageDto } from './dto/react-message.dto';
@@ -72,12 +73,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
   private readonly logger = new Logger(ChatGateway.name);
 
-  // Live presence, tracked in-memory (no Mongo scan per connect/disconnect). Key = userId,
-  // value = number of that user's currently-connected sockets (tabs/devices). `.size` is the
-  // distinct-online-user count the admin dashboard shows.
-  // NOTE: this is per-process. If you scale to multiple instances via the Redis adapter, move
-  // this to a Redis set (SADD/SREM/SCARD) so the count is cluster-wide.
-  private readonly onlineSocketCount = new Map<string, number>();
+  // Live socket-count presence now lives in ChatPresenceService: a per-process Map by default,
+  // or a shared Redis hash when REDIS_URL is set so the count is correct across instances behind
+  // the Socket.IO Redis adapter.
 
   // Throttle for the admin "online now" broadcast: coalesce bursts into at most one emit per
   // window, always with a trailing emit so the final value is never missed.
@@ -97,6 +95,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     private readonly groupsService: GroupsService,
     private readonly realtimeEmitter: RealtimeEmitterService,
     private readonly usersService: UsersService,
+    private readonly presence: ChatPresenceService,
   ) {}
 
   // Lets HTTP-only services (e.g. PostsService, over comments/reactions) push notifications
@@ -120,7 +119,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       client.data.collegeId = payload.collegeId;
       client.data.role = payload.role;
 
-      const isFirstSocketForUser = this.trackOnline(payload.sub);
+      const isFirstSocketForUser = await this.presence.track(payload.sub);
       this.cancelPendingOffline(payload.sub);
 
       // A recovered session (brief drop within connectionStateRecovery's window) already has its
@@ -174,11 +173,11 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     }
   }
 
-  handleDisconnect(client: AuthedSocket) {
+  async handleDisconnect(client: AuthedSocket) {
     const userId = client.data?.userId;
     if (!userId) return;
 
-    const stillOnlineElsewhere = this.untrackOnline(userId);
+    const stillOnlineElsewhere = await this.presence.untrack(userId);
     if (stillOnlineElsewhere) return; // other tabs/devices remain -- nothing to announce
 
     // Defer the "offline" write + presence broadcast. If the user reconnects within the grace
@@ -188,9 +187,9 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (existing) clearTimeout(existing);
     this.pendingOffline.set(
       userId,
-      setTimeout(() => {
+      setTimeout(async () => {
         this.pendingOffline.delete(userId);
-        if ((this.onlineSocketCount.get(userId) ?? 0) > 0) return; // came back in the meantime
+        if (await this.presence.isOnline(userId)) return; // came back in the meantime
         const lastSeenAt = new Date();
         void this.usersService.setOnline(userId, false, lastSeenAt).catch(() => undefined);
         void this.chatService
@@ -206,25 +205,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     );
   }
 
-  // --- presence bookkeeping (in-memory, no Mongo per connect/disconnect) ---
-
-  /** Records a new socket for the user; returns true if this is their first live socket. */
-  private trackOnline(userId: string): boolean {
-    const next = (this.onlineSocketCount.get(userId) ?? 0) + 1;
-    this.onlineSocketCount.set(userId, next);
-    return next === 1;
-  }
-
-  /** Drops a socket for the user; returns true if they still have another socket connected. */
-  private untrackOnline(userId: string): boolean {
-    const next = (this.onlineSocketCount.get(userId) ?? 1) - 1;
-    if (next <= 0) {
-      this.onlineSocketCount.delete(userId);
-      return false;
-    }
-    this.onlineSocketCount.set(userId, next);
-    return true;
-  }
+  // --- presence bookkeeping (socket-count lives in ChatPresenceService) ---
 
   private cancelPendingOffline(userId: string): void {
     const t = this.pendingOffline.get(userId);
@@ -235,14 +216,15 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   }
 
   // Admin dashboard "online now" tile. Coalesces connect/disconnect bursts into at most one
-  // emit per window (trailing edge), reading the count straight from memory -- no Mongo scan.
+  // emit per window (trailing edge). The count comes from ChatPresenceService (memory or Redis).
   private scheduleOnlineCountBroadcast(): void {
     if (this.onlineEmitTimer) return;
     const delay = Math.max(0, ChatGateway.ONLINE_EMIT_WINDOW_MS - (Date.now() - this.lastOnlineEmitAt));
-    this.onlineEmitTimer = setTimeout(() => {
+    this.onlineEmitTimer = setTimeout(async () => {
       this.onlineEmitTimer = null;
       this.lastOnlineEmitAt = Date.now();
-      this.realtimeEmitter.emitToAdmins('admin:presence', { online: this.onlineSocketCount.size });
+      const online = await this.presence.distinctCount();
+      this.realtimeEmitter.emitToAdmins('admin:presence', { online });
     }, delay);
   }
 

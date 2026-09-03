@@ -7,7 +7,7 @@ export type ProfileTab = 'posts' | 'about' | 'friends';
 const TABS: { id: ProfileTab; label: string }[] = [
   { id: 'posts', label: 'المنشورات' },
   { id: 'about', label: 'معلومات' },
-  { id: 'friends', label: 'الأصدقاء' },
+  { id: 'friends', label: 'الأصحاب' },
 ];
 
 export function ProfileTabs({
@@ -17,7 +17,7 @@ export function ProfileTabs({
 }: {
   active: ProfileTab;
   onChange: (tab: ProfileTab) => void;
-  // Shown inline on the "friends" tab label, e.g. "الأصدقاء · 12" -- computed by the caller from
+  // Shown inline on the "friends" tab label, e.g. "الأصحاب · 12" -- computed by the caller from
   // the already-loaded profile's `friends` array, no extra fetch just for the count.
   friendsCount?: number;
 }) {

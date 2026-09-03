@@ -9,14 +9,15 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
-import { useInfiniteApiList } from '@/lib/query';
+import { useCursorInfiniteList } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { cn, timeAgo } from '@/lib/utils';
 import type { WallComment, WallPost } from '@/lib/types';
 
 const PAGE = 20;
 
-type WallCache = InfiniteData<WallPost[], number>;
+type WallPage = { items: WallPost[]; nextCursor: string | null };
+type WallCache = InfiniteData<WallPage, string | null>;
 const MAX = 600;
 const COMMENT_MAX = 400;
 type Sort = 'new' | 'top';
@@ -50,7 +51,7 @@ export function WallFeed() {
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
-  } = useInfiniteApiList<WallPost>(`/wall?sort=${sort}`, { key: cacheKey, pageSize: PAGE });
+  } = useCursorInfiniteList<WallPost>(`/wall?sort=${sort}`, { key: cacheKey, pageSize: PAGE });
 
   const loading = isPending;
   useEffect(() => {
@@ -65,7 +66,13 @@ export function WallFeed() {
   const mapPosts = (fn: (p: WallPost) => WallPost | null) =>
     qc.setQueryData<WallCache>(cacheKey, (old) =>
       old
-        ? { ...old, pages: old.pages.map((pg) => pg.map(fn).filter((p): p is WallPost => p !== null)) }
+        ? {
+            ...old,
+            pages: old.pages.map((pg) => ({
+              ...pg,
+              items: pg.items.map(fn).filter((p): p is WallPost => p !== null),
+            })),
+          }
         : old,
     );
   const patch = (id: string, fields: Partial<WallPost>) =>
@@ -73,8 +80,8 @@ export function WallFeed() {
   const prepend = (post: WallPost) =>
     qc.setQueryData<WallCache>(cacheKey, (old) =>
       old
-        ? { ...old, pages: [[post, ...(old.pages[0] ?? [])], ...old.pages.slice(1)] }
-        : { pages: [[post]], pageParams: [1] },
+        ? { ...old, pages: old.pages.map((pg, i) => (i === 0 ? { ...pg, items: [post, ...pg.items] } : pg)) }
+        : { pages: [{ items: [post], nextCursor: null }], pageParams: [null] },
     );
 
   async function submit() {

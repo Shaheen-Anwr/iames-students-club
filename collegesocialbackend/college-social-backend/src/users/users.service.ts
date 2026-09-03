@@ -109,10 +109,10 @@ export class UsersService {
   // --- Friendship: request/accept, mirrored across both users' documents (see user.schema.ts) ---
 
   async sendFriendRequest(userId: string, targetId: string): Promise<UserDocument> {
-    if (userId === targetId) throw new BadRequestException('لا يمكنك إضافة نفسك كصديق');
+    if (userId === targetId) throw new BadRequestException('لا يمكنك إضافة نفسك كصاحب');
     const [me, target] = await Promise.all([this.userModel.findById(userId).exec(), this.userModel.findById(targetId).exec()]);
     if (!me || !target) throw new NotFoundException('المستخدم غير موجود');
-    if (me.friends.some((f) => f.toString() === targetId)) throw new BadRequestException('أنتما صديقان بالفعل');
+    if (me.friends.some((f) => f.toString() === targetId)) throw new BadRequestException('أنتما صاحبان بالفعل');
     if (await this.areBlocked(userId, targetId)) throw new ForbiddenException('لا يمكنك إضافة هذا المستخدم');
 
     // They already asked us first -- accept theirs instead of crossing two pending requests.
@@ -137,7 +137,7 @@ export class UsersService {
     ]);
     if (!me || !requester) throw new NotFoundException('المستخدم غير موجود');
     if (!me.friendRequestsReceived.some((f) => f.toString() === requesterId)) {
-      throw new BadRequestException('لا يوجد طلب صداقة من هذا المستخدم');
+      throw new BadRequestException('لا يوجد طلب صحبة من هذا المستخدم');
     }
 
     const uid = new Types.ObjectId(userId);

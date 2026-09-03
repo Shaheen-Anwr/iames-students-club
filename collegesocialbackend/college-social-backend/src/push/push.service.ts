@@ -7,9 +7,24 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { SubscribeDto } from './dto/subscribe.dto';
 import { PushPayload } from './push-payload.util';
 
+// Implemented by PushQueueService (optional, REDIS_URL-gated). When attached, the per-user /
+// per-cohort sends route through a durable BullMQ queue instead of going out inline. Defined here
+// so push.service.ts has no import back to push-queue.service.ts (avoids a module cycle).
+export interface PushEnqueuer {
+  readonly enabled: boolean;
+  enqueueUser(userId: string, payload: PushPayload): Promise<void>;
+  enqueueUsers(userIds: string[], payload: PushPayload): Promise<void>;
+}
+
 @Injectable()
 export class PushService {
   private readonly logger = new Logger(PushService.name);
+  private queue?: PushEnqueuer;
+
+  /** Called once by PushQueueService.onModuleInit when a Redis-backed queue is available. */
+  attachQueue(queue: PushEnqueuer): void {
+    this.queue = queue;
+  }
   private readonly enabled: boolean;
 
   constructor(
@@ -66,7 +81,16 @@ export class PushService {
   }
 
   // Never throws -- a push failure must never break the in-app notification path that calls it.
+  // With a queue attached, hand off and return immediately; otherwise deliver inline (as before).
   async sendToUser(userId: string, payload: PushPayload): Promise<void> {
+    if (!this.enabled) return;
+    if (this.queue?.enabled) return this.queue.enqueueUser(userId, payload);
+    return this.deliverToUser(userId, payload);
+  }
+
+  // The actual send. Public so PushQueueService's worker can call it; every other caller goes
+  // through sendToUser() above.
+  async deliverToUser(userId: string, payload: PushPayload): Promise<void> {
     if (!this.enabled) return;
 
     const user = await this.userModel.findById(userId).select('pushSubscriptions').exec();
@@ -79,6 +103,12 @@ export class PushService {
   // broadcast). Loads only users who actually have a subscription, and sends in bounded
   // batches so a large cohort doesn't open thousands of push requests at once. Never throws.
   async sendToUsers(userIds: string[], payload: PushPayload): Promise<void> {
+    if (!this.enabled || userIds.length === 0) return;
+    if (this.queue?.enabled) return this.queue.enqueueUsers(userIds, payload);
+    return this.deliverToUsers(userIds, payload);
+  }
+
+  async deliverToUsers(userIds: string[], payload: PushPayload): Promise<void> {
     if (!this.enabled || userIds.length === 0) return;
 
     const users = await this.userModel

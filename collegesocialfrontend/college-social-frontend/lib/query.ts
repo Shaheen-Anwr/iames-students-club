@@ -88,3 +88,32 @@ export function useInfiniteApiList<T>(
   const items = useMemo(() => query.data?.pages.flat() ?? [], [query.data]);
   return { ...query, items };
 }
+
+/**
+ * Keyset ("cursor") infinite list. The endpoint takes `?before=<cursor>` (empty on the first
+ * page) + `?limit=M` and returns `{ items: T[]; nextCursor: string | null }`. Same public shape
+ * as useInfiniteApiList (`items`, `fetchNextPage`, `hasNextPage`, ...), but the page boundary is
+ * an opaque server cursor rather than a page number -- O(log n) at any scroll depth. Used by the
+ * feed and the wall.
+ */
+export function useCursorInfiniteList<T>(
+  path: string,
+  opts?: { key?: unknown[]; pageSize?: number; enabled?: boolean },
+) {
+  const pageSize = opts?.pageSize ?? 10;
+  type Page = { items: T[]; nextCursor: string | null };
+  const query = useInfiniteQuery<Page, Error, { pages: Page[] }, unknown[], string | null>({
+    queryKey: opts?.key ?? [path],
+    initialPageParam: null,
+    queryFn: ({ pageParam }) => {
+      const sep = path.includes('?') ? '&' : '?';
+      const before = pageParam == null ? '' : encodeURIComponent(pageParam);
+      return api.get<Page>(`${path}${sep}before=${before}&limit=${pageSize}`);
+    },
+    getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    enabled: opts?.enabled,
+  });
+
+  const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
+  return { ...query, items };
+}

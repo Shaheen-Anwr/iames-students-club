@@ -5,7 +5,7 @@ import { AdminMiscStats } from '@/components/admin/AdminMiscStats';
 export default function AdminAiPage() {
   return (
     <>
-      <PageHeader icon={Bot} title="المساعد الذكي" description="استخدام المحادثات وفهرسة المحاضرات." />
+      <PageHeader icon={Bot} title="رافد (المساعد الذكي)" description="استخدام المحادثات وفهرسة المحاضرات." />
       <AdminMiscStats section="ai" />
     </>
   );

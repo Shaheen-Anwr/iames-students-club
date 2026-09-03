@@ -56,7 +56,7 @@ export const ADMIN_NAV: NavSection[] = [
     items: [
       { href: '/admin/learning/quizzes', label: 'الاختبارات', icon: HelpCircle },
       { href: '/admin/learning/assignments', label: 'الواجبات', icon: CalendarDays },
-      { href: '/admin/learning/ai', label: 'المساعد الذكي', icon: Bot },
+      { href: '/admin/learning/ai', label: 'رافد (المساعد الذكي)', icon: Bot },
       { href: '/admin/learning/schedule', label: 'الجدول والمخطط', icon: CalendarClock },
     ],
   },

@@ -4696,6 +4696,7 @@ export interface operations {
                 department: string;
                 academicYear: string;
                 specialization: string;
+                before: string;
             };
             header?: never;
             path?: never;
@@ -4708,7 +4709,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": Record<string, never>[];
+                    "application/json": Record<string, never>;
                 };
             };
         };
@@ -8730,6 +8731,7 @@ export interface operations {
                 page: string;
                 limit: string;
                 sort: string;
+                before: string;
             };
             header?: never;
             path?: never;
@@ -8741,9 +8743,7 @@ export interface operations {
                 headers: {
                     [name: string]: unknown;
                 };
-                content: {
-                    "application/json": Record<string, never>[];
-                };
+                content?: never;
             };
         };
     };

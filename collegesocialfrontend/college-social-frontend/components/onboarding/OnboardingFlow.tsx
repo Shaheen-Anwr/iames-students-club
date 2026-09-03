@@ -33,7 +33,7 @@ const TOUR = [
   { icon: MessagesSquare, title: 'الجدار', text: 'منشورات مجهولة داخل كليتك.' },
   { icon: CalendarHeart, title: 'الفعاليات', text: 'فعاليات ولقاءات الأندية.' },
   { icon: Store, title: 'السوق', text: 'بيع وشراء الكتب والمستلزمات بين الطلاب.' },
-  { icon: Bot, title: 'المساعد الذكي', text: 'اسأل عن أي شيء أو لخّص محاضراتك بالذكاء الاصطناعي.' },
+  { icon: Bot, title: 'رافد', text: 'مساعدك الذكي — اسأله عن أي شيء أو لخّص محاضراتك.' },
 ];
 
 function alreadyDone(userId: string): boolean {

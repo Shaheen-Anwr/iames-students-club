@@ -121,7 +121,7 @@ function AiStreamingBubble({ store, onTextChange }: { store: StreamingStore; onT
           {stub && (
             <span className="flex items-center gap-1 px-1 text-[11px] font-medium text-amber-600 dark:text-amber-400">
               <AlertTriangle className="h-3 w-3" />
-              المساعد الذكي غير مُفعّل بعد على الخادم
+              رافد غير مُفعّل بعد على الخادم
             </span>
           )}
           <div
@@ -151,7 +151,7 @@ function AiStreamingBubble({ store, onTextChange }: { store: StreamingStore; onT
         <div className="flex items-center gap-2 rounded-2xl rounded-br-md border border-border bg-surface-2/60 px-3.5 py-2.5 backdrop-blur-sm">
           <Sparkles className="h-3.5 w-3.5 shrink-0 text-accent" />
           <span className="bg-gradient-to-r from-muted-foreground via-foreground to-muted-foreground bg-[length:200%_100%] bg-clip-text text-sm text-transparent motion-safe:animate-shimmer">
-            {status || 'المساعد يفكر...'}
+            {status || 'رافد يفكر...'}
           </span>
         </div>
       )}
@@ -349,7 +349,7 @@ export function AiChatPanel({
         // of guessing at what the partial reply looked like.
         setTimeout(loadMessages, 450);
       } else {
-        showToast(err instanceof ApiError ? err.message : 'تعذّر التواصل مع المساعد الذكي', 'error');
+        showToast(err instanceof ApiError ? err.message : 'تعذّر التواصل مع رافد', 'error');
         lastFailedText.current = trimmed;
         lastFailedAttachment.current = attachment ? { url: attachment.url, type: attachment.type, mimeType: attachment.mimeType } : undefined;
         lastFailedSharedPostId.current = sharedPostId;
@@ -504,7 +504,7 @@ export function AiChatPanel({
         )}
         {exhausted && (
           <p className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-[12px] leading-relaxed text-danger">
-            بلغت الحد الأقصى اليومي ({usage!.limit} سؤالًا) للمساعد الذكي. يتجدّد رصيدك بعد منتصف الليل — عد بعد نحو{' '}
+            بلغت الحد الأقصى اليومي ({usage!.limit} سؤالًا) مع رافد. يتجدّد رصيدك بعد منتصف الليل — عد بعد نحو{' '}
             {hoursToReset} ساعة.
           </p>
         )}

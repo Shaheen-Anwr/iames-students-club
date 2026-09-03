@@ -54,7 +54,7 @@ export function FriendActionButton({ targetUser, size = 'sm', className, variant
   }
 
   function unfriend() {
-    if (!confirm(`هل تريد إلغاء صداقة ${targetUser.name}؟`)) return;
+    if (!confirm(`هل تريد إزالة ${targetUser.name} من صحابك؟`)) return;
     run(() => api.delete<User>(`/users/${targetUser._id}/friend`));
   }
 
@@ -89,7 +89,7 @@ export function FriendActionButton({ targetUser, size = 'sm', className, variant
     }
     if (isFriend) {
       return (
-        <button type="button" onClick={unfriend} disabled={busy} title="أصدقاء" className={cn(iconButtonClass, 'border border-border bg-surface text-accent')}>
+        <button type="button" onClick={unfriend} disabled={busy} title="أصحاب" className={cn(iconButtonClass, 'border border-border bg-surface text-accent')}>
           <UserCheck className="h-4 w-4" />
         </button>
       );
@@ -108,7 +108,7 @@ export function FriendActionButton({ targetUser, size = 'sm', className, variant
       );
     }
     return (
-      <button type="button" onClick={sendRequest} disabled={busy} title="إضافة صديق" className={cn(iconButtonClass, 'bg-gradient-accent text-white shadow-soft hover:shadow-glow')}>
+      <button type="button" onClick={sendRequest} disabled={busy} title="إضافة صاحب" className={cn(iconButtonClass, 'bg-gradient-accent text-white shadow-soft hover:shadow-glow')}>
         <UserPlus className="h-4 w-4" />
       </button>
     );
@@ -131,7 +131,7 @@ export function FriendActionButton({ targetUser, size = 'sm', className, variant
     return (
       <div className={cn('flex', className)}>
         <Button size={size} variant="outline" onClick={unfriend} loading={busy} className="flex-1">
-          <UserCheck className="h-4 w-4" /> أصدقاء
+          <UserCheck className="h-4 w-4" /> أصحاب
         </Button>
       </div>
     );
@@ -150,7 +150,7 @@ export function FriendActionButton({ targetUser, size = 'sm', className, variant
   return (
     <div className={cn('flex', className)}>
       <Button size={size} onClick={sendRequest} loading={busy} className="flex-1">
-        <UserPlus className="h-4 w-4" /> إضافة صديق
+        <UserPlus className="h-4 w-4" /> إضافة صاحب
       </Button>
     </div>
   );

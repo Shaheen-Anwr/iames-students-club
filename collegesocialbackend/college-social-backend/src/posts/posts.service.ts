@@ -21,6 +21,13 @@ import {
   warnAtlasFallbackOnce,
 } from '../common/search/atlas-search.util';
 import {
+  type Cursor,
+  decodeCursor,
+  keysetMatch,
+  KEYSET_SORT,
+  nextCursorFrom,
+} from '../common/pagination/cursor.util';
+import {
   DailyCount,
   daysAgoStart,
   fillDailyCounts,
@@ -185,9 +192,9 @@ export class PostsService {
   // On the main "عام" feed and the شعبة feed, the viewer's own academic year is prioritised: posts
   // tagged with their academicYear (plus untagged / college-wide posts) come first, then every
   // other year's, each tier newest-first -- see the tiering block below.
-  async feed(
-    page = 1,
-    limit = 20,
+  // Builds the Mongo filter for feed()/feedCursor() -- the scope/visibility branching is identical
+  // for both, only the pagination differs.
+  private async buildFeedFilter(
     courseCode?: string,
     authorId?: string,
     hasAttachment?: boolean,
@@ -195,7 +202,7 @@ export class PostsService {
     viewerDepartment?: Department | null,
     filters?: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization },
     viewerId?: string,
-  ): Promise<PostDocument[]> {
+  ): Promise<Record<string, unknown>> {
     const filter: Record<string, unknown> = {};
     if (courseCode) filter.courseCode = courseCode;
     if (hasAttachment) filter.attachmentType = { $ne: 'none' };
@@ -245,6 +252,40 @@ export class PostsService {
     }
     if (filters?.academicYear) filter.academicYear = filters.academicYear;
     if (filters?.specialization) filter.specialization = filters.specialization;
+    return filter;
+  }
+
+  /** True when the own-academic-year priority tier applies (see the tiering comment above). */
+  private async viewerYearForTiering(
+    authorId: string | undefined,
+    courseCode: string | undefined,
+    explicitYear: AcademicYear | undefined,
+    viewerId: string | undefined,
+  ): Promise<AcademicYear | null> {
+    if (authorId || courseCode || explicitYear || !viewerId) return null;
+    return (await this.usersService.findById(viewerId))?.academicYear ?? null;
+  }
+
+  async feed(
+    page = 1,
+    limit = 20,
+    courseCode?: string,
+    authorId?: string,
+    hasAttachment?: boolean,
+    scope?: PostScope,
+    viewerDepartment?: Department | null,
+    filters?: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization },
+    viewerId?: string,
+  ): Promise<PostDocument[]> {
+    const filter = await this.buildFeedFilter(
+      courseCode,
+      authorId,
+      hasAttachment,
+      scope,
+      viewerDepartment,
+      filters,
+      viewerId,
+    );
 
     const skip = (page - 1) * limit;
 
@@ -292,6 +333,79 @@ export class PostsService {
       .populate('author', 'name role photoUrl collegeId')
       .populate({ path: 'sharedFrom', populate: { path: 'author', select: 'name role photoUrl collegeId' } })
       .exec();
+  }
+
+  // Same as findFeedPage but keyset instead of skip: "strictly older than `cur`", `{createdAt,_id}`
+  // descending. The compound indexes end in `createdAt: -1`, so this is an index range scan at any
+  // depth -- no walking past N skipped docs.
+  private findFeedPageKeyset(
+    filter: Record<string, unknown>,
+    cur: Cursor | null,
+    limit: number,
+  ): Promise<PostDocument[]> {
+    const q = cur ? { ...filter, ...keysetMatch(cur) } : filter;
+    return this.postModel
+      .find(q)
+      .sort(KEYSET_SORT)
+      .limit(limit)
+      .populate('author', 'name role photoUrl collegeId')
+      .populate({ path: 'sharedFrom', populate: { path: 'author', select: 'name role photoUrl collegeId' } })
+      .exec();
+  }
+
+  // Cursor-paginated feed. Same filter + same two-tier academic-year ordering as feed(), but the
+  // page boundary is an opaque keyset cursor (see cursor.util) instead of page/skip. The tier tag
+  // rides in the cursor: 'a' = still inside the viewer's own-year tier, 'b' = past it into other
+  // years. Returns { items, nextCursor } -- nextCursor is null on the last page.
+  async feedCursor(
+    before: string | undefined,
+    limit = 20,
+    courseCode?: string,
+    authorId?: string,
+    hasAttachment?: boolean,
+    scope?: PostScope,
+    viewerDepartment?: Department | null,
+    filters?: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization },
+    viewerId?: string,
+  ): Promise<{ items: PostDocument[]; nextCursor: string | null }> {
+    const filter = await this.buildFeedFilter(
+      courseCode,
+      authorId,
+      hasAttachment,
+      scope,
+      viewerDepartment,
+      filters,
+      viewerId,
+    );
+    const cur = decodeCursor(before);
+    const viewerYear = await this.viewerYearForTiering(authorId, courseCode, filters?.academicYear, viewerId);
+
+    // Non-tiered: one keyset query.
+    if (!viewerYear) {
+      const items = await this.findFeedPageKeyset(filter, cur, limit);
+      return { items, nextCursor: nextCursorFrom(items, limit) };
+    }
+
+    const ownYear = { ...filter, academicYear: { $in: [viewerYear, null] } };
+    const otherYears = { ...filter, academicYear: { $nin: [viewerYear, null] } };
+
+    // Already past the own-year tier -- stay in 'other years'.
+    if (cur?.t === 'b') {
+      const items = await this.findFeedPageKeyset(otherYears, cur, limit);
+      return { items, nextCursor: nextCursorFrom(items, limit, 'b') };
+    }
+
+    // In (or starting) the own-year tier. Fill from own-year; if it runs dry mid-page, top up
+    // from the start of 'other years'.
+    const head = await this.findFeedPageKeyset(ownYear, cur?.t === 'a' ? cur : null, limit);
+    if (head.length === limit) {
+      return { items: head, nextCursor: nextCursorFrom(head, limit, 'a') };
+    }
+    const tail = await this.findFeedPageKeyset(otherYears, null, limit - head.length);
+    const items = [...head, ...tail];
+    // If the tail contributed rows, the next page continues 'other years'; otherwise everything
+    // is exhausted (head < limit and tail empty) -> last page.
+    return { items, nextCursor: tail.length > 0 ? nextCursorFrom(items, limit, 'b') : null };
   }
 
   // The PDF/video lecture library (components/lectures/): always scope='public' by design (see

@@ -16,7 +16,7 @@ export const NAV_ITEMS = [
   { href: '/convert', label: 'محوّل الملفات', icon: FileCog },
   { href: '/chat', label: 'الدردشة', icon: MessageCircle },
   { href: '/groups', label: 'المجموعات', icon: Users },
-  { href: '/friends', label: 'الأصدقاء', icon: UsersRound },
+  { href: '/friends', label: 'صحابي', icon: UsersRound },
   { href: '/profile', label: 'الملف الشخصي', icon: User },
 ];
 
