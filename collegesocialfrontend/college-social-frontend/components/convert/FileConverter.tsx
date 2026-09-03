@@ -9,15 +9,18 @@ import {
   FileCog,
   FileUp,
   Loader2,
+  MoreHorizontal,
   Trash2,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { Dropdown } from '@/components/ui/Dropdown';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { SectionHeader } from '@/components/ui/SectionHeader';
 import { Spinner } from '@/components/ui/Spinner';
+import { useQueryClient } from '@tanstack/react-query';
 import { api, ApiError, fetchConversionBlob, fetchConversionsZipBlob } from '@/lib/api';
 import { useRawQuery } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
@@ -110,14 +113,18 @@ const STATUS_TO_PHASE: Record<ConversionStatus, Phase> = {
   failed: 'error',
 };
 
+const HISTORY_KEY = ['convert', 'history'] as const;
+
 export function FileConverter() {
   const { showToast } = useToast();
+  const qc = useQueryClient();
   const caps = useRawQuery<ConvertCapabilities>(['convert', 'capabilities'], '/convert/capabilities');
-  const history = useRawQuery<ConversionRecord[]>(['convert', 'history'], '/convert/history');
+  const history = useRawQuery<ConversionRecord[]>([...HISTORY_KEY], '/convert/history');
 
   const [items, setItems] = useState<QueueItem[]>([]);
   const [dragging, setDragging] = useState(false);
   const [zipping, setZipping] = useState(false);
+  const [downloadingId, setDownloadingId] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const itemsRef = useRef<QueueItem[]>(items);
   itemsRef.current = items;
@@ -283,12 +290,28 @@ export function FileConverter() {
     }
   }, [showToast]);
 
+  // Optimistic delete: drop the row from the cached list immediately (no wait for the DELETE, no
+  // follow-up refetch), and restore it only if the request fails. Kills the perceived latency.
   async function removeHistory(id: string) {
+    const prev = qc.getQueryData<ConversionRecord[]>([...HISTORY_KEY]);
+    qc.setQueryData<ConversionRecord[]>([...HISTORY_KEY], (rows) => (rows ?? []).filter((r) => r.id !== id));
     try {
       await api.delete(`/convert/${id}`);
-      void history.refetch();
     } catch {
+      if (prev) qc.setQueryData<ConversionRecord[]>([...HISTORY_KEY], prev);
       showToast('تعذّر الحذف.', 'error');
+    }
+  }
+
+  // Download a finished conversion, showing a per-row spinner while the blob is fetched (the wait
+  // is the file transfer itself -- can't be optimistic, but the row shouldn't look frozen).
+  async function handleHistoryDownload(id: string, filename: string) {
+    if (downloadingId) return;
+    setDownloadingId(id);
+    try {
+      await downloadOne(id, filename, (m) => showToast(m, 'error'));
+    } finally {
+      setDownloadingId(null);
     }
   }
 
@@ -515,23 +538,40 @@ export function FileConverter() {
                     )}
                   </p>
                 </div>
-                <div className="flex shrink-0 items-center gap-1">
-                  {rec.status === 'done' && (
-                    <button
-                      onClick={() => downloadOne(rec.id, rec.filename, (m) => showToast(m, 'error'))}
-                      aria-label="تنزيل"
-                      className="rounded-md p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-foreground"
-                    >
-                      <Download className="h-4 w-4" />
-                    </button>
-                  )}
-                  <button
-                    onClick={() => removeHistory(rec.id)}
-                    aria-label="حذف"
-                    className="rounded-md p-1.5 text-muted-foreground hover:bg-danger/10 hover:text-danger"
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </button>
+                <div className="flex shrink-0 items-center">
+                  <Dropdown
+                    menuLabel={rec.filename}
+                    trigger={
+                      <span
+                        aria-label="خيارات"
+                        className="flex h-9 w-9 items-center justify-center rounded-lg text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground"
+                      >
+                        {downloadingId === rec.id ? (
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                        ) : (
+                          <MoreHorizontal className="h-4 w-4" />
+                        )}
+                      </span>
+                    }
+                    items={[
+                      ...(rec.status === 'done'
+                        ? [
+                            {
+                              label: 'تنزيل',
+                              icon: Download,
+                              disabled: downloadingId === rec.id,
+                              onClick: () => void handleHistoryDownload(rec.id, rec.filename),
+                            },
+                          ]
+                        : []),
+                      {
+                        label: 'حذف',
+                        icon: Trash2,
+                        destructive: true,
+                        onClick: () => void removeHistory(rec.id),
+                      },
+                    ]}
+                  />
                 </div>
               </Card>
             ))}
