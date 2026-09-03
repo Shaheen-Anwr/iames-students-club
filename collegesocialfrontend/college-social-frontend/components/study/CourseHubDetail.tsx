@@ -45,8 +45,6 @@ function courseColor(code: string) {
   return PALETTE[hash % PALETTE.length];
 }
 
-const q = (code: string) => encodeURIComponent(code);
-
 interface CourseHubData {
   lectures: Post[];
   assignments: Assignment[];
@@ -55,32 +53,11 @@ interface CourseHubData {
   slots: ScheduleEntry[];
 }
 
-// One fan-out over the existing `?courseCode=` endpoints. `Promise.allSettled` so one failing
-// leg degrades that section only. (A dedicated backend aggregator is a noted follow-up.)
-async function fetchCourseHub(courseCode: string): Promise<CourseHubData> {
-  const [lec, asg, qa, qz, sched] = await Promise.allSettled([
-    api.get<Post[]>(`/posts?courseCode=${q(courseCode)}&hasAttachment=true&page=1&limit=50`),
-    api.get<Assignment[]>(`/assignments?courseCode=${q(courseCode)}&page=1&limit=50`),
-    api.get<Question[]>(`/qa?courseCode=${q(courseCode)}&limit=50`),
-    api.get<QuizSummary[]>(`/quizzes?courseCode=${q(courseCode)}&limit=50`),
-    api.get<ScheduleEntry[]>('/schedule'),
-  ]);
-  const norm = courseCode.trim().toLowerCase();
-  return {
-    lectures: lec.status === 'fulfilled' ? lec.value : [],
-    assignments:
-      asg.status === 'fulfilled'
-        ? [...asg.value].sort((a, b) => new Date(a.dueDate).getTime() - new Date(b.dueDate).getTime())
-        : [],
-    questions: qa.status === 'fulfilled' ? qa.value : [],
-    quizzes: qz.status === 'fulfilled' ? qz.value : [],
-    slots:
-      sched.status === 'fulfilled'
-        ? sched.value
-            .filter((s) => s.courseName.trim().toLowerCase() === norm)
-            .sort((a, b) => a.dayOfWeek - b.dayOfWeek || a.startTime.localeCompare(b.startTime))
-        : [],
-  };
+// One backend aggregate (CoursesService.getOverview) -- a single round trip instead of five,
+// server-cached for a few seconds. Assignments come back sorted by due date and `slots` already
+// filtered to this course + sorted, so there's nothing to post-process here.
+function fetchCourseHub(courseCode: string): Promise<CourseHubData> {
+  return api.get<CourseHubData>(`/courses/${encodeURIComponent(courseCode)}/overview`);
 }
 
 export function CourseHubDetail({ courseCode }: { courseCode: string }) {

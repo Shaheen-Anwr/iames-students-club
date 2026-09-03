@@ -2123,6 +2123,20 @@
         ]
       }
     },
+    "/ai/usage": {
+      "get": {
+        "operationId": "AiController_usage",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Ai"
+        ]
+      }
+    },
     "/ai/conversations/{id}/messages": {
       "get": {
         "operationId": "AiController_getMessages",
@@ -4851,6 +4865,50 @@
         ]
       }
     },
+    "/stream/direct-upload": {
+      "post": {
+        "operationId": "StreamController_directUpload",
+        "parameters": [],
+        "responses": {
+          "201": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Stream"
+        ]
+      }
+    },
+    "/stream/{uid}/status": {
+      "get": {
+        "operationId": "StreamController_status",
+        "parameters": [
+          {
+            "name": "uid",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Stream"
+        ]
+      }
+    },
     "/admin/users": {
       "get": {
         "operationId": "AdminController_listUsers",
@@ -5102,6 +5160,36 @@
       "get": {
         "operationId": "AdminStatsController_getStats",
         "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "AdminStats"
+        ]
+      }
+    },
+    "/admin/stats/trends": {
+      "get": {
+        "operationId": "AdminStatsController_getTrends",
+        "parameters": [
+          {
+            "name": "range",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "description": "",
@@ -6656,6 +6744,43 @@
         ]
       }
     },
+    "/dashboard/study": {
+      "get": {
+        "operationId": "DashboardController_study",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
+    "/courses/{code}/overview": {
+      "get": {
+        "operationId": "CoursesController_overview",
+        "parameters": [
+          {
+            "name": "code",
+            "required": true,
+            "in": "path",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": ""
+          }
+        },
+        "tags": [
+          "Courses"
+        ]
+      }
+    },
     "/digest/test": {
       "post": {
         "operationId": "DigestController_test",
@@ -7808,6 +7933,14 @@
               "general_business_administration",
               "general_media_science"
             ]
+          },
+          "aiAssistantName": {
+            "type": "string",
+            "maxLength": 40
+          },
+          "aiPreferredName": {
+            "type": "string",
+            "maxLength": 40
           }
         }
       },
@@ -8651,6 +8784,10 @@
           "videoUrl": {
             "type": "string",
             "maxLength": 2048
+          },
+          "streamUid": {
+            "type": "string",
+            "maxLength": 64
           },
           "caption": {
             "type": "string",

@@ -165,3 +165,7 @@ PostSchema.index({ scope: 1, department: 1, academicYear: 1, createdAt: -1 });
 PostSchema.index({ author: 1, scope: 1, createdAt: -1 });
 PostSchema.index({ savedBy: 1, createdAt: -1 });
 PostSchema.index({ createdAt: -1 });
+// Course hub + lecture library: everything for one courseCode (CoursesService.getOverview,
+// PostsService.browseAttachments), newest first. courseCode already has a single-field index for
+// the equality match; this adds the sort so the page isn't collected-and-sorted in memory.
+PostSchema.index({ courseCode: 1, createdAt: -1 });

@@ -70,16 +70,15 @@ interface DashboardData {
   assignments: Assignment[] | null;
 }
 
+// One backend aggregate (DashboardService.getStudyDashboard) -- GPA + attendance + assignments in
+// a single round trip, server-cached ~30s. Shape mirrors the old three endpoints, and the
+// null-guards stay so a missing field degrades one card instead of the screen.
 async function fetchProgress(): Promise<DashboardData> {
-  const [g, a, asg] = await Promise.allSettled([
-    api.get<GpaResponse>('/gpa'),
-    api.get<AttendanceSummary>('/attendance/summary'),
-    api.get<Assignment[]>('/assignments?limit=100'),
-  ]);
+  const res = await api.get<Partial<DashboardData>>('/dashboard/study');
   return {
-    gpa: g.status === 'fulfilled' ? g.value : null,
-    attendance: a.status === 'fulfilled' ? a.value : null,
-    assignments: asg.status === 'fulfilled' ? asg.value : null,
+    gpa: res.gpa ?? null,
+    attendance: res.attendance ?? null,
+    assignments: res.assignments ?? null,
   };
 }
 

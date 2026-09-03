@@ -48,3 +48,5 @@ export class Event {
 
 export const EventSchema = SchemaFactory.createForClass(Event);
 EventSchema.index({ department: 1, startsAt: 1 });
+// EventReminderService's hourly cron: unsent reminders for events starting in the next few hours.
+EventSchema.index({ reminderSentAt: 1, startsAt: 1 });
