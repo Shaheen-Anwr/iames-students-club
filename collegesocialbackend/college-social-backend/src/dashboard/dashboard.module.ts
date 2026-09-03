@@ -6,6 +6,8 @@ import { GamificationModule } from '../gamification/gamification.module';
 import { AnnouncementsModule } from '../announcements/announcements.module';
 import { GpaModule } from '../gpa/gpa.module';
 import { AttendanceModule } from '../attendance/attendance.module';
+import { PostsModule } from '../posts/posts.module';
+import { NotificationsModule } from '../notifications/notifications.module';
 import { DashboardController } from './dashboard.controller';
 import { DashboardService } from './dashboard.service';
 
@@ -18,6 +20,8 @@ import { DashboardService } from './dashboard.service';
     AnnouncementsModule,
     GpaModule,
     AttendanceModule,
+    PostsModule,
+    NotificationsModule,
   ],
   controllers: [DashboardController],
   providers: [DashboardService],

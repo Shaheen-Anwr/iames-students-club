@@ -745,6 +745,27 @@
         ]
       }
     },
+    "/gamification/recap": {
+      "get": {
+        "operationId": "GamificationController_recap",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Gamification"
+        ]
+      }
+    },
     "/notifications": {
       "get": {
         "operationId": "NotificationsController_list",
@@ -793,6 +814,56 @@
         "responses": {
           "200": {
             "description": ""
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      }
+    },
+    "/notifications/preferences": {
+      "get": {
+        "operationId": "NotificationsController_getPreferences",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Notifications"
+        ]
+      },
+      "patch": {
+        "operationId": "NotificationsController_setPreferences",
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateNotificationPrefsDto"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
           }
         },
         "tags": [
@@ -6789,6 +6860,36 @@
         ]
       }
     },
+    "/dashboard/since": {
+      "get": {
+        "operationId": "DashboardController_since",
+        "parameters": [
+          {
+            "name": "since",
+            "required": true,
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "tags": [
+          "Dashboard"
+        ]
+      }
+    },
     "/courses/{code}/overview": {
       "get": {
         "operationId": "CoursesController_overview",
@@ -7970,6 +8071,52 @@
           "aiPreferredName": {
             "type": "string",
             "maxLength": 40
+          }
+        }
+      },
+      "UpdateNotificationPrefsDto": {
+        "type": "object",
+        "properties": {
+          "mutedTypes": {
+            "type": "string",
+            "enum": [
+              "chat_message",
+              "channel_message",
+              "post_comment",
+              "post_reaction",
+              "post_share",
+              "comment_reply",
+              "comment_reaction",
+              "qa_answer",
+              "mention",
+              "friend_request",
+              "friend_accept",
+              "reel_like",
+              "reel_comment",
+              "reel_comment_reply",
+              "reel_mention",
+              "wall_comment",
+              "event_reminder",
+              "system_announcement"
+            ]
+          },
+          "quietStart": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 23
+          },
+          "quietEnd": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 23
+          },
+          "digestHour": {
+            "type": "number",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 23
           }
         }
       },

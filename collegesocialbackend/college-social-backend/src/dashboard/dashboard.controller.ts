@@ -1,4 +1,4 @@
-import { Controller, Get, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -22,5 +22,12 @@ export class DashboardController {
   @Get('study')
   async study(@CurrentUser() user: AuthenticatedUser) {
     return this.dashboardService.getStudyDashboard(user);
+  }
+
+  // GET /api/dashboard/since?since=<iso> -> counts of what changed since the client's last home
+  // visit (new lectures in the student's courses, new announcements, replies to them).
+  @Get('since')
+  async since(@CurrentUser() user: AuthenticatedUser, @Query('since') since?: string) {
+    return this.dashboardService.getSinceLastSeen(user, since);
   }
 }

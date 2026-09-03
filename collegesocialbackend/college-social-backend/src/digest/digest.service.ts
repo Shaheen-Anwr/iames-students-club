@@ -12,6 +12,8 @@ import { PushPayload } from '../push/push-payload.util';
 import { ScheduleEntryDocument } from '../schedule/schemas/schedule-entry.schema';
 import { Role } from '../common/enums/role.enum';
 import { Department } from '../common/enums/department.enum';
+import { DEFAULT_DIGEST_HOUR, localHour } from '../common/utils/notification-prefs.util';
+import { GamificationService } from '../gamification/gamification.service';
 
 // "Morning digest" -- the one notification this platform sends on its own initiative (everything
 // else is reactive to another user's action). Once a day, before classes start, every student
@@ -26,10 +28,11 @@ import { Department } from '../common/enums/department.enum';
 //    no new announcement -- is skipped, never pinged with an empty summary;
 //  - push-only, no in-app notification row: a day summary is worthless once it's stale.
 //
-// DIGEST_CRON / DIGEST_TZ override the schedule, but only from the real process environment
-// (Render env vars) -- a decorator argument is evaluated before ConfigModule reads any .env
-// file, the same constraint documented on src/upload/multer.config.ts.
-const DIGEST_CRON = process.env.DIGEST_CRON || '30 6 * * *';
+// The cron now fires HOURLY; each student is actually pushed only in the hour that matches their
+// preferred digest hour (notificationPrefs.digestHour, default 7 local). DIGEST_CRON / DIGEST_TZ
+// still override, but only from the real process environment (Render env vars) -- a decorator
+// argument is evaluated before ConfigModule reads any .env file, same constraint as multer.config.ts.
+const DIGEST_CRON = process.env.DIGEST_CRON || '0 * * * *';
 const DIGEST_TZ = process.env.DIGEST_TZ || 'Asia/Damascus';
 const DUE_SOON_DAYS = 3;
 
@@ -68,7 +71,69 @@ export class DigestService {
     private readonly announcementsService: AnnouncementsService,
     private readonly pushService: PushService,
     private readonly config: ConfigService,
+    private readonly gamificationService: GamificationService,
   ) {}
+
+  // Weekly recap -- one push per active student at the start of the new week (Saturday morning),
+  // summarising the week that just ended. Hourly cron, gated to Saturday @ RECAP_HOUR local.
+  @Cron('0 * * * *', { name: 'weekly-recap', timeZone: DIGEST_TZ })
+  async sendWeeklyRecap(): Promise<DigestRunSummary> {
+    if (!this.config.get<string>('push.publicKey') || !this.config.get<string>('push.privateKey')) {
+      return { considered: 0, sent: 0, skipped: 0 };
+    }
+    const RECAP_HOUR = 10;
+    const now = new Date();
+    const tzOffset = this.config.get<number>('appTzOffsetHours') ?? 3;
+    // localDay: shift the UTC day by the offset. getUTCDay 0=Sun..6=Sat.
+    const localDay = new Date(now.getTime() + tzOffset * 3_600_000).getUTCDay();
+    if (localHour(tzOffset, now) !== RECAP_HOUR || localDay !== 6) {
+      return { considered: 0, sent: 0, skipped: 0 };
+    }
+
+    const started = Date.now();
+    const frontendUrl = this.config.get<string>('frontendUrl') ?? '';
+    const cursor = this.userModel
+      .find({
+        role: Role.STUDENT,
+        isActive: true,
+        dailyDigestOptOut: { $ne: true },
+        'pushSubscriptions.0': { $exists: true },
+      })
+      .select('_id name')
+      .batchSize(200)
+      .cursor();
+
+    let considered = 0;
+    let sent = 0;
+    let skipped = 0;
+    for await (const doc of cursor) {
+      considered += 1;
+      try {
+        const recap = await this.gamificationService.getWeeklyRecap(doc._id.toString(), 1);
+        if (recap.totalPoints <= 0) {
+          skipped += 1;
+          continue;
+        }
+        const parts = [`كسبت ${recap.totalPoints} نقطة`, `${recap.activeDays} أيام نشاط`];
+        if (recap.assignments > 0) parts.push(`${recap.assignments} واجب`);
+        if (recap.quizzes > 0) parts.push(`${recap.quizzes} اختبار`);
+        if (recap.deptRank) parts.push(`ترتيبك #${recap.deptRank} في شعبتك`);
+        await this.pushService.sendToUser(doc._id.toString(), {
+          title: `📊 ملخص أسبوعك — ${doc.name.split(' ')[0] || doc.name}`,
+          body: parts.join(' · '),
+          url: `${frontendUrl}/home`,
+          icon: `${frontendUrl}/icons/icon-192.png`,
+          tag: 'weekly-recap',
+        });
+        sent += 1;
+      } catch (err) {
+        skipped += 1;
+        this.logger.warn(`Weekly recap failed for ${doc._id}: ${err instanceof Error ? err.message : err}`);
+      }
+    }
+    this.logger.log(`Weekly recap: ${sent} sent, ${skipped} skipped of ${considered} (${Date.now() - started}ms).`);
+    return { considered, sent, skipped };
+  }
 
   @Cron(DIGEST_CRON, { name: 'daily-digest', timeZone: DIGEST_TZ })
   async sendDailyDigest(): Promise<DigestRunSummary> {
@@ -78,7 +143,10 @@ export class DigestService {
 
     const started = Date.now();
     const frontendUrl = this.config.get<string>('frontendUrl') ?? '';
-    const todayDow = new Date().getDay();
+    const now = new Date();
+    const todayDow = now.getDay();
+    const tzOffset = this.config.get<number>('appTzOffsetHours') ?? 3;
+    const currentLocalHour = localHour(tzOffset, now);
 
     // Per-run memo so a shared timetable / department isn't re-queried once per student. The
     // timetable is keyed by the full class group; new-announcement counts only by department.
@@ -92,7 +160,7 @@ export class DigestService {
         dailyDigestOptOut: { $ne: true },
         'pushSubscriptions.0': { $exists: true },
       })
-      .select('_id name department academicYear specialization streakCount lastActiveDate')
+      .select('_id name department academicYear specialization streakCount lastActiveDate notificationPrefs')
       .batchSize(200)
       .cursor();
 
@@ -102,6 +170,21 @@ export class DigestService {
 
     for await (const doc of cursor) {
       considered += 1;
+
+      // Send only in the student's preferred hour (default 7 local). The cron fires hourly, so
+      // each student still gets exactly one shot per day.
+      const targetHour = doc.notificationPrefs?.digestHour ?? DEFAULT_DIGEST_HOUR;
+      if (currentLocalHour !== targetHour) {
+        skipped += 1;
+        continue;
+      }
+      // Don't nag someone who's already opened the app today -- they've seen what's on. (A student
+      // active today is by definition not at streak risk, so nothing is lost.)
+      if (doc.lastActiveDate && isSameUtcDay(doc.lastActiveDate, now)) {
+        skipped += 1;
+        continue;
+      }
+
       const user: DigestUser = {
         id: doc._id.toString(),
         name: doc.name,

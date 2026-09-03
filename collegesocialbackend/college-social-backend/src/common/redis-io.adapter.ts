@@ -22,7 +22,16 @@ export class RedisIoAdapter extends IoAdapter {
   }
 
   async connectToRedis(url: string): Promise<void> {
-    const pubClient = createClient({ url });
+    // connectTimeout: fail fast + visibly on an unreachable host (wrong region / running locally
+    // against a Render *internal* URL) instead of hanging on the OS TCP timeout. reconnectStrategy:
+    // bounded backoff so a later blip retries without a tight loop.
+    const pubClient = createClient({
+      url,
+      socket: {
+        connectTimeout: 10_000,
+        reconnectStrategy: (retries) => Math.min(retries * 200, 3000),
+      },
+    });
     const subClient = pubClient.duplicate();
 
     // Don't let a transient Redis blip crash the process -- log and let node-redis reconnect.

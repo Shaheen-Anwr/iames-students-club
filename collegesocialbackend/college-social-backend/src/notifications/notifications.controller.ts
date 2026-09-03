@@ -1,8 +1,9 @@
-import { Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { NotificationsService } from './notifications.service';
+import { UpdateNotificationPrefsDto } from './dto/update-notification-prefs.dto';
 
 @UseGuards(JwtAuthGuard)
 @Controller('notifications')
@@ -17,6 +18,17 @@ export class NotificationsController {
   @Get('unread-count')
   async unreadCount(@CurrentUser() user: AuthenticatedUser) {
     return { count: await this.notificationsService.unreadCount(user.userId) };
+  }
+
+  // Per-user push controls (in-app bell is unaffected). Kept above :id/read so the static path wins.
+  @Get('preferences')
+  async getPreferences(@CurrentUser() user: AuthenticatedUser) {
+    return this.notificationsService.getPreferences(user.userId);
+  }
+
+  @Patch('preferences')
+  async setPreferences(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateNotificationPrefsDto) {
+    return this.notificationsService.setPreferences(user.userId, dto);
   }
 
   @Patch(':id/read')

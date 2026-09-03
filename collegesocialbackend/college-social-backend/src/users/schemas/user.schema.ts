@@ -184,6 +184,29 @@ export class User {
   @Prop({ default: false })
   dailyDigestOptOut: boolean;
 
+  // Per-user notification controls (profile > الإشعارات). Only the PUSH channel is gated -- the
+  // in-app bell always records everything (it's a pull surface). See NotificationsService +
+  // DigestService.
+  //   mutedTypes  -- NotificationType values the user turned off phone push for
+  //   quietStart/quietEnd -- local-hour window [start, end) with no push (wraps midnight, e.g. 22->7)
+  //   digestHour  -- preferred local hour (0-23) for the morning digest; null -> default 7
+  @Prop({
+    type: {
+      mutedTypes: { type: [String], default: [] },
+      quietStart: { type: Number, default: null },
+      quietEnd: { type: Number, default: null },
+      digestHour: { type: Number, default: null },
+    },
+    default: () => ({ mutedTypes: [], quietStart: null, quietEnd: null, digestHour: null }),
+    _id: false,
+  })
+  notificationPrefs: {
+    mutedTypes: string[];
+    quietStart: number | null;
+    quietEnd: number | null;
+    digestHour: number | null;
+  };
+
   // The student personalises their AI assistant. `aiAssistantName` is the name they gave it
   // (shown in the chat header; the assistant introduces itself with it). `aiPreferredName` is
   // what the assistant should call the student (defaults to the first word of `name`). Both are

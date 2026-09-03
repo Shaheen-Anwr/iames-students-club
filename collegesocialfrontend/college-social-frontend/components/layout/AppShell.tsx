@@ -10,6 +10,7 @@ import { TopNavbar } from './TopNavbar';
 import { MobileNav } from './MobileNav';
 import { AiFab } from '@/components/ai/AiFab';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import { StreakFreezeToast } from '@/components/gamification/StreakFreezeToast';
 
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
@@ -53,6 +54,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <MobileNav />
       <AiFab />
       <OnboardingFlow />
+      <StreakFreezeToast />
     </div>
   );
 }
