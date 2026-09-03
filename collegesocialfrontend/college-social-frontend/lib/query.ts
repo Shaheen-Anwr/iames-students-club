@@ -105,15 +105,22 @@ export function useCursorInfiniteList<T>(
   const query = useInfiniteQuery<Page, Error, { pages: Page[] }, unknown[], string | null>({
     queryKey: opts?.key ?? [path],
     initialPageParam: null,
-    queryFn: ({ pageParam }) => {
+    queryFn: async ({ pageParam }) => {
       const sep = path.includes('?') ? '&' : '?';
       const before = pageParam == null ? '' : encodeURIComponent(pageParam);
-      return api.get<Page>(`${path}${sep}before=${before}&limit=${pageSize}`);
+      const res = await api.get<Page | T[]>(`${path}${sep}before=${before}&limit=${pageSize}`);
+      // Tolerate an endpoint that still returns a bare array -- e.g. a backend not yet redeployed
+      // with keyset support. Degrade to a single terminal page rather than crashing the list.
+      if (Array.isArray(res)) return { items: res, nextCursor: null };
+      return { items: Array.isArray(res?.items) ? res.items : [], nextCursor: res?.nextCursor ?? null };
     },
     getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
     enabled: opts?.enabled,
   });
 
-  const items = useMemo(() => query.data?.pages.flatMap((p) => p.items) ?? [], [query.data]);
+  const items = useMemo(
+    () => (query.data?.pages ?? []).flatMap((p) => p.items ?? []).filter(Boolean) as T[],
+    [query.data],
+  );
   return { ...query, items };
 }
