@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   BellRing,
   Bot,
@@ -52,6 +52,28 @@ export function OnboardingFlow() {
   const [open, setOpen] = useState(!initiallyDone);
   const [step, setStep] = useState(0);
 
+  // No local flag on this device -- but the student may have finished onboarding elsewhere.
+  // Check the backend and don't nag if so.
+  useEffect(() => {
+    if (initiallyDone || !user) return;
+    let cancelled = false;
+    api
+      .get<{ completedAt: string | null }>('/onboarding')
+      .then((s) => {
+        if (cancelled || !s.completedAt) return;
+        try {
+          localStorage.setItem(FLAG_PREFIX + user._id, '1');
+        } catch {
+          /* ignore */
+        }
+        setOpen(false);
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [initiallyDone, user]);
+
   const [department, setDepartment] = useState<Department | ''>(user?.department ?? '');
   const [academicYear, setAcademicYear] = useState<AcademicYear | ''>(user?.academicYear ?? '');
   const [specialization, setSpecialization] = useState<Specialization | ''>(user?.specialization ?? '');
@@ -70,6 +92,8 @@ export function OnboardingFlow() {
     } catch {
       /* ignore */
     }
+    // Cross-device: stamp it server-side too (idempotent). Fire-and-forget.
+    void api.post('/onboarding/complete').catch(() => undefined);
     setOpen(false);
   }
 
