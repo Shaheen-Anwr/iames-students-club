@@ -18,6 +18,12 @@ import {
 } from '../common/utils/daily-counts.util';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+  ATLAS_SEARCH_ENABLED,
+  ATLAS_INDEX,
+  atlasTextStage,
+  warnAtlasFallbackOnce,
+} from '../common/search/atlas-search.util';
 
 const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000; // 15min -- a typed OTP is meant to be used immediately
 const PASSWORD_RESET_TTL_MS = 10 * 60 * 1000; // Shorter than email verification -- more sensitive
@@ -443,6 +449,20 @@ export class UsersService {
   }
 
   async search(query: string): Promise<UserDocument[]> {
+    if (ATLAS_SEARCH_ENABLED && query.trim()) {
+      try {
+        const docs = await this.userModel
+          .aggregate([
+            atlasTextStage(ATLAS_INDEX.users, query, ['name', 'collegeId']),
+            { $limit: 20 },
+            { $project: { passwordHash: 0 } },
+          ])
+          .exec();
+        return docs as unknown as UserDocument[];
+      } catch (err) {
+        warnAtlasFallbackOnce(err);
+      }
+    }
     return this.userModel
       .find({
         $or: [

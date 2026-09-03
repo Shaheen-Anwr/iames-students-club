@@ -15,6 +15,12 @@ import { UpdateGroupDto } from './dto/update-group.dto';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { AttachmentDto } from '../chat/dto/create-message.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import {
+  ATLAS_SEARCH_ENABLED,
+  ATLAS_INDEX,
+  atlasTextStage,
+  warnAtlasFallbackOnce,
+} from '../common/search/atlas-search.util';
 
 const DEFAULT_CHANNEL_NAME = 'عام';
 const INVITE_CODE_ATTEMPTS = 5;
@@ -120,8 +126,23 @@ export class GroupsService {
 
   // Publicly listed groups, newest first, optionally filtered by a case-insensitive name search.
   async discover(search: string | undefined, page = 1, limit = 20): Promise<StudyGroupDocument[]> {
+    const term = search?.trim();
+    if (term && ATLAS_SEARCH_ENABLED) {
+      try {
+        return (await this.groupModel
+          .aggregate([
+            atlasTextStage(ATLAS_INDEX.groups, term, ['name', 'description']),
+            { $match: { visibility: 'public' } },
+            { $skip: (page - 1) * limit },
+            { $limit: limit },
+          ])
+          .exec()) as unknown as StudyGroupDocument[];
+      } catch (err) {
+        warnAtlasFallbackOnce(err);
+      }
+    }
     const filter: Record<string, unknown> = { visibility: 'public' };
-    if (search) filter.name = { $regex: search, $options: 'i' };
+    if (term) filter.name = { $regex: term, $options: 'i' };
     return this.groupModel
       .find(filter)
       .sort({ createdAt: -1 })

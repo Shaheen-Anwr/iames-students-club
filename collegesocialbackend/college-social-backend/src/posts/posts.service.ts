@@ -15,6 +15,12 @@ import { AcademicYear, getAcademicYearsForDepartment } from '../common/enums/aca
 import { Specialization } from '../common/enums/specialization.enum';
 import { LectureIndexService } from '../ai/lecture-index.service';
 import {
+  ATLAS_SEARCH_ENABLED,
+  ATLAS_INDEX,
+  atlasTextStage,
+  warnAtlasFallbackOnce,
+} from '../common/search/atlas-search.util';
+import {
   DailyCount,
   daysAgoStart,
   fillDailyCounts,
@@ -337,6 +343,23 @@ export class PostsService {
   // Used by SearchService -- $text search over caption, scoped the same way the feed is (a post
   // from another شعبة never surfaces to a viewer whose own شعبة is set).
   async search(query: string, limit: number, viewerDepartment?: Department | null): Promise<PostDocument[]> {
+    if (ATLAS_SEARCH_ENABLED && query.trim()) {
+      try {
+        const docs = await this.postModel
+          .aggregate([
+            atlasTextStage(ATLAS_INDEX.posts, query, ['caption']),
+            { $match: { $or: this.visibilityOr(viewerDepartment) } },
+            { $limit: limit },
+          ])
+          .exec();
+        return (await this.postModel.populate(docs, [
+          { path: 'author', select: 'name role photoUrl collegeId' },
+          { path: 'sharedFrom', populate: { path: 'author', select: 'name role photoUrl collegeId' } },
+        ])) as unknown as PostDocument[];
+      } catch (err) {
+        warnAtlasFallbackOnce(err);
+      }
+    }
     return this.postModel
       .find({
         $text: { $search: query },

@@ -7,6 +7,12 @@ import { AskQuestionDto } from './dto/ask-question.dto';
 import { CreateGroupQuestionDto } from './dto/create-group-question.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Department } from '../common/enums/department.enum';
+import {
+  ATLAS_SEARCH_ENABLED,
+  ATLAS_INDEX,
+  atlasTextStage,
+  warnAtlasFallbackOnce,
+} from '../common/search/atlas-search.util';
 import { GroupsService } from '../groups/groups.service';
 
 export interface PaginatedQuestions {
@@ -73,12 +79,29 @@ export class QaService {
 
   // Used by SearchService -- $text search over title/body, scoped the same way listQuestions() is.
   async search(query: string, limit: number, viewerDepartment?: Department | null): Promise<QuestionDocument[]> {
+    const scopeOr = [
+      { scope: QuestionScope.PUBLIC },
+      { scope: QuestionScope.DEPARTMENT, department: viewerDepartment ?? null },
+    ];
+    if (ATLAS_SEARCH_ENABLED && query.trim()) {
+      try {
+        const docs = await this.questionModel
+          .aggregate([
+            atlasTextStage(ATLAS_INDEX.questions, query, ['title', 'body']),
+            { $match: { group: null, $or: scopeOr } },
+            { $limit: limit },
+          ])
+          .exec();
+        return (await this.questionModel.populate(docs, {
+          path: 'author',
+          select: 'name role photoUrl collegeId',
+        })) as unknown as QuestionDocument[];
+      } catch (err) {
+        warnAtlasFallbackOnce(err);
+      }
+    }
     return this.questionModel
-      .find({
-        $text: { $search: query },
-        group: null,
-        $or: [{ scope: QuestionScope.PUBLIC }, { scope: QuestionScope.DEPARTMENT, department: viewerDepartment ?? null }],
-      })
+      .find({ $text: { $search: query }, group: null, $or: scopeOr })
       .limit(limit)
       .populate('author', 'name role photoUrl collegeId')
       .exec();
