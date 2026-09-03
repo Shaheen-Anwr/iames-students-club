@@ -128,6 +128,14 @@ export class User {
   @Prop({ type: Date, default: null })
   lastActiveDate: Date | null;
 
+  // Study-room streak -- consecutive days the student joined at least one study room. Bumped by
+  // RoomsService.join; separate from the general activity streak above.
+  @Prop({ default: 0 })
+  roomStreak: number;
+
+  @Prop({ type: String, default: null })
+  roomStreakLastDay: string | null;
+
   // Streak freeze: covers exactly one missed day so a single skipped day doesn't wipe a long
   // streak (the #1 cause of a daily user dropping to weekly). One is granted per calendar week of
   // activity, capped at STREAK_FREEZE_CAP; `streakFreezeWeekKey` is the ISO-week key of the last

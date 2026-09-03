@@ -1154,6 +1154,8 @@ export interface StudyRoomListItem {
   mine: boolean;
   joined: boolean;
   createdAt: string;
+  /** null = live now; a future ISO date = an upcoming scheduled session. */
+  scheduledFor: string | null;
 }
 
 export interface StudyRoomDetail extends StudyRoomListItem {
