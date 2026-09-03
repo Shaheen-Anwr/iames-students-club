@@ -190,12 +190,29 @@
 }
 
 /* Client-side route transitions (next-view-transitions). The browser cross-fades the whole
-   page by default; this just tightens the timing to match the app's motion tokens. Named
-   element morphs (avatar -> profile header, etc.) layer on top of this per-element later. */
+   page by default; this just tightens the timing to match the app's motion tokens. */
 @media (prefers-reduced-motion: no-preference) {
   ::view-transition-old(root),
   ::view-transition-new(root) {
     animation-duration: 220ms;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* Named element transitions. Each name is unique on any page that renders it, so the browser
+     resizes/cross-fades that box on its own layer when you navigate into it (feed list ->
+     permalink, people list -> profile) instead of swapping the whole page under it. The name is
+     only assigned here (no-preference), so reduced-motion falls back to the killed root fade. */
+  .vt-profile-header {
+    view-transition-name: profile-header;
+  }
+  .vt-post-detail {
+    view-transition-name: post-detail;
+  }
+  ::view-transition-old(profile-header),
+  ::view-transition-new(profile-header),
+  ::view-transition-old(post-detail),
+  ::view-transition-new(post-detail) {
+    animation-duration: 300ms;
     animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
   }
 }

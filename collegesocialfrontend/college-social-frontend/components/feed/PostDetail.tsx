@@ -43,7 +43,7 @@ export function PostDetail({ postId }: { postId: string }) {
   }, [postId]);
 
   return (
-    <div className="mx-auto w-full max-w-2xl px-4 py-6">
+    <div className="vt-post-detail mx-auto w-full max-w-2xl px-4 py-6">
       <button
         onClick={() => router.push('/feed')}
         className="mb-4 flex items-center gap-1.5 text-sm font-medium text-muted-foreground hover:text-foreground"

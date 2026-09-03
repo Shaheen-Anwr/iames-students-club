@@ -5,6 +5,7 @@ import { Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-re
 import { Button } from '@/components/ui/Button';
 import { MentionTextarea } from '@/components/shared/MentionTextarea';
 import { api, ApiError } from '@/lib/api';
+import { haptic } from '@/lib/haptics';
 import { useToast } from '@/lib/toast-context';
 import { formatBytes } from '@/lib/utils';
 import type { Attachment, AttachmentType, Message } from '@/lib/types';
@@ -115,6 +116,7 @@ export function MessageInput({
     }
 
     onSend(text.trim(), attachments, replyingTo?._id);
+    haptic('tap');
     setText('');
     setFiles([]);
     onCancelReply();

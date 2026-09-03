@@ -1,13 +1,14 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Inbox } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
-import { api } from '@/lib/api';
+import { useInfiniteApiList } from '@/lib/query';
 import { assetUrl } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departments';
@@ -33,11 +34,7 @@ export function FeedList() {
   const scope: PostScope = user?.department ? requestedScope : 'public';
   const isNewUser = searchParams.get('new') === '1';
 
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [page, setPage] = useState(1);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
+  const qc = useQueryClient();
   const [courseCode, setCourseCode] = useState<string | null>(null);
   const [department, setDepartment] = useState<Department | ''>('');
   const [academicYear, setAcademicYear] = useState<AcademicYear | ''>('');
@@ -63,54 +60,49 @@ export function FeedList() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [effectiveDepartment]);
 
-  function buildQuery(pageNum: number) {
-    const qs = new URLSearchParams({ page: String(pageNum), limit: String(PAGE_SIZE), scope });
+  const baseQuery = (() => {
+    const qs = new URLSearchParams({ scope });
     if (courseCode) qs.set('courseCode', courseCode);
     if (department) qs.set('department', department);
     if (academicYear) qs.set('academicYear', academicYear);
     if (specialization) qs.set('specialization', specialization);
     return qs.toString();
-  }
+  })();
 
-  useEffect(() => {
-    setLoading(true);
-    setPage(1);
-    api
-      .get<Post[]>(`/posts?${buildQuery(1)}`)
-      .then((data) => {
-        setPosts(data);
-        setHasMore(data.length === PAGE_SIZE);
-      })
-      .finally(() => setLoading(false));
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [scope, courseCode, department, academicYear, specialization]);
+  // Every param that changes the result set is in the key, so switching tab/filter refetches
+  // (and re-reads cache instantly if that combination was seen in the last 30s).
+  const cacheKey = ['feed', scope, courseCode, department, academicYear, specialization];
+  const {
+    items: posts,
+    isPending: loading,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteApiList<Post>(`/posts?${baseQuery}`, { key: cacheKey, pageSize: PAGE_SIZE });
 
-  async function loadMore() {
-    setLoadingMore(true);
-    const nextPage = page + 1;
-    const data = await api.get<Post[]>(`/posts?${buildQuery(nextPage)}`);
-    setPosts((prev) => [...prev, ...data]);
-    setPage(nextPage);
-    setHasMore(data.length === PAGE_SIZE);
-    setLoadingMore(false);
-  }
+  type FeedCache = InfiniteData<Post[], number>;
+  const prependPost = (post: Post) =>
+    qc.setQueryData<FeedCache>(cacheKey, (old) =>
+      old
+        ? { ...old, pages: [[post, ...(old.pages[0] ?? [])], ...old.pages.slice(1)] }
+        : { pages: [[post]], pageParams: [1] },
+    );
 
   const sentinelRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (!hasMore || loading) return;
+    if (!hasNextPage || loading) return;
     const el = sentinelRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       (entries) => {
-        if (entries[0].isIntersecting && !loadingMore) loadMore();
+        if (entries[0].isIntersecting && !isFetchingNextPage) void fetchNextPage();
       },
       { rootMargin: '600px' },
     );
     observer.observe(el);
     return () => observer.disconnect();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [hasMore, loading, loadingMore, page, scope, courseCode, department, academicYear, specialization]);
+  }, [hasNextPage, loading, isFetchingNextPage, fetchNextPage]);
 
   // A freshly created/shared post only belongs at the top of the list if it actually matches
   // every filter currently applied -- mirrors what the server would return for buildQuery().
@@ -130,15 +122,17 @@ export function FeedList() {
   }
 
   function handleCreated(post: Post) {
-    if (matchesFilters(post)) setPosts((prev) => [post, ...prev]);
+    if (matchesFilters(post)) prependPost(post);
   }
 
   function handleShared(post: Post) {
-    if (matchesFilters(post)) setPosts((prev) => [post, ...prev]);
+    if (matchesFilters(post)) prependPost(post);
   }
 
   function handleDeleted(id: string) {
-    setPosts((prev) => prev.filter((p) => p._id !== id));
+    qc.setQueryData<FeedCache>(cacheKey, (old) =>
+      old ? { ...old, pages: old.pages.map((pg) => pg.filter((p) => p._id !== id)) } : old,
+    );
   }
 
   const displayPosts = useMemo(() => {
@@ -216,9 +210,9 @@ export function FeedList() {
               <PostCard post={post} onDeleted={handleDeleted} onShared={handleShared} />
             </div>
           ))}
-          {hasMore && (
+          {hasNextPage && (
             <div ref={sentinelRef} className="flex justify-center py-4">
-              {loadingMore && <Spinner className="h-5 w-5" />}
+              {isFetchingNextPage && <Spinner className="h-5 w-5" />}
             </div>
           )}
         </>

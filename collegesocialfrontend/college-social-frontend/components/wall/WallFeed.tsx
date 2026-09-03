@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { Flag, Heart, MessageCircle, MessagesSquare, Send, Trash2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -8,11 +9,14 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
+import { useInfiniteApiList } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { cn, timeAgo } from '@/lib/utils';
 import type { WallComment, WallPost } from '@/lib/types';
 
 const PAGE = 20;
+
+type WallCache = InfiniteData<WallPost[], number>;
 const MAX = 600;
 const COMMENT_MAX = 400;
 type Sort = 'new' | 'top';
@@ -35,44 +39,43 @@ function identity(hash: string) {
 
 export function WallFeed() {
   const { showToast } = useToast();
-  const [posts, setPosts] = useState<WallPost[]>([]);
+  const qc = useQueryClient();
   const [sort, setSort] = useState<Sort>('new');
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
+  const cacheKey = ['wall', sort];
+
+  const {
+    items: posts,
+    isPending,
+    isError,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useInfiniteApiList<WallPost>(`/wall?sort=${sort}`, { key: cacheKey, pageSize: PAGE });
+
+  const loading = isPending;
+  useEffect(() => {
+    if (isError) showToast('تعذّر تحميل الجدار', 'error');
+  }, [isError, showToast]);
 
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
 
-  useEffect(() => {
-    setLoading(true);
-    setPage(1);
-    api
-      .get<WallPost[]>(`/wall?page=1&limit=${PAGE}&sort=${sort}`)
-      .then((data) => {
-        setPosts(data);
-        setHasMore(data.length === PAGE);
-      })
-      .catch(() => showToast('تعذّر تحميل الجدار', 'error'))
-      .finally(() => setLoading(false));
-  }, [sort, showToast]);
-
-  async function loadMore() {
-    setLoadingMore(true);
-    try {
-      const next = page + 1;
-      const data = await api.get<WallPost[]>(`/wall?page=${next}&limit=${PAGE}&sort=${sort}`);
-      setPosts((p) => [...p, ...data]);
-      setPage(next);
-      setHasMore(data.length === PAGE);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
-
+  // All local mutations rewrite the cached infinite list in place. `mapPosts` runs over every
+  // loaded page (a post can be on page 2+); returning null from the mapper drops the post.
+  const mapPosts = (fn: (p: WallPost) => WallPost | null) =>
+    qc.setQueryData<WallCache>(cacheKey, (old) =>
+      old
+        ? { ...old, pages: old.pages.map((pg) => pg.map(fn).filter((p): p is WallPost => p !== null)) }
+        : old,
+    );
   const patch = (id: string, fields: Partial<WallPost>) =>
-    setPosts((p) => p.map((x) => (x._id === id ? { ...x, ...fields } : x)));
+    mapPosts((p) => (p._id === id ? { ...p, ...fields } : p));
+  const prepend = (post: WallPost) =>
+    qc.setQueryData<WallCache>(cacheKey, (old) =>
+      old
+        ? { ...old, pages: [[post, ...(old.pages[0] ?? [])], ...old.pages.slice(1)] }
+        : { pages: [[post]], pageParams: [1] },
+    );
 
   async function submit() {
     const text = body.trim();
@@ -80,7 +83,7 @@ export function WallFeed() {
     setPosting(true);
     try {
       const created = await api.post<WallPost>('/wall', { body: text });
-      setPosts((p) => [created, ...p]);
+      prepend(created);
       setBody('');
       showToast('نُشر على الجدار', 'success');
     } catch (err) {
@@ -104,7 +107,7 @@ export function WallFeed() {
     if (!confirm('الإبلاغ عن هذا المنشور كمخالف؟')) return;
     try {
       const res = await api.post<{ reported: true; hidden: boolean }>(`/wall/${id}/report`);
-      if (res.hidden) setPosts((p) => p.filter((x) => x._id !== id));
+      if (res.hidden) mapPosts((p) => (p._id === id ? null : p));
       showToast(res.hidden ? 'تم إخفاء المنشور بعد بلاغات كافية' : 'تم إرسال البلاغ، شكرًا', 'success');
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال البلاغ', 'error');
@@ -113,12 +116,12 @@ export function WallFeed() {
 
   async function remove(id: string) {
     if (!confirm('حذف هذا المنشور؟')) return;
-    const before = posts;
-    setPosts((p) => p.filter((x) => x._id !== id));
+    const before = qc.getQueryData<WallCache>(cacheKey);
+    mapPosts((p) => (p._id === id ? null : p));
     try {
       await api.delete(`/wall/${id}`);
     } catch (err) {
-      setPosts(before);
+      if (before) qc.setQueryData(cacheKey, before);
       showToast(err instanceof ApiError ? err.message : 'تعذّر الحذف', 'error');
     }
   }
@@ -184,9 +187,9 @@ export function WallFeed() {
             />
           ))}
 
-          {hasMore && (
+          {hasNextPage && (
             <div className="flex justify-center pt-1">
-              <Button variant="outline" size="sm" loading={loadingMore} onClick={loadMore}>
+              <Button variant="outline" size="sm" loading={isFetchingNextPage} onClick={() => fetchNextPage()}>
                 عرض المزيد
               </Button>
             </div>
