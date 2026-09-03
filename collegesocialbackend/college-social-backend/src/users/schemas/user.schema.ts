@@ -112,6 +112,12 @@ export class User {
   @Prop({ type: String, enum: Specialization, default: null })
   specialization: Specialization | null;
 
+  // First-run onboarding. `onboardingCompletedAt` is set when the student finishes (or skips) the
+  // welcome flow -- cross-device, unlike the old localStorage-only flag. The first-week checklist
+  // (see src/onboarding) derives its items from other fields, so nothing else is stored here.
+  @Prop({ type: Date, default: null })
+  onboardingCompletedAt: Date | null;
+
   // Gamification -- see src/gamification/.
   @Prop({ default: 0 })
   points: number;

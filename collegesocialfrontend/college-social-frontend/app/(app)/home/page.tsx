@@ -22,6 +22,7 @@ import { MyAssignmentsCard } from '@/components/home/MyAssignmentsCard';
 import { NotificationsPreview } from '@/components/home/NotificationsPreview';
 import { WeeklyRecapCard } from '@/components/home/WeeklyRecapCard';
 import { SinceLastSeen } from '@/components/home/SinceLastSeen';
+import { FirstWeekChecklist } from '@/components/onboarding/FirstWeekChecklist';
 import { ReferralCard } from '@/components/home/ReferralCard';
 import { HomeSkeleton } from '@/components/home/HomeSkeleton';
 import { buildNudge, classPhase } from '@/lib/today';
@@ -67,6 +68,7 @@ export default function HomePage() {
         {!isProfessor && (
           <div className="animate-slide-up space-y-3" style={{ animationDelay: '40ms' }}>
             <SinceLastSeen />
+            <FirstWeekChecklist />
             <WeeklyRecapCard />
           </div>
         )}
