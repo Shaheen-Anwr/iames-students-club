@@ -30,6 +30,29 @@ export type NotificationType =
   // `actor` is the announcement's author; `title` is the announcement headline.
   | 'system_announcement';
 
+// The single source of truth for the type list -- used by the schema enum below and by
+// NotificationsService to validate a `mutedTypes` preference patch.
+export const NOTIFICATION_TYPES: NotificationType[] = [
+  'chat_message',
+  'channel_message',
+  'post_comment',
+  'post_reaction',
+  'post_share',
+  'comment_reply',
+  'comment_reaction',
+  'qa_answer',
+  'mention',
+  'friend_request',
+  'friend_accept',
+  'reel_like',
+  'reel_comment',
+  'reel_comment_reply',
+  'reel_mention',
+  'wall_comment',
+  'event_reminder',
+  'system_announcement',
+];
+
 @Schema({ timestamps: true })
 export class Notification {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
@@ -38,29 +61,7 @@ export class Notification {
   @Prop({ type: Types.ObjectId, ref: 'User', default: null })
   actor: Types.ObjectId | null;
 
-  @Prop({
-    required: true,
-    enum: [
-      'chat_message',
-      'channel_message',
-      'post_comment',
-      'post_reaction',
-      'post_share',
-      'comment_reply',
-      'comment_reaction',
-      'qa_answer',
-      'mention',
-      'friend_request',
-      'friend_accept',
-      'reel_like',
-      'reel_comment',
-      'reel_comment_reply',
-      'reel_mention',
-      'wall_comment',
-      'event_reminder',
-      'system_announcement',
-    ],
-  })
+  @Prop({ required: true, enum: NOTIFICATION_TYPES })
   type: NotificationType;
 
   // Set for system_announcement: the announcement headline, shown under the "<author> نشر إعلانًا"

@@ -8,6 +8,9 @@ import { GamificationService } from '../gamification/gamification.service';
 import { AnnouncementsService } from '../announcements/announcements.service';
 import { GpaService } from '../gpa/gpa.service';
 import { AttendanceService } from '../attendance/attendance.service';
+import { PostsService } from '../posts/posts.service';
+import { NotificationsService } from '../notifications/notifications.service';
+import type { NotificationType } from '../notifications/schemas/notification.schema';
 import { ScheduleEntryDocument } from '../schedule/schemas/schedule-entry.schema';
 import { AnnouncementDocument } from '../announcements/schemas/announcement.schema';
 import { UserDocument } from '../users/schemas/user.schema';
@@ -31,6 +34,28 @@ export interface DashboardResponse {
   announcements: AnnouncementDocument[];
 }
 
+export interface SinceLastSeen {
+  since: string;
+  newLectures: number;
+  newAnnouncements: number;
+  repliesToYou: number;
+  /** True when there's nothing worth surfacing (all zero) or `since` was missing/too old. */
+  empty: boolean;
+}
+
+// Notification types that count as "someone responded to you" for the away-recap strip.
+const REPLY_TYPES: NotificationType[] = [
+  'post_comment',
+  'comment_reply',
+  'comment_reaction',
+  'post_reaction',
+  'mention',
+  'qa_answer',
+  'reel_comment',
+  'reel_comment_reply',
+  'reel_mention',
+];
+
 const URGENCY_RANK: Record<Urgency, number> = { overdue: 0, urgent: 1, normal: 2, completed: 3 };
 
 @Injectable()
@@ -44,7 +69,40 @@ export class DashboardService {
     private readonly announcementsService: AnnouncementsService,
     private readonly gpaService: GpaService,
     private readonly attendanceService: AttendanceService,
+    private readonly postsService: PostsService,
+    private readonly notificationsService: NotificationsService,
   ) {}
+
+  // "Since you were away" strip on /home. `since` is the client's own last-home-visit timestamp
+  // (per device, from localStorage). Anything missing, in the future, or older than 14 days is
+  // treated as "no baseline" -> empty, so a returning-after-weeks student doesn't get a wall of
+  // counts.
+  async getSinceLastSeen(user: AuthenticatedUser, sinceIso?: string): Promise<SinceLastSeen> {
+    const now = Date.now();
+    const parsed = sinceIso ? Date.parse(sinceIso) : NaN;
+    const tooOld = now - 14 * 86_400_000;
+    if (Number.isNaN(parsed) || parsed > now || parsed < tooOld) {
+      return { since: new Date().toISOString(), newLectures: 0, newAnnouncements: 0, repliesToYou: 0, empty: true };
+    }
+    const since = new Date(parsed);
+
+    const schedule = await this.scheduleService.findForUser(user.userId);
+    const courseCodes = [...new Set(schedule.map((s) => s.courseName).filter(Boolean))];
+
+    const [newLectures, newAnnouncements, repliesToYou] = await Promise.all([
+      this.postsService.countLecturesSince(courseCodes, since, user.department),
+      this.announcementsService.countSince(since, user.department),
+      this.notificationsService.countUnreadSince(user.userId, REPLY_TYPES, since),
+    ]);
+
+    return {
+      since: since.toISOString(),
+      newLectures,
+      newAnnouncements,
+      repliesToYou,
+      empty: newLectures + newAnnouncements + repliesToYou === 0,
+    };
+  }
 
   getDashboard(user: AuthenticatedUser): Promise<DashboardResponse> {
     // 10s per-user cache: pull-to-refresh giving ≤10s-old data is fine, and it absorbs the

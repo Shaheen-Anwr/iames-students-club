@@ -43,7 +43,14 @@ export class PushQueueService implements OnModuleInit, OnModuleDestroy, PushEnqu
     }
     try {
       // BullMQ requires maxRetriesPerRequest: null on its blocking connection.
-      this.connection = new IORedis(url, { maxRetriesPerRequest: null });
+      // family: 0 -- Render's private network serves AAAA (IPv6) records for `red-*` Key Value
+      // hostnames; ioredis defaults to IPv4-only lookups and would fail with ENOTFOUND otherwise.
+      // 0 = accept whichever family DNS returns. connectTimeout keeps a bad URL from hanging boot.
+      this.connection = new IORedis(url, {
+        maxRetriesPerRequest: null,
+        family: 0,
+        connectTimeout: 10_000,
+      });
       this.queue = new Queue(PushQueueService.QUEUE, { connection: this.connection });
       this.worker = new Worker(
         PushQueueService.QUEUE,

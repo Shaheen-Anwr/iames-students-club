@@ -10,6 +10,11 @@ export default () => ({
   // in-memory adapter, which is the default and works fine for one process. See
   // src/common/redis-io.adapter.ts and main.ts.
   redisUrl: process.env.REDIS_URL ?? '',
+  // Hours to add to the server's UTC clock to get the users' local hour, for features that compare
+  // against a wall-clock hour (notification quiet hours, morning-digest send time). Defaults to +3
+  // (Asia/Damascus, matching DIGEST_TZ). A per-user IANA timezone is the proper fix if the user
+  // base ever spans zones.
+  appTzOffsetHours: parseInt(process.env.APP_TZ_OFFSET_HOURS ?? '3', 10),
   // Where local (non-Cloudinary) uploads live and get served from. On Render this points at the mounted
   // persistent disk (see render.yaml) so files survive redeploys/restarts.
   uploadsDir: process.env.UPLOADS_DIR ?? join(process.cwd(), 'uploads'),

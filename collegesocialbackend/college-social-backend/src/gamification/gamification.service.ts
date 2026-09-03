@@ -19,6 +19,25 @@ export interface MySummary {
   weeklyPoints: number;
   streakCount: number;
   streakFreezes: number;
+  /** createdAt of the most recent auto-consumed freeze, if within the last 3 days -- the client
+   *  shows a one-time "we saved your streak" toast when this value is newer than what it last saw. */
+  lastFreezeUsedAt: string | null;
+}
+
+export interface WeeklyRecap {
+  /** ISO date of the recapped week's start (Saturday). */
+  weekStart: string;
+  totalPoints: number;
+  activeDays: number;
+  posts: number;
+  comments: number;
+  reactions: number;
+  quizzes: number;
+  assignments: number;
+  streakCount: number;
+  freezesUsed: number;
+  /** Rank in the شعبة weekly board for that week, or null if unranked / no dept. */
+  deptRank: number | null;
 }
 
 export interface WeeklyLeaderRow {
@@ -60,6 +79,26 @@ function weekKey(now: Date): string {
   const s = startOfWeek(now);
   return `${s.getFullYear()}-${String(s.getMonth() + 1).padStart(2, '0')}-${String(s.getDate()).padStart(2, '0')}`;
 }
+
+/** [start, end) of the week `weeksAgo` before the current one (0 = this week, 1 = last week). */
+function weekWindow(weeksAgo: number, now = new Date()): { start: Date; end: Date } {
+  const end = startOfWeek(now);
+  end.setDate(end.getDate() - 7 * (weeksAgo - 1));
+  const start = new Date(end);
+  start.setDate(start.getDate() - 7);
+  return { start, end };
+}
+
+// Ledger reason -> which recap counter it feeds.
+const RECAP_BUCKET: Record<string, keyof Pick<WeeklyRecap, 'posts' | 'comments' | 'reactions' | 'quizzes' | 'assignments'>> = {
+  post_created: 'posts',
+  reel_created: 'posts',
+  comment_added: 'comments',
+  reply_added: 'comments',
+  reaction_given: 'reactions',
+  quiz_attempted: 'quizzes',
+  assignment_completed: 'assignments',
+};
 
 @Injectable()
 export class GamificationService {
@@ -153,16 +192,82 @@ export class GamificationService {
   // --- Reads ---
 
   async getMySummary(userId: string): Promise<MySummary> {
-    const [user, weeklyPoints] = await Promise.all([
+    const threeDaysAgo = new Date(Date.now() - 3 * 86_400_000);
+    const [user, weeklyPoints, lastFreeze] = await Promise.all([
       this.userModel.findById(userId).select('points streakCount streakFreezes').lean().exec(),
       this.getWeeklyPoints(userId),
+      this.pointsEventModel
+        .findOne({ user: new Types.ObjectId(userId), reason: 'streak_freeze_used', createdAt: { $gte: threeDaysAgo } })
+        .sort({ createdAt: -1 })
+        .select('createdAt')
+        .lean()
+        .exec(),
     ]);
     return {
       points: user?.points ?? 0,
       weeklyPoints,
       streakCount: user?.streakCount ?? 0,
       streakFreezes: user?.streakFreezes ?? 0,
+      lastFreezeUsedAt: lastFreeze?.createdAt ? new Date(lastFreeze.createdAt).toISOString() : null,
     };
+  }
+
+  // A student's recap of the week `weeksAgo` back (default: last week). Drives the weekly-recap
+  // push and the home "أسبوعك" card. Everything but streakCount/deptRank comes from the ledger.
+  async getWeeklyRecap(userId: string, weeksAgo = 1): Promise<WeeklyRecap> {
+    const { start, end } = weekWindow(weeksAgo);
+    const uid = new Types.ObjectId(userId);
+
+    const [byReason, user] = await Promise.all([
+      this.pointsEventModel
+        .aggregate<{ _id: string; total: number; count: number }>([
+          { $match: { user: uid, createdAt: { $gte: start, $lt: end } } },
+          { $group: { _id: '$reason', total: { $sum: '$delta' }, count: { $sum: 1 } } },
+        ])
+        .exec(),
+      this.userModel.findById(userId).select('streakCount department').lean().exec(),
+    ]);
+
+    const recap: WeeklyRecap = {
+      weekStart: start.toISOString(),
+      totalPoints: 0,
+      activeDays: 0,
+      posts: 0,
+      comments: 0,
+      reactions: 0,
+      quizzes: 0,
+      assignments: 0,
+      streakCount: user?.streakCount ?? 0,
+      freezesUsed: 0,
+      deptRank: null,
+    };
+    for (const row of byReason) {
+      recap.totalPoints += row.total;
+      if (row._id === 'daily_active') recap.activeDays = row.count;
+      else if (row._id === 'streak_freeze_used') recap.freezesUsed = row.count;
+      const bucket = RECAP_BUCKET[row._id];
+      if (bucket) recap[bucket] += row.count;
+    }
+
+    if (user?.department && recap.totalPoints > 0) {
+      const board = await this.pointsEventModel
+        .aggregate<{ _id: Types.ObjectId }>([
+          { $match: { createdAt: { $gte: start, $lt: end } } },
+          { $group: { _id: '$user', pts: { $sum: '$delta' } } },
+          { $match: { pts: { $gt: 0 } } },
+          { $sort: { pts: -1 } },
+          { $limit: 300 },
+          { $lookup: { from: 'users', localField: '_id', foreignField: '_id', as: 'u' } },
+          { $unwind: '$u' },
+          { $match: { 'u.department': user.department } },
+          { $project: { _id: 1 } },
+        ])
+        .exec();
+      const idx = board.findIndex((r) => r._id.equals(uid));
+      recap.deptRank = idx >= 0 ? idx + 1 : null;
+    }
+
+    return recap;
   }
 
   async getWeeklyPoints(userId: string): Promise<number> {

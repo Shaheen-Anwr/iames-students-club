@@ -8,6 +8,7 @@ import { EmptyState } from '@/components/ui/EmptyState';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { useApiQuery } from '@/lib/query';
+import { useGamificationSummary } from '@/lib/gamification';
 import { useAuth } from '@/lib/auth-context';
 import { assetUrl, cn } from '@/lib/utils';
 import type { LeaderboardEntry } from '@/lib/types';
@@ -35,6 +36,8 @@ export function Leaderboard() {
     `/users/leaderboard?limit=20${scope === 'dept' ? '&scope=dept' : ''}${period === 'week' ? '&period=week' : ''}`,
     { key: ['/users/leaderboard', scope, period] },
   );
+
+  const { data: summary } = useGamificationSummary(period === 'week');
 
   return (
     <div className="space-y-2.5">
@@ -69,7 +72,14 @@ export function Leaderboard() {
       </div>
 
       {period === 'week' && (
-        <p className="px-0.5 text-[11px] text-muted-foreground">النقاط المكتسبة منذ السبت — يبدأ سباق جديد كل أسبوع.</p>
+        <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 px-0.5">
+          <p className="text-[11px] text-muted-foreground">النقاط المكتسبة منذ السبت — يبدأ سباق جديد كل أسبوع.</p>
+          {summary != null && (
+            <p className="text-[11px] font-medium text-accent">
+              كسبت {summary.weeklyPoints} نقطة هذا الأسبوع
+            </p>
+          )}
+        </div>
       )}
 
       {loading ? (

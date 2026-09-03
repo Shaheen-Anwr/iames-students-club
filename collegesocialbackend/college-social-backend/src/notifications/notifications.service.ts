@@ -2,10 +2,13 @@ import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nest
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model, Types } from 'mongoose';
-import { Notification, NotificationDocument, NotificationType } from './schemas/notification.schema';
+import { Notification, NotificationDocument, NotificationType, NOTIFICATION_TYPES } from './schemas/notification.schema';
+import { User, UserDocument } from '../users/schemas/user.schema';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { PushService } from '../push/push.service';
 import { buildPushPayload } from '../push/push-payload.util';
+import { pushSuppressed, type NotificationPrefs } from '../common/utils/notification-prefs.util';
+import { UpdateNotificationPrefsDto } from './dto/update-notification-prefs.dto';
 
 export interface NotificationStats {
   total: number;
@@ -33,6 +36,7 @@ export class NotificationsService {
 
   constructor(
     @InjectModel(Notification.name) private notificationModel: Model<NotificationDocument>,
+    @InjectModel(User.name) private userModel: Model<UserDocument>,
     private readonly realtimeEmitter: RealtimeEmitterService,
     private readonly pushService: PushService,
     private readonly config: ConfigService,
@@ -55,13 +59,51 @@ export class NotificationsService {
     const populated = await notification.populate('actor', 'name role photoUrl');
     this.realtimeEmitter.emitToUser(input.recipient.toString(), 'newNotification', populated);
 
-    // Fire-and-forget -- a push failure must never break notification creation itself.
-    const frontendUrl = this.config.get<string>('frontendUrl')!;
-    this.pushService
-      .sendToUser(input.recipient.toString(), buildPushPayload(populated, frontendUrl))
-      .catch((err) => this.logger.warn(`Push send failed: ${err?.message ?? err}`));
+    // The in-app bell row is always written above. The PHONE push, though, respects the
+    // recipient's per-type mutes + quiet hours (profile > الإشعارات). Fire-and-forget -- a push
+    // failure must never break notification creation itself.
+    void this.maybePush(input.recipient.toString(), input.type, populated);
 
     return populated;
+  }
+
+  // --- Per-user notification preferences (profile > الإشعارات) ---
+
+  async getPreferences(userId: string): Promise<NotificationPrefs> {
+    const user = await this.userModel.findById(userId).select('notificationPrefs').lean().exec();
+    const p = user?.notificationPrefs;
+    return {
+      mutedTypes: (p?.mutedTypes ?? []).filter((t): t is NotificationType => NOTIFICATION_TYPES.includes(t as NotificationType)),
+      quietStart: p?.quietStart ?? null,
+      quietEnd: p?.quietEnd ?? null,
+      digestHour: p?.digestHour ?? null,
+    };
+  }
+
+  async setPreferences(userId: string, patch: UpdateNotificationPrefsDto): Promise<NotificationPrefs> {
+    const $set: Record<string, unknown> = {};
+    if (patch.mutedTypes !== undefined) {
+      $set['notificationPrefs.mutedTypes'] = [
+        ...new Set(patch.mutedTypes.filter((t) => NOTIFICATION_TYPES.includes(t))),
+      ];
+    }
+    if ('quietStart' in patch) $set['notificationPrefs.quietStart'] = patch.quietStart ?? null;
+    if ('quietEnd' in patch) $set['notificationPrefs.quietEnd'] = patch.quietEnd ?? null;
+    if ('digestHour' in patch) $set['notificationPrefs.digestHour'] = patch.digestHour ?? null;
+    if (Object.keys($set).length) await this.userModel.updateOne({ _id: userId }, { $set }).exec();
+    return this.getPreferences(userId);
+  }
+
+  private async maybePush(recipientId: string, type: NotificationType, populated: NotificationDocument): Promise<void> {
+    try {
+      const prefs = await this.userModel.findById(recipientId).select('notificationPrefs').lean().exec();
+      const offset = this.config.get<number>('appTzOffsetHours') ?? 3;
+      if (pushSuppressed(prefs?.notificationPrefs, type, offset)) return;
+      const frontendUrl = this.config.get<string>('frontendUrl')!;
+      await this.pushService.sendToUser(recipientId, buildPushPayload(populated, frontendUrl));
+    } catch (err) {
+      this.logger.warn(`Push send failed: ${err instanceof Error ? err.message : err}`);
+    }
   }
 
   // Fans a single platform/department announcement out to one notification per recipient. Kept
@@ -99,6 +141,18 @@ export class NotificationsService {
     } catch (err) {
       this.logger.warn(`System broadcast insert partially failed: ${(err as Error)?.message ?? err}`);
     }
+  }
+
+  // "Since you were away": unread notifications of the given types created after `since`.
+  async countUnreadSince(userId: string, types: NotificationType[], since: Date): Promise<number> {
+    return this.notificationModel
+      .countDocuments({
+        recipient: new Types.ObjectId(userId),
+        type: { $in: types },
+        read: false,
+        createdAt: { $gt: since },
+      })
+      .exec();
   }
 
   async listForUser(userId: string, page = 1, limit = 20): Promise<NotificationDocument[]> {

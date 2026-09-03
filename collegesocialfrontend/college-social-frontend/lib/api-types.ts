@@ -436,6 +436,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/gamification/recap": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["GamificationController_recap"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/notifications": {
         parameters: {
             query?: never;
@@ -466,6 +482,22 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/notifications/preferences": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["NotificationsController_getPreferences"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch: operations["NotificationsController_setPreferences"];
         trace?: never;
     };
     "/notifications/{id}/read": {
@@ -2852,6 +2884,22 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/dashboard/since": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get: operations["DashboardController_since"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/courses/{code}/overview": {
         parameters: {
             query?: never;
@@ -3355,6 +3403,13 @@ export interface components {
             specialization?: "architecture" | "civil_engineering" | "electrical_power_engineering" | "communications_engineering" | "computer_engineering" | "media_institutions_management" | "accounting_finance" | "marketing_advertising" | "radio_tv_production" | "film_production" | "advertising_production" | "multimedia_internet" | "general_engineering" | "general_business_administration" | "general_media_science";
             aiAssistantName?: string;
             aiPreferredName?: string;
+        };
+        UpdateNotificationPrefsDto: {
+            /** @enum {string} */
+            mutedTypes?: "chat_message" | "channel_message" | "post_comment" | "post_reaction" | "post_share" | "comment_reply" | "comment_reaction" | "qa_answer" | "mention" | "friend_request" | "friend_accept" | "reel_like" | "reel_comment" | "reel_comment_reply" | "reel_mention" | "wall_comment" | "event_reminder" | "system_announcement";
+            quietStart?: number | null;
+            quietEnd?: number | null;
+            digestHour?: number | null;
         };
         PushKeysDto: {
             p256dh: string;
@@ -4313,6 +4368,25 @@ export interface operations {
             };
         };
     };
+    GamificationController_recap: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
     NotificationsController_list: {
         parameters: {
             query: {
@@ -4349,6 +4423,48 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    NotificationsController_getPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
+            };
+        };
+    };
+    NotificationsController_setPreferences: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UpdateNotificationPrefsDto"];
+            };
+        };
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
             };
         };
     };
@@ -8547,6 +8663,27 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+        };
+    };
+    DashboardController_since: {
+        parameters: {
+            query: {
+                since: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": Record<string, never>;
+                };
             };
         };
     };

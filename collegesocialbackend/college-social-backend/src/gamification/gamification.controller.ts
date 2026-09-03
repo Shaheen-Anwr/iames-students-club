@@ -9,10 +9,16 @@ import { GamificationService } from './gamification.service';
 export class GamificationController {
   constructor(private readonly gamification: GamificationService) {}
 
-  // GET /api/gamification/me -> { points, weeklyPoints, streakCount, streakFreezes }
+  // GET /api/gamification/me -> { points, weeklyPoints, streakCount, streakFreezes, lastFreezeUsedAt }
   // The streak pill / leaderboard header read this instead of parsing the whole /users/me doc.
   @Get('me')
   async me(@CurrentUser() user: AuthenticatedUser) {
     return this.gamification.getMySummary(user.userId);
+  }
+
+  // GET /api/gamification/recap -> last week's activity summary (home "أسبوعك" card).
+  @Get('recap')
+  async recap(@CurrentUser() user: AuthenticatedUser) {
+    return this.gamification.getWeeklyRecap(user.userId, 1);
   }
 }

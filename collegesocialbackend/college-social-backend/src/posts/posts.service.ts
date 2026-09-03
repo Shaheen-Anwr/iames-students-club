@@ -408,6 +408,20 @@ export class PostsService {
     return { items, nextCursor: tail.length > 0 ? nextCursorFrom(items, limit, 'b') : null };
   }
 
+  // "Since you were away": how many new lecture/video/file uploads landed in the given courses
+  // after `since`, scoped to what this viewer can see (same public + own-شعبة rule as the feed).
+  async countLecturesSince(courseCodes: string[], since: Date, viewerDepartment?: Department | null): Promise<number> {
+    if (!courseCodes.length) return 0;
+    const filter: Record<string, unknown> = {
+      courseCode: { $in: courseCodes },
+      attachmentType: { $ne: PostAttachmentType.NONE },
+      scope: PostScope.PUBLIC,
+      createdAt: { $gt: since },
+    };
+    if (viewerDepartment) filter.department = { $in: [viewerDepartment, null] };
+    return this.postModel.countDocuments(filter).exec();
+  }
+
   // The PDF/video lecture library (components/lectures/): always scope='public' by design (see
   // Post.department's comment). academicYear/specialization/courseCode are pure filter tags here,
   // but department is scoped the same way feed()/search() are: a viewer WITH a شعبة only browses

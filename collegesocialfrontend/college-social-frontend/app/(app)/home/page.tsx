@@ -20,6 +20,8 @@ import { TodayWidget } from '@/components/home/TodayWidget';
 import { CompactLeaderboard } from '@/components/home/CompactLeaderboard';
 import { MyAssignmentsCard } from '@/components/home/MyAssignmentsCard';
 import { NotificationsPreview } from '@/components/home/NotificationsPreview';
+import { WeeklyRecapCard } from '@/components/home/WeeklyRecapCard';
+import { SinceLastSeen } from '@/components/home/SinceLastSeen';
 import { ReferralCard } from '@/components/home/ReferralCard';
 import { HomeSkeleton } from '@/components/home/HomeSkeleton';
 import { buildNudge, classPhase } from '@/lib/today';
@@ -61,6 +63,13 @@ export default function HomePage() {
         <div className="animate-slide-up" style={{ animationDelay: '0ms' }}>
           <GreetingHeader user={user} nudge={nudge} />
         </div>
+
+        {!isProfessor && (
+          <div className="animate-slide-up space-y-3" style={{ animationDelay: '40ms' }}>
+            <SinceLastSeen />
+            <WeeklyRecapCard />
+          </div>
+        )}
 
         <div className="animate-slide-up" style={{ animationDelay: '60ms' }}>
           <NextClassCard schedule={data.todaySchedule} />

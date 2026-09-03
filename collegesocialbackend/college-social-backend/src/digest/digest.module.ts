@@ -5,6 +5,7 @@ import { ScheduleModule } from '../schedule/schedule.module';
 import { AssignmentsModule } from '../assignments/assignments.module';
 import { AnnouncementsModule } from '../announcements/announcements.module';
 import { PushModule } from '../push/push.module';
+import { GamificationModule } from '../gamification/gamification.module';
 import { DigestService } from './digest.service';
 import { DigestController } from './digest.controller';
 
@@ -17,6 +18,7 @@ import { DigestController } from './digest.controller';
     AssignmentsModule,
     AnnouncementsModule,
     PushModule,
+    GamificationModule,
   ],
   controllers: [DigestController],
   providers: [DigestService],
