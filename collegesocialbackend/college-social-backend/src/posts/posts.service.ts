@@ -39,13 +39,11 @@ import { UsersService } from '../users/users.service';
 import { extractMentionIds, parseHashtags } from '../common/utils/tag-parser.util';
 import { Role } from '../common/enums/role.enum';
 
-// Uploading course material (a lecture/video/file attachment) is admin/professor only; a plain
-// caption/image post stays open to everyone.
-const MATERIAL_ATTACHMENT_TYPES: PostAttachmentType[] = [
-  PostAttachmentType.LECTURE,
-  PostAttachmentType.VIDEO,
-  PostAttachmentType.FILE,
-];
+// Uploading course material (a lecture or video attachment) is admin/professor only; a plain
+// caption/image/generic-file post stays open to everyone. FILE is deliberately excluded here --
+// it's the generic document-attach button in the everyday composer (open to all users), not a
+// course-material upload; only LECTURE/VIDEO carry that connotation.
+const MATERIAL_ATTACHMENT_TYPES: PostAttachmentType[] = [PostAttachmentType.LECTURE, PostAttachmentType.VIDEO];
 
 export interface PaginatedPosts {
   data: PostDocument[];
