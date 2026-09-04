@@ -16,6 +16,12 @@ function dirAttr(text: string): string {
   return containsArabic(text) ? ' dir="rtl" style="text-align:right"' : '';
 }
 
+// PDF points -> CSS px at the standard 96dpi html-to-docx assumes for an <img> width/height style,
+// so an image keeps roughly its original on-page size instead of html-to-docx's default of probing
+// the JPEG's raw pixel dimensions (which, for a small cropped figure, print at native resolution and
+// come out far too large).
+const ptToPx = (pt: number): number => Math.max(1, Math.round((pt * 96) / 72));
+
 function blocksToHtml(blocks: Block[]): { html: string; rtl: boolean } {
   let rtl = false;
   const parts: string[] = [];
@@ -47,6 +53,11 @@ function blocksToHtml(blocks: Block[]): { html: string; rtl: boolean } {
       parts.push(
         `<table${tRtl ? ' dir="rtl"' : ''} style="border-collapse:collapse;width:100%">${rowsHtml}</table>`,
       );
+    } else if (b.type === 'image') {
+      const b64 = b.data.toString('base64');
+      parts.push(
+        `<p><img src="data:${b.mimeType};base64,${b64}" style="width:${ptToPx(b.widthPt)}px;height:${ptToPx(b.heightPt)}px" /></p>`,
+      );
     }
   }
   const body = parts.join('\n') || '<p></p>';
@@ -55,12 +66,16 @@ function blocksToHtml(blocks: Block[]): { html: string; rtl: boolean } {
 }
 
 export async function blocksToDocx(blocks: Block[]): Promise<Buffer> {
-  const { html } = blocksToHtml(blocks);
+  const { html, rtl } = blocksToHtml(blocks);
   const out = await htmlToDocx(html, null, {
     table: { row: { cantSplit: true } },
     footer: false,
     header: false,
     margins: { top: 1134, right: 1134, bottom: 1134, left: 1134 },
+    // html-to-docx only emits <w:bidi/>/<w:rtl/> on paragraphs when this is set at the document
+    // level -- the per-element dir="rtl" attributes from dirAttr() above only affect alignment.
+    // Without it, Word treats every paragraph as LTR and mis-shapes/mis-orders Arabic runs.
+    direction: rtl ? 'rtl' : 'ltr',
   });
   return Buffer.isBuffer(out) ? out : Buffer.from(out);
 }

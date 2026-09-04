@@ -9,11 +9,16 @@ export type Block =
   | { type: 'para'; text: string }
   | { type: 'bullet'; depth: number; text: string }
   | { type: 'table'; header: boolean; rows: string[][] }
+  // A raster image recovered from the source (currently only LlamaParse's pdf->docx/pptx path
+  // produces these -- see llamaparse.engine.ts). widthPt/heightPt are the size on the source page,
+  // in PDF points (1/72in), used to keep roughly the original proportions in the rendered target.
+  | { type: 'image'; data: Buffer; mimeType: string; widthPt: number; heightPt: number }
   | { type: 'pagebreak' };
 
 export interface Slide {
   title: string;
   body: string[];
+  images: Extract<Block, { type: 'image' }>[];
 }
 
 const HEADING_LEVEL: Record<string, 1 | 2 | 3> = { H1: 1, H2: 2, H3: 3, H4: 3, H5: 3, H6: 3 };
@@ -86,7 +91,7 @@ export function blocksToSlides(blocks: Block[], maxLinesPerSlide = 10): Slide[] 
   const slides: Slide[] = [];
   let current: Slide | null = null;
   const push = (title: string) => {
-    current = { title, body: [] };
+    current = { title, body: [], images: [] };
     slides.push(current);
   };
   for (const b of blocks) {
@@ -102,11 +107,12 @@ export function blocksToSlides(blocks: Block[], maxLinesPerSlide = 10): Slide[] 
     if (b.type === 'para') current!.body.push(b.text);
     else if (b.type === 'bullet') current!.body.push(`${'  '.repeat(b.depth)}${b.text}`);
     else if (b.type === 'table') for (const r of b.rows) current!.body.push(r.join('  |  '));
+    else if (b.type === 'image') current!.images.push(b);
     if (current!.body.length >= maxLinesPerSlide) {
       const title = current!.title;
       current = null;
       push(title);
     }
   }
-  return slides.filter((s) => s.title || s.body.length);
+  return slides.filter((s) => s.title || s.body.length || s.images.length);
 }
