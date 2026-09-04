@@ -1,19 +1,23 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import Link from 'next/link';
-import { MessageCircle, Search, Store, Tag, Trash2 } from 'lucide-react';
+import { ImagePlus, MessageCircle, Search, Store, Tag, Trash2, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
+import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Spinner } from '@/components/ui/Spinner';
 import { Input } from '@/components/ui/Input';
+import { ImageGallery } from '@/components/feed/ImageGallery';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import type { ListingCategory, ListingStatus, MarketplaceListing } from '@/lib/types';
+
+const MAX_LISTING_IMAGES = 6;
 
 const CATEGORIES: { value: ListingCategory; label: string }[] = [
   { value: 'books', label: 'كتب' },
@@ -142,6 +146,7 @@ export function MarketplaceBoard() {
         <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
           {listings.map((l) => (
             <Card key={l._id} className="flex flex-col gap-2 p-4">
+              {l.images.length > 0 && <ImageGallery images={l.images.map((u) => assetUrl(u)!)} />}
               <div className="flex items-start justify-between gap-2">
                 <p className="min-w-0 flex-1 text-sm font-semibold text-foreground">{l.title}</p>
                 <span className="shrink-0 rounded-lg bg-accent/10 px-2 py-0.5 text-xs font-bold text-accent">
@@ -225,32 +230,83 @@ function CreateListingModal({
   onCreated: (l: MarketplaceListing) => void;
 }) {
   const { showToast } = useToast();
+  const imageInputRef = useRef<HTMLInputElement>(null);
   const [title, setTitle] = useState('');
   const [price, setPrice] = useState('');
   const [category, setCategory] = useState<ListingCategory>('books');
   const [description, setDescription] = useState('');
+  const [images, setImages] = useState<{ file: File; previewUrl: string }[]>([]);
   const [busy, setBusy] = useState(false);
+  const [uploadPercent, setUploadPercent] = useState<number | null>(null);
+
+  function clearImages() {
+    setImages((prev) => {
+      for (const img of prev) URL.revokeObjectURL(img.previewUrl);
+      return [];
+    });
+  }
+
+  useEffect(() => clearImages, []);
+
+  function pickImages() {
+    imageInputRef.current?.click();
+  }
+
+  function handleImagesChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(e.target.files ?? []).filter((f) => f.type.startsWith('image/'));
+    e.target.value = '';
+    if (!selected.length) return;
+    setImages((prev) => {
+      const room = MAX_LISTING_IMAGES - prev.length;
+      if (room <= 0) {
+        showToast(`يمكنك إرفاق ${MAX_LISTING_IMAGES} صور كحد أقصى.`, 'error');
+        return prev;
+      }
+      return [...prev, ...selected.slice(0, room).map((f) => ({ file: f, previewUrl: URL.createObjectURL(f) }))];
+    });
+  }
+
+  function removeImage(index: number) {
+    setImages((prev) => {
+      URL.revokeObjectURL(prev[index].previewUrl);
+      return prev.filter((_, i) => i !== index);
+    });
+  }
 
   async function submit() {
     const p = Number(price);
     if (!title.trim() || !Number.isFinite(p) || p < 0 || busy) return;
     setBusy(true);
     try {
+      let uploadedImages: string[] | undefined;
+      if (images.length > 0) {
+        setUploadPercent(0);
+        const { images: urls } = await api.uploadMany<{ images: string[] }>(
+          '/upload/post-images',
+          images.map((img) => img.file),
+          setUploadPercent,
+        );
+        uploadedImages = urls;
+      }
+
       const created = await api.post<MarketplaceListing>('/marketplace', {
         title: title.trim(),
         price: Math.round(p),
         category,
         description: description.trim() || undefined,
+        images: uploadedImages,
       });
       onCreated(created);
       setTitle('');
       setPrice('');
       setDescription('');
       setCategory('books');
+      clearImages();
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر النشر', 'error');
     } finally {
       setBusy(false);
+      setUploadPercent(null);
     }
   }
 
@@ -279,6 +335,37 @@ function CreateListingModal({
           placeholder="الوصف والحالة (اختياري)"
           className="w-full resize-none rounded-lg border border-border bg-surface-2/50 px-3 py-2 text-sm text-foreground outline-none focus:border-accent focus:ring-2 focus:ring-accent/20"
         />
+
+        <input ref={imageInputRef} type="file" accept="image/*" multiple hidden onChange={handleImagesChange} />
+        <div className="grid grid-cols-4 gap-2">
+          {images.map((img, i) => (
+            <div key={img.previewUrl} className="group relative aspect-square overflow-hidden rounded-xl2 bg-surface-2 ring-1 ring-inset ring-border/50">
+              <img src={img.previewUrl} alt="" className="h-full w-full object-cover" />
+              {!busy && (
+                <button
+                  type="button"
+                  onClick={() => removeImage(i)}
+                  className="absolute end-1 top-1 flex h-6 w-6 items-center justify-center rounded-full bg-black/60 text-white opacity-0 transition-opacity hover:bg-black/80 group-hover:opacity-100 focus-visible:opacity-100"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+          {images.length < MAX_LISTING_IMAGES && !busy && (
+            <button
+              type="button"
+              onClick={pickImages}
+              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl2 border border-dashed border-border text-muted-foreground transition-colors hover:border-accent/50 hover:bg-accent/5 hover:text-accent"
+            >
+              <ImagePlus className="h-5 w-5" />
+              <span className="text-[11px]">صورة</span>
+            </button>
+          )}
+        </div>
+
+        {uploadPercent !== null && <ProgressBar percent={uploadPercent} />}
+
         <Button fullWidth onClick={submit} loading={busy} disabled={!title.trim() || price === ''}>
           نشر الإعلان
         </Button>

@@ -21,6 +21,7 @@ export interface ListingView {
   category: string;
   status: string;
   department: Department | null;
+  images: string[];
   mine: boolean;
   seller: { _id: string; name: string; photoUrl: string | null } | null;
   createdAt: Date;
@@ -42,6 +43,7 @@ export class MarketplaceService {
       category: doc.category,
       status: doc.status,
       department: doc.department,
+      images: doc.images ?? [],
       mine: seller?._id === viewerId,
       seller,
       createdAt: (doc as unknown as { createdAt: Date }).createdAt,
@@ -81,6 +83,7 @@ export class MarketplaceService {
       price: dto.price,
       category: dto.category,
       department: user.department ?? null,
+      images: dto.images ?? [],
     });
     await doc.populate('seller', 'name photoUrl');
     return this.toView(doc, user.userId);
@@ -103,6 +106,7 @@ export class MarketplaceService {
     if (dto.price !== undefined) doc.price = dto.price;
     if (dto.category !== undefined) doc.category = dto.category;
     if (dto.status !== undefined) doc.status = dto.status;
+    if (dto.images !== undefined) doc.images = dto.images;
     await doc.save();
     await doc.populate('seller', 'name photoUrl');
     return this.toView(doc, user.userId);
