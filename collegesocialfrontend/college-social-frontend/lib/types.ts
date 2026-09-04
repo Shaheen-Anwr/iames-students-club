@@ -1121,6 +1121,7 @@ export interface MarketplaceListing {
   category: ListingCategory;
   status: ListingStatus;
   department: Department | null;
+  images: string[];
   mine: boolean;
   seller: { _id: string; name: string; photoUrl: string | null } | null;
   createdAt: string;

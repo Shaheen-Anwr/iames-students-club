@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer';
-import { IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsIn, IsInt, IsNotEmpty, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 import { LISTING_CATEGORIES, LISTING_STATUSES } from '../schemas/listing.schema';
 
 const trim = ({ value }: { value: unknown }) => (typeof value === 'string' ? value.trim() : value);
@@ -23,6 +23,13 @@ export class CreateListingDto {
 
   @IsIn(LISTING_CATEGORIES as unknown as string[])
   category: (typeof LISTING_CATEGORIES)[number];
+
+  // URLs from POST /api/upload/post-images.
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(6)
+  @IsString({ each: true })
+  images?: string[];
 }
 
 export class UpdateListingDto {
@@ -51,4 +58,10 @@ export class UpdateListingDto {
   @IsOptional()
   @IsIn(LISTING_STATUSES as unknown as string[])
   status?: (typeof LISTING_STATUSES)[number];
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(6)
+  @IsString({ each: true })
+  images?: string[];
 }

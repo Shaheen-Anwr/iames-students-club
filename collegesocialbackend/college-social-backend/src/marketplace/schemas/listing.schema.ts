@@ -11,8 +11,7 @@ export const LISTING_STATUSES = ['available', 'reserved', 'sold'] as const;
 export type ListingStatus = (typeof LISTING_STATUSES)[number];
 
 // One student-to-student marketplace listing (textbooks, calculators, lecture notes, lab
-// supplies…). Text + price only for now -- no photos. شعبة-scoped like everything else:
-// null = whole college, else that department.
+// supplies…). شعبة-scoped like everything else: null = whole college, else that department.
 @Schema({ timestamps: true })
 export class Listing {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
@@ -36,6 +35,10 @@ export class Listing {
 
   @Prop({ type: String, enum: Department, default: null, index: true })
   department: Department | null;
+
+  // Cloudinary URLs from POST /api/upload/post-images, same as a feed image post.
+  @Prop({ type: [String], default: [] })
+  images: string[];
 }
 
 export const ListingSchema = SchemaFactory.createForClass(Listing);
