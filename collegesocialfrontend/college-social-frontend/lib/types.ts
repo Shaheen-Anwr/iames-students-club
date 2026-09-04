@@ -668,6 +668,7 @@ export interface Conversation {
   name?: string | null;
   lastMessagePreview?: string | null;
   lastMessageAt?: string | null;
+  lastMessageId?: string | null;
   updatedAt?: string;
   createdBy?: string | null;
   groupIcon?: string | null;

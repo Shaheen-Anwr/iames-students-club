@@ -1,10 +1,22 @@
 services:
   - type: web
     name: college-social-backend
-    runtime: node
+    # Docker runtime (was: the Node buildpack). The image -- collegesocialbackend/college-social-backend/Dockerfile
+    # -- bakes in Node 22, the file converter's system deps (LibreOffice + Poppler + Arabic fonts,
+    # which the Node buildpack can't install, hence today's Adobe fallback), and the native build
+    # toolchain (bcrypt / ffmpeg-static). The Dockerfile owns build + start, so buildCommand /
+    # startCommand are gone and CMD ["node","dist/main"] runs. Full walkthrough: docs/DOCKER.md.
+    #
+    # Paths below are relative to this service's Root Directory (already set to
+    # collegesocialbackend/college-social-backend on the dashboard -- that's why the old relative
+    # buildCommand worked). If Render reports it can't find the Dockerfile, your Blueprint is being
+    # read from the repo root instead: change both to
+    #   dockerfilePath: ./collegesocialbackend/college-social-backend/Dockerfile
+    #   dockerContext:  ./collegesocialbackend/college-social-backend
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
     plan: starter
-    buildCommand: npm install && npm run build
-    startCommand: npm run start:prod
     healthCheckPath: /api
     # Persistent disk for uploaded photos/lectures/videos/audio (storage.service.ts falls back to
     # local disk under ./uploads when CLOUDINARY_* env vars are unset). Free-tier services can't
@@ -17,11 +29,10 @@ services:
     envVars:
       - key: NODE_ENV
         value: production
-      # jsdom@30 (file converter) pulls undici@8, whose CacheStorage crashes on Node 20 with
-      # "webidl.util.markAsUncloneable is not a function". Pin Node 22 -- also set via
-      # .node-version and package.json "engines"; this is the explicit belt-and-braces for Render.
-      - key: NODE_VERSION
-        value: "22"
+      # NODE_VERSION is gone -- the image pins Node 22 via `FROM node:22-bookworm`. (Node 20 broke
+      # the file converter: jsdom@30 -> undici@8, whose CacheStorage crashes with
+      # "webidl.util.markAsUncloneable is not a function". Still pinned via .node-version +
+      # package.json "engines" for local/non-Docker use.)
       - key: UPLOADS_DIR
         value: /var/data/uploads
       # Everything below must be filled in on the Render dashboard (Environment tab) --

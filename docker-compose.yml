@@ -1,0 +1,50 @@
+# Local development infra for the IAEMS backend. Full walkthrough: docs/DOCKER.md
+#
+#   docker compose up redis              -> just Redis (run the apps natively) -- start here
+#   docker compose up                    -> Redis + local Mongo
+#   docker compose --profile app up      -> + the backend in a container (advanced)
+#
+# Nothing here touches production. Data lives in named volumes; `docker compose down -v` wipes it.
+
+services:
+  redis:
+    image: redis:7-alpine
+    # noeviction so BullMQ jobs are never dropped; --save "" = no disk snapshots (dev only).
+    command: ["redis-server", "--maxmemory", "128mb", "--maxmemory-policy", "noeviction", "--save", ""]
+    ports: ["6379:6379"]
+    mem_limit: 160m
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports: ["27017:27017"]
+    volumes: ["mongo-data:/data/db"]
+    mem_limit: 768m
+    restart: unless-stopped
+
+  backend:
+    profiles: ["app"] # only starts with `--profile app`
+    build:
+      context: ./collegesocialbackend/college-social-backend
+      target: dev
+    # `npm ci` on first boot builds native deps (bcrypt, ffmpeg-static) against THIS image's
+    # libc -- takes a few minutes once, then the node_modules volume makes it instant.
+    command: sh -c "npm ci && npm run start:dev"
+    env_file: ./collegesocialbackend/college-social-backend/.env
+    environment:
+      MONGODB_URI: mongodb://mongo:27017/college-social
+      REDIS_URL: redis://redis:6379
+      PORT: "3001"
+    ports: ["3001:3001"]
+    volumes:
+      - ./collegesocialbackend/college-social-backend:/app
+      - backend-deps:/app/node_modules # keep the container's node_modules, not the host's
+      - uploads:/var/data/uploads
+    depends_on: [mongo, redis]
+    init: true # proper signal handling (Ctrl+C, graceful shutdown)
+    mem_limit: 900m
+
+volumes:
+  mongo-data:
+  backend-deps:
+  uploads:
