@@ -38,9 +38,21 @@ interface LpItem {
   md?: string;
   rows?: unknown[][];
 }
+// Images are NOT items -- they're a sibling array per page (confirmed against the live API: no
+// `items` entry ever has an image-ish `type`). `type: 'full_page_screenshot'` is a raster of the
+// whole rendered page (one per page) and is skipped -- we already recover real text via `items`,
+// so keeping it too would just duplicate every page as a giant background image. `layout_v3_image`
+// is an individually-detected embedded picture/figure/logo and is what gets recovered.
+interface LpImage {
+  name?: string;
+  type?: string;
+  width?: number;
+  height?: number;
+}
 interface LpPage {
   page?: number;
   items?: LpItem[];
+  images?: LpImage[];
 }
 
 async function lp(path: string, init?: RequestInit): Promise<Response> {
@@ -50,7 +62,7 @@ async function lp(path: string, init?: RequestInit): Promise<Response> {
   });
 }
 
-async function uploadAndParse(pdf: Buffer, onProgress: ProgressFn): Promise<LpPage[]> {
+async function uploadAndParse(pdf: Buffer, onProgress: ProgressFn): Promise<{ id: string; pages: LpPage[] }> {
   const form = new FormData();
   // Copy into a fresh Uint8Array -- Node's Buffer type (Buffer<ArrayBufferLike>) isn't a valid
   // BlobPart under the DOM lib types; the copy is trivial for a <=25 MB conversion input.
@@ -78,7 +90,7 @@ async function uploadAndParse(pdf: Buffer, onProgress: ProgressFn): Promise<LpPa
       const rj = await lp(`/api/parsing/job/${id}/result/json`);
       if (!rj.ok) throw new Error(`result ${rj.status}`);
       const body = (await rj.json()) as { pages?: LpPage[] };
-      return body.pages ?? [];
+      return { id, pages: body.pages ?? [] };
     }
     if (status && status !== 'PENDING' && status !== 'PROCESSING' && status !== 'RUNNING') {
       throw new Error(`job ${status}`);
@@ -102,9 +114,23 @@ function flatten(s: string): string {
     .trim();
 }
 
-function pagesToBlocks(pages: LpPage[]): Block[] {
+// A page with dozens of individually-detected regions (rare -- a densely illustrated page) is
+// capped so one pathological page can't blow up conversion time with sequential downloads.
+const MAX_IMAGES_PER_PAGE = 12;
+
+async function fetchImage(jobId: string, name: string): Promise<Buffer | null> {
+  try {
+    const res = await lp(`/api/parsing/job/${jobId}/result/image/${name}`);
+    if (!res.ok) return null;
+    return Buffer.from(await res.arrayBuffer());
+  } catch {
+    return null; // best-effort -- a failed image fetch shouldn't fail the whole conversion
+  }
+}
+
+async function pagesToBlocks(jobId: string, pages: LpPage[]): Promise<Block[]> {
   const blocks: Block[] = [];
-  pages.forEach((pg, idx) => {
+  for (const [idx, pg] of pages.entries()) {
     if (idx > 0) blocks.push({ type: 'pagebreak' });
     for (const it of pg.items ?? []) {
       if (it.type === 'heading') {
@@ -137,7 +163,16 @@ function pagesToBlocks(pages: LpPage[]): Block[] {
         }
       }
     }
-  });
+
+    // Images live in a separate array, not `items` (see the LpImage comment above) -- appended
+    // after this page's text since LlamaParse doesn't report where in the reading order they fall.
+    const images = (pg.images ?? []).filter((im) => im.type !== 'full_page_screenshot' && im.name).slice(0, MAX_IMAGES_PER_PAGE);
+    for (const im of images) {
+      const data = await fetchImage(jobId, im.name!);
+      if (!data) continue;
+      blocks.push({ type: 'image', data, mimeType: 'image/jpeg', widthPt: im.width || 100, heightPt: im.height || 100 });
+    }
+  }
   return blocks;
 }
 
@@ -149,8 +184,8 @@ export async function runViaLlamaParse(
   onProgress: ProgressFn,
 ): Promise<Buffer> {
   onProgress(22, 'رفع الملف إلى محرّك التحليل');
-  const pages = await uploadAndParse(pdf, onProgress);
-  const blocks = pagesToBlocks(pages);
+  const { id, pages } = await uploadAndParse(pdf, onProgress);
+  const blocks = await pagesToBlocks(id, pages);
   if (!blocks.some((b) => b.type !== 'pagebreak')) throw new Error('no content recovered');
   onProgress(86, `إنشاء ملف ${target.toUpperCase()}`);
   const out = target === 'docx' ? await blocksToDocx(blocks) : await blocksToPptx(blocks);

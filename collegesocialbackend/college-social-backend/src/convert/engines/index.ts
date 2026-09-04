@@ -38,6 +38,7 @@ import { adobeAvailable, isAdobeRecoverable, runViaAdobe } from './adobe.engine'
 import { llamaParseAvailable, runViaLlamaParse } from './llamaparse.engine';
 import { pageImageAvailable, pdfToPageImageFile } from './pageimage.engine';
 import { normalizeArabicInOfficeFile } from './office-arabic-normalize.util';
+import { fixLibreOfficePdfImport } from './libreoffice-pdf-import.util';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Logger } = require('@nestjs/common');
@@ -203,7 +204,7 @@ async function pdfToPaged(
       const out = await runViaLibreOffice(input, 'pdf', target);
       onProgress(92, 'تحسين النص العربي');
       logger.log(`LibreOffice pdf->${target} ok (${out.length}b)`);
-      return finish(out, target);
+      return finish(fixLibreOfficePdfImport(out, target), target);
     } catch (err) {
       logger.warn(`LibreOffice pdf->${target} failed (${(err as Error).message})`);
     }
