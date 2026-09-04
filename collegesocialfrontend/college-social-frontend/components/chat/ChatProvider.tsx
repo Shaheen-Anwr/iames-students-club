@@ -119,13 +119,28 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       setConversations((prev) => (prev.some((c) => c._id === conversation._id) ? prev : [conversation, ...prev]));
     };
 
+    // "Delete for everyone" may have just invalidated this conversation's cached list preview
+    // (the server recomputes it when the deleted message was the last one) -- a targeted local
+    // patch would need to guess whether it was the last message, so just re-pull the list, same
+    // as the unknown-conversation path above.
+    const onMessageDeleted = (payload: { message?: Message; forEveryone?: boolean }) => {
+      if (!payload?.forEveryone || !payload.message?.conversation || refreshing) return;
+      if (!conversationsRef.current.some((c) => c._id === payload.message!.conversation)) return;
+      refreshing = true;
+      refresh().finally(() => {
+        refreshing = false;
+      });
+    };
+
     socket.on('newMessage', onNewMessage);
     socket.on('newNotification', onNewNotification);
     socket.on('conversationCreated', onConversationCreated);
+    socket.on('messageDeleted', onMessageDeleted);
     return () => {
       socket.off('newMessage', onNewMessage);
       socket.off('newNotification', onNewNotification);
       socket.off('conversationCreated', onConversationCreated);
+      socket.off('messageDeleted', onMessageDeleted);
     };
   }, [socket, refresh]);
 

@@ -55,6 +55,12 @@ export class Conversation {
   @Prop({ type: Date, required: false, default: null })
   lastMessageAt: Date | null;
 
+  // The message `lastMessagePreview` was derived from -- lets us tell, when that message is
+  // later deleted-for-everyone, whether this conversation's cached preview has gone stale and
+  // needs recomputing (see ChatService.refreshLastMessagePreview).
+  @Prop({ type: Types.ObjectId, ref: 'Message', required: false, default: null })
+  lastMessageId: Types.ObjectId | null;
+
   // --- Group chat metadata (isGroup === true only) ---
 
   @Prop({ type: Types.ObjectId, ref: 'User', default: null })

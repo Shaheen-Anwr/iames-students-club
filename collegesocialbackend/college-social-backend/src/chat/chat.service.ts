@@ -287,7 +287,7 @@ export class ChatService {
     // as most chat apps, where deleting only hides it until the next incoming message.
     await this.conversationModel
       .findByIdAndUpdate(conversationId, {
-        $set: { lastMessagePreview: previewText, lastMessageAt: new Date() },
+        $set: { lastMessagePreview: previewText, lastMessageAt: new Date(), lastMessageId: message._id },
         $pull: { deletedBy: { $in: conversation.participants } },
       })
       .exec();
@@ -342,7 +342,7 @@ export class ChatService {
   async deleteMessage(messageId: string, userId: string, forEveryone: boolean): Promise<MessageDocument> {
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
-    await this.assertCanAccessConversation(message.conversation.toString(), userId);
+    const conversation = await this.assertCanAccessConversation(message.conversation.toString(), userId);
 
     if (forEveryone) {
       if (message.sender.toString() !== userId) {
@@ -352,12 +352,38 @@ export class ChatService {
       message.text = '';
       message.attachments = [];
       message.reactions = [];
+      await message.save();
+
+      // If this was the message the conversation list's cached preview was derived from, that
+      // preview is now stale (it would otherwise keep leaking the deleted content) -- recompute it.
+      if (conversation.lastMessageId?.toString() === messageId) {
+        await this.refreshLastMessagePreview(conversation._id.toString());
+      }
     } else {
       const uid = new Types.ObjectId(userId);
       if (!message.deletedFor.some((d) => d.toString() === userId)) message.deletedFor.push(uid);
+      await message.save();
     }
-    await message.save();
     return message.populate(MESSAGE_POPULATE);
+  }
+
+  // Recomputes a conversation's cached last-message preview from the most recent
+  // not-deleted-for-everyone message, or clears it if none remain.
+  private async refreshLastMessagePreview(conversationId: string): Promise<void> {
+    const latest = await this.messageModel
+      .findOne({ conversation: new Types.ObjectId(conversationId), deletedForEveryone: false })
+      .sort({ createdAt: -1 })
+      .lean<{ _id: Types.ObjectId; text: string; attachments: AttachmentDto[]; createdAt: Date } | null>()
+      .exec();
+    await this.conversationModel
+      .findByIdAndUpdate(conversationId, {
+        $set: {
+          lastMessageId: latest?._id ?? null,
+          lastMessagePreview: latest ? latest.text?.slice(0, 120) || this.attachmentPreview(latest.attachments) : null,
+          lastMessageAt: latest?.createdAt ?? null,
+        },
+      })
+      .exec();
   }
 
   async reactToMessage(messageId: string, userId: string, emoji: string): Promise<MessageDocument> {
@@ -399,7 +425,11 @@ export class ChatService {
 
       const previewText = message.text?.slice(0, 120) || this.attachmentPreview(message.attachments as unknown as AttachmentDto[]);
       await this.conversationModel
-        .findByIdAndUpdate(conversationId, { lastMessagePreview: previewText, lastMessageAt: new Date() })
+        .findByIdAndUpdate(conversationId, {
+          lastMessagePreview: previewText,
+          lastMessageAt: new Date(),
+          lastMessageId: message._id,
+        })
         .exec();
 
       for (const participant of conversation.participants) {
