@@ -158,9 +158,16 @@ export class ScheduleService {
   // `includeInactive` is only ever passed true by a manager (canManage in the UI) so they can see
   // -- and toggle back on -- a photo they'd previously hidden. Students/professors always get only
   // the active ones.
+  //
+  // NOTE: `active: { $ne: false }`, not `active: true` -- boards created before this field existed
+  // (the original single-photo-per-group version of this feature) have no `active` field in Mongo
+  // at all, and `{ active: true }` does NOT match a missing field, only a literal `true`. That bug
+  // made every pre-existing photo permanently invisible to students/professors until it happened to
+  // get touched by an update (which backfills the schema default on save). `$ne: false` matches
+  // both `true` and "field absent", so old photos are visible immediately without a data migration.
   async getBoardsForGroup(group: Group, includeInactive = false): Promise<ScheduleBoardDocument[]> {
     return this.scheduleBoardModel
-      .find(includeInactive ? group : { ...group, active: true })
+      .find(includeInactive ? group : { ...group, active: { $ne: false } })
       .sort({ createdAt: 1 })
       .exec();
   }
