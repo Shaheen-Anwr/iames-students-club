@@ -4,6 +4,7 @@ import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
 import { GamificationService } from '../gamification/gamification.service';
 
 @UseGuards(JwtAuthGuard)
@@ -30,6 +31,19 @@ export class UsersController {
   @Get('me/friend-requests')
   async myFriendRequests(@CurrentUser() user: AuthenticatedUser) {
     return this.usersService.listFriendRequests(user.userId);
+  }
+
+  // GET/PATCH /api/users/me/home-layout -- the /home page's customizable widget order + hidden set
+  // (profile > "تخصيص الرئيسية"). Same "me/..." segment-count reasoning as friend-requests above --
+  // doesn't collide with @Get(':id').
+  @Get('me/home-layout')
+  async getHomeLayout(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.getHomeLayout(user.userId);
+  }
+
+  @Patch('me/home-layout')
+  async setHomeLayout(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateHomeLayoutDto) {
+    return this.usersService.setHomeLayout(user.userId, dto);
   }
 
   @Get('search')

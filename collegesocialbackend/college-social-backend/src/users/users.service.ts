@@ -5,6 +5,7 @@ import * as crypto from 'crypto';
 import { User, UserDocument } from './schemas/user.schema';
 import { RegisterDto } from '../auth/dto/register.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
+import { HOME_WIDGET_IDS, UpdateHomeLayoutDto, type HomeWidgetId } from './dto/update-home-layout.dto';
 import { Role } from '../common/enums/role.enum';
 import { getAcademicYearsForDepartment } from '../common/enums/academic-year.enum';
 import { SPECIALIZATIONS_BY_DEPARTMENT } from '../common/enums/specialization.enum';
@@ -410,6 +411,25 @@ export class UsersService {
     if (!user) throw new NotFoundException('المستخدم غير موجود');
 
     return user;
+  }
+
+  // The /home page's customizable widget order + hidden set (profile > "تخصيص الرئيسية"). Mirrors
+  // NotificationsService.getPreferences/setPreferences exactly: re-filter against the known id list
+  // on read too (not just write) so a widget removed/renamed after a user already saved a layout
+  // doesn't linger in what's returned to the client.
+  async getHomeLayout(userId: string): Promise<{ order: HomeWidgetId[]; hidden: HomeWidgetId[] }> {
+    const user = await this.userModel.findById(userId).select('homeLayoutPrefs').lean().exec();
+    const p = user?.homeLayoutPrefs;
+    const known = (ids?: string[]) => (ids ?? []).filter((id): id is HomeWidgetId => (HOME_WIDGET_IDS as readonly string[]).includes(id));
+    return { order: known(p?.order), hidden: known(p?.hidden) };
+  }
+
+  async setHomeLayout(userId: string, patch: UpdateHomeLayoutDto): Promise<{ order: HomeWidgetId[]; hidden: HomeWidgetId[] }> {
+    const $set: Record<string, unknown> = {};
+    if (patch.order !== undefined) $set['homeLayoutPrefs.order'] = [...new Set(patch.order)];
+    if (patch.hidden !== undefined) $set['homeLayoutPrefs.hidden'] = [...new Set(patch.hidden)];
+    if (Object.keys($set).length) await this.userModel.updateOne({ _id: userId }, { $set }).exec();
+    return this.getHomeLayout(userId);
   }
 
   async updatePhoto(id: string, photoUrl: string): Promise<UserDocument> {

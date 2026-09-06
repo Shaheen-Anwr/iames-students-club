@@ -23,7 +23,8 @@ import { TaggedText } from '@/components/shared/TaggedText';
 import { assetUrl, cn, formatBytes, timeAgo } from '@/lib/utils';
 import { cldOptimize } from '@/lib/images';
 import { extractFirstUrl, tickStatus } from '@/lib/chat-helpers';
-import { fetchAttachmentObjectUrl, ApiError } from '@/lib/api';
+import { fetchAttachmentBlob, ApiError } from '@/lib/api';
+import { openBlob } from '@/lib/download';
 import { useToast } from '@/lib/toast-context';
 import type { Conversation, Message } from '@/lib/types';
 
@@ -101,15 +102,24 @@ export function MessageBubble({
   // StorageService.upload()'s chunked path) only has its FIRST piece at `attachment.url` -- opening
   // that directly would silently open a truncated file. Fetch the backend's reassembled copy
   // instead; an unsplit attachment just points straight at its Cloudinary URL as before.
-  async function openDocumentAttachment(rawUrl: string, index: number, chunkCount?: number | null) {
+  async function openDocumentAttachment(
+    rawUrl: string,
+    index: number,
+    chunkCount?: number | null,
+    name?: string | null,
+  ) {
     if (!chunkCount || chunkCount <= 1) {
+      // A real https URL opened synchronously inside the tap -- fine on every device.
       window.open(rawUrl, '_blank', 'noopener,noreferrer');
       return;
     }
     setDownloadingIndex(index);
     try {
-      const objectUrl = await fetchAttachmentObjectUrl(`chat/messages/${message._id}/attachments/${index}/download`);
-      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+      // Chunked: fetch the reassembled bytes, then hand them to openBlob() -- on mobile that routes
+      // through the share sheet, because a `window.open()` after this await has lost its user
+      // gesture and mobile browsers won't open a blob: URL in a new tab anyway.
+      const blob = await fetchAttachmentBlob(`chat/messages/${message._id}/attachments/${index}/download`);
+      await openBlob(blob, name || 'file');
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر فتح المرفق.', 'error');
     } finally {
@@ -518,7 +528,7 @@ export function MessageBubble({
                   // long-press-for-actions / tap-to-open pattern instead.
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (!isLongPress.current) void openDocumentAttachment(url, i, attachment.chunkCount);
+                    if (!isLongPress.current) void openDocumentAttachment(url, i, attachment.chunkCount, attachment.name);
                     isLongPress.current = false;
                   }}
                   onTouchStart={handleTouchStart}

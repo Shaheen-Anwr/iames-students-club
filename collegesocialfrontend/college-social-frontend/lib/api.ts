@@ -45,6 +45,14 @@ export function attachmentDownloadUrl(path: string): string {
 // caller owns the returned URL and must URL.revokeObjectURL() it when done (see
 // useAttachmentObjectUrl()).
 export async function fetchAttachmentObjectUrl(path: string, isRetry = false): Promise<string> {
+  return URL.createObjectURL(await fetchAttachmentBlob(path, isRetry));
+}
+
+// Same as fetchAttachmentObjectUrl() but returns the raw Blob instead of an object URL -- use this
+// when the blob is about to be handed to download.ts's saveBlob()/openBlob(), which need a real
+// File (for the native share sheet, the only path that works inside a standalone iOS PWA) rather
+// than a pre-made blob: URL that mobile browsers then refuse to open in a new tab.
+export async function fetchAttachmentBlob(path: string, isRetry = false): Promise<Blob> {
   const token = getToken();
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
@@ -54,7 +62,7 @@ export async function fetchAttachmentObjectUrl(path: string, isRetry = false): P
   if (res.status === 401 && !isRetry) {
     try {
       await refreshAccessToken();
-      return fetchAttachmentObjectUrl(path, true);
+      return fetchAttachmentBlob(path, true);
     } catch {
       clearToken();
       // fall through -- report the original 401 below
@@ -65,7 +73,7 @@ export async function fetchAttachmentObjectUrl(path: string, isRetry = false): P
     throw new ApiError(res.status, `فشل تحميل المرفق (${res.status})`);
   }
 
-  return URL.createObjectURL(await res.blob());
+  return res.blob();
 }
 
 // Fetches a converted file (see the backend's src/convert) as a Blob plus the server-set download

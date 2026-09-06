@@ -8,6 +8,7 @@ import { ChangePasswordForm } from '@/components/profile/ChangePasswordForm';
 import { PersonalEmailForm } from '@/components/profile/PersonalEmailForm';
 import { PushNotificationsToggle } from '@/components/profile/PushNotificationsToggle';
 import { NotificationSettings } from '@/components/profile/NotificationSettings';
+import { CustomizeHomeCard } from '@/components/profile/CustomizeHomeCard';
 import { ProfileFriendsTab } from '@/components/profile/ProfileFriendsTab';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Spinner } from '@/components/ui/Spinner';
@@ -43,6 +44,7 @@ export default function ProfilePage() {
             <PersonalEmailForm />
             <PushNotificationsToggle />
             <NotificationSettings />
+            <CustomizeHomeCard />
             <ChangePasswordForm />
           </div>
         )}
