@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -8,7 +8,8 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { ScheduleService } from './schedule.service';
 import { CreateScheduleEntryDto } from './dto/create-schedule-entry.dto';
 import { UpdateScheduleEntryDto } from './dto/update-schedule-entry.dto';
-import { UpsertScheduleBoardDto } from './dto/upsert-schedule-board.dto';
+import { CreateScheduleBoardDto } from './dto/create-schedule-board.dto';
+import { UpdateScheduleBoardDto } from './dto/update-schedule-board.dto';
 import { Department } from '../common/enums/department.enum';
 import { AcademicYear } from '../common/enums/academic-year.enum';
 import { Specialization } from '../common/enums/specialization.enum';
@@ -43,48 +44,53 @@ export class ScheduleController {
     return this.scheduleService.create(user, dto);
   }
 
-  // GET /api/schedule/board -> the caller's own group's whole-timetable photo (or null if none),
+  // GET /api/schedule/board -> the caller's own group's whole-timetable photos (a group can have
+  // several -- see ScheduleBoard's schema comment). `includeInactive=true` also returns ones an
+  // admin has toggled off (see PATCH .../board/:id below) -- only the manage UI ever passes it.
   // GET /api/schedule/board?department=&academicYear=&specialization= -> browse any group's.
-  // NOTE: must stay above @Get(':id')-shaped routes -- there are none on this controller today,
-  // but keep it that way if one is ever added (same reasoning as PostsController's /courses, /saved).
+  // NOTE: a literal 'board' segment is a different route shape than /schedule/:id (one more
+  // segment), so this never collides with the entry routes below regardless of declaration order.
   @Get('board')
-  async findBoard(
+  async findBoards(
     @CurrentUser() user: AuthenticatedUser,
     @Query('department') department?: Department,
     @Query('academicYear') academicYear?: AcademicYear,
     @Query('specialization') specialization?: Specialization,
+    @Query('includeInactive') includeInactive?: string,
   ) {
+    const withInactive = includeInactive === 'true';
     if (department && academicYear && specialization) {
-      return this.scheduleService.getBoardForGroup({ department, academicYear, specialization });
+      return this.scheduleService.getBoardsForGroup({ department, academicYear, specialization }, withInactive);
     }
-    return this.scheduleService.getBoardForUser(user.userId);
+    return this.scheduleService.getBoardsForUser(user.userId, withInactive);
   }
 
-  // POST /api/schedule/board -> upload/replace the whole-timetable photo for a group, instead of
-  // building it lecture-by-lecture via POST /schedule above.
+  // POST /api/schedule/board -> adds one more whole-timetable photo to a group, instead of
+  // building it lecture-by-lecture via POST /schedule above. Always a new photo, never a replace
+  // -- a group can hold any number (e.g. one per term).
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN, Role.PROFESSOR)
   @Post('board')
-  async upsertBoard(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpsertScheduleBoardDto) {
-    return this.scheduleService.upsertBoard(user, dto);
+  async addBoard(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateScheduleBoardDto) {
+    return this.scheduleService.addBoard(user, dto);
   }
 
-  // DELETE /api/schedule/board?department=&academicYear=&specialization= -> removes a group's
-  // photo. Must stay above @Delete(':id') below -- otherwise "board" would be swallowed as an id.
+  // PATCH /api/schedule/board/:id -> replace one photo's image/description in place, and/or flip
+  // `active` (the show/hide toggle ScheduleBoardPhoto.tsx uses instead of a hard delete button).
   @UseGuards(RolesGuard)
   @Roles(Role.ADMIN, Role.PROFESSOR)
-  @Delete('board')
-  async removeBoard(
-    @Query('department') department?: Department,
-    @Query('academicYear') academicYear?: AcademicYear,
-    @Query('specialization') specialization?: Specialization,
-  ) {
-    // Require all three explicitly -- an accidentally-omitted param must never fall through to a
-    // Mongo filter with an undefined field, which would match (and delete) every group's photo.
-    if (!department || !academicYear || !specialization) {
-      throw new BadRequestException('حدد القسم والسنة الدراسية والتخصص');
-    }
-    await this.scheduleService.removeBoard({ department, academicYear, specialization });
+  @Patch('board/:id')
+  async updateBoard(@Param('id') id: string, @Body() dto: UpdateScheduleBoardDto) {
+    return this.scheduleService.updateBoard(id, dto);
+  }
+
+  // DELETE /api/schedule/board/:id -> permanently removes one photo. Not wired into the UI today
+  // (which only exposes the active/inactive toggle above) -- kept for future cleanup tooling.
+  @UseGuards(RolesGuard)
+  @Roles(Role.ADMIN, Role.PROFESSOR)
+  @Delete('board/:id')
+  async removeBoard(@Param('id') id: string) {
+    await this.scheduleService.removeBoard(id);
     return { success: true };
   }
 

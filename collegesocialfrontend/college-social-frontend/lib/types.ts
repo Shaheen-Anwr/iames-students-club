@@ -669,6 +669,7 @@ export interface ScheduleBoard {
   specialization: string;
   photoUrl: string;
   description?: string | null;
+  active: boolean;
   createdAt: string;
   updatedAt: string;
 }
