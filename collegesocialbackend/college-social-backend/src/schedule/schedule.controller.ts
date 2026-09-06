@@ -15,15 +15,21 @@ import { AcademicYear } from '../common/enums/academic-year.enum';
 import { Specialization } from '../common/enums/specialization.enum';
 
 // The official weekly timetable, published per department/academicYear/specialization by admins
-// and professors. Reads are open to everyone (like the public lecture library).
+// and professors. A student/professor only ever sees their OWN group's schedule -- unlike the
+// public lecture library, this is deliberately NOT browsable cross-group by a non-admin (a
+// business-administration student must never be able to see engineering's or media science's
+// timetable, even by hand-crafting the query string). Only ADMIN can pass the browse params below.
 @UseGuards(JwtAuthGuard)
 @Controller('schedule')
 export class ScheduleController {
   constructor(private readonly scheduleService: ScheduleService) {}
 
-  // GET /api/schedule -> the caller's own class schedule, resolved from their profile
-  // GET /api/schedule?department=&academicYear=&specialization= -> browse any group's schedule,
-  // same "public, filterable by anyone" pattern as GET /posts/lectures.
+  // GET /api/schedule -> the caller's own class schedule, resolved from their profile.
+  // GET /api/schedule?department=&academicYear=&specialization= -> browse any group's schedule --
+  // admin only. A student/professor passing these params has them silently ignored and falls back
+  // to their own group, same "never trust a client-sent scope override" idiom as
+  // PostsService.buildFeedFilter()'s DEPARTMENT branch, rather than erroring (a stray/copy-pasted
+  // query string should just behave like it wasn't there, not surface a 403).
   @Get()
   async find(
     @CurrentUser() user: AuthenticatedUser,
@@ -31,7 +37,7 @@ export class ScheduleController {
     @Query('academicYear') academicYear?: AcademicYear,
     @Query('specialization') specialization?: Specialization,
   ) {
-    if (department && academicYear && specialization) {
+    if (user.role === Role.ADMIN && department && academicYear && specialization) {
       return this.scheduleService.findForGroup({ department, academicYear, specialization });
     }
     return this.scheduleService.findForUser(user.userId);
@@ -47,7 +53,9 @@ export class ScheduleController {
   // GET /api/schedule/board -> the caller's own group's whole-timetable photos (a group can have
   // several -- see ScheduleBoard's schema comment). `includeInactive=true` also returns ones an
   // admin has toggled off (see PATCH .../board/:id below) -- only the manage UI ever passes it.
-  // GET /api/schedule/board?department=&academicYear=&specialization= -> browse any group's.
+  // GET /api/schedule/board?department=&academicYear=&specialization= -> browse any group's --
+  // admin only, same cross-department privacy rule as GET /schedule above (silently ignored, not
+  // rejected, for a non-admin).
   // NOTE: a literal 'board' segment is a different route shape than /schedule/:id (one more
   // segment), so this never collides with the entry routes below regardless of declaration order.
   @Get('board')
@@ -59,7 +67,7 @@ export class ScheduleController {
     @Query('includeInactive') includeInactive?: string,
   ) {
     const withInactive = includeInactive === 'true';
-    if (department && academicYear && specialization) {
+    if (user.role === Role.ADMIN && department && academicYear && specialization) {
       return this.scheduleService.getBoardsForGroup({ department, academicYear, specialization }, withInactive);
     }
     return this.scheduleService.getBoardsForUser(user.userId, withInactive);
