@@ -15,6 +15,8 @@ import { SPECIALIZATIONS_BY_DEPARTMENT, SPECIALIZATION_LABELS, type Specializati
 import type { ScheduleEntry } from '@/lib/types';
 import { WEEK_DAYS, courseColor } from '@/lib/schedule-week';
 import { ScheduleEntryForm } from './ScheduleEntryForm';
+import { ScheduleEntryDetails } from './ScheduleEntryDetails';
+import { ScheduleBoardPhoto } from './ScheduleBoardPhoto';
 
 const SELECT_CLASS =
   'h-9 rounded-lg border border-border bg-surface-2 px-2.5 text-xs text-foreground focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20';
@@ -89,8 +91,9 @@ export function ScheduleGrid() {
     setModalOpen(true);
   }
 
-  function openEdit(entry: ScheduleEntry) {
-    if (!isAdmin) return;
+  // Admins tap an entry to edit it; students/professors tap it to view the details (day/time/
+  // location/description/photo an admin or professor may have attached) -- see the Modal below.
+  function openEntry(entry: ScheduleEntry) {
     setEditingEntry(entry);
     setModalOpen(true);
   }
@@ -155,6 +158,17 @@ export function ScheduleGrid() {
             ))}
           </select>
         </div>
+      )}
+
+      {(!isAdmin || groupChosen) && (
+        <ScheduleBoardPhoto
+          group={
+            isAdmin && groupChosen
+              ? { department: department as Department, academicYear: academicYear as AcademicYear, specialization: specialization as Specialization }
+              : undefined
+          }
+          canManage={isAdmin}
+        />
       )}
 
       {loading ? (
@@ -223,11 +237,9 @@ export function ScheduleGrid() {
                         <button
                           key={entry._id}
                           type="button"
-                          onClick={() => openEdit(entry)}
-                          disabled={!isAdmin}
+                          onClick={() => openEntry(entry)}
                           className={cn(
-                            'absolute inset-x-0.5 overflow-hidden rounded-lg border px-1.5 py-1 text-start text-[11px] leading-tight shadow-sm transition-transform',
-                            isAdmin ? 'hover:z-10 hover:scale-[1.02]' : 'cursor-default',
+                            'absolute inset-x-0.5 overflow-hidden rounded-lg border px-1.5 py-1 text-start text-[11px] leading-tight shadow-sm transition-transform hover:z-10 hover:scale-[1.02]',
                             courseColor(entry.courseName),
                           )}
                           style={{ top, height }}
@@ -259,8 +271,8 @@ export function ScheduleGrid() {
                     {dayEntries.map((entry) => (
                       <Card
                         key={entry._id}
-                        className={cn('flex items-center gap-3 p-4', isAdmin && 'cursor-pointer')}
-                        onClick={isAdmin ? () => openEdit(entry) : undefined}
+                        className="flex cursor-pointer items-center gap-3 p-4"
+                        onClick={() => openEntry(entry)}
                       >
                         <div className={cn('flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border', courseColor(entry.courseName))}>
                           <Clock className="h-4 w-4" />
@@ -287,16 +299,24 @@ export function ScheduleGrid() {
         </>
       )}
 
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editingEntry ? 'تعديل الحصة' : 'إضافة محاضرة'}>
-        <ScheduleEntryForm
-          entry={editingEntry}
-          defaultDepartment={department || undefined}
-          defaultAcademicYear={academicYear || undefined}
-          defaultSpecialization={specialization || undefined}
-          onSaved={handleSaved}
-          onDeleted={handleDeleted}
-          onClose={() => setModalOpen(false)}
-        />
+      <Modal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        title={isAdmin ? (editingEntry ? 'تعديل الحصة' : 'إضافة محاضرة') : (editingEntry?.courseName ?? '')}
+      >
+        {isAdmin ? (
+          <ScheduleEntryForm
+            entry={editingEntry}
+            defaultDepartment={department || undefined}
+            defaultAcademicYear={academicYear || undefined}
+            defaultSpecialization={specialization || undefined}
+            onSaved={handleSaved}
+            onDeleted={handleDeleted}
+            onClose={() => setModalOpen(false)}
+          />
+        ) : (
+          editingEntry && <ScheduleEntryDetails entry={editingEntry} />
+        )}
       </Modal>
     </div>
   );
