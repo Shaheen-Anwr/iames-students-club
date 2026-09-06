@@ -5,7 +5,8 @@ import { ScheduleEntry, ScheduleEntryDocument } from './schemas/schedule-entry.s
 import { ScheduleBoard, ScheduleBoardDocument } from './schemas/schedule-board.schema';
 import { CreateScheduleEntryDto } from './dto/create-schedule-entry.dto';
 import { UpdateScheduleEntryDto } from './dto/update-schedule-entry.dto';
-import { UpsertScheduleBoardDto } from './dto/upsert-schedule-board.dto';
+import { CreateScheduleBoardDto } from './dto/create-schedule-board.dto';
+import { UpdateScheduleBoardDto } from './dto/update-schedule-board.dto';
 import { UsersService } from '../users/users.service';
 import { PostsService } from '../posts/posts.service';
 import { PostAttachmentType, PostScope } from '../posts/schemas/post.schema';
@@ -94,23 +95,22 @@ export class ScheduleService {
     });
   }
 
-  // --- Schedule board photo: "upload the whole timetable as one photo" instead of building it
-  // lecture-by-lecture via create() above. One photo per group -- uploading again replaces it. ---
+  // --- Schedule board photos: "upload the whole timetable as one photo" instead of building it
+  // lecture-by-lecture via create() above. A group can hold any number of these (e.g. one per
+  // term, or several pages of the same printed table) -- see ScheduleBoard's schema comment. ---
 
-  async upsertBoard(user: AuthenticatedUser, dto: UpsertScheduleBoardDto): Promise<ScheduleBoardDocument> {
-    const group = { department: dto.department, academicYear: dto.academicYear, specialization: dto.specialization };
-    const board = await this.scheduleBoardModel.findOneAndUpdate(
-      group,
-      {
-        ...group,
-        updatedBy: new Types.ObjectId(user.userId),
-        photoUrl: dto.photoUrl,
-        description: dto.description ?? null,
-      },
-      { upsert: true, new: true },
-    );
+  async addBoard(user: AuthenticatedUser, dto: CreateScheduleBoardDto): Promise<ScheduleBoardDocument> {
+    const board = new this.scheduleBoardModel({
+      updatedBy: new Types.ObjectId(user.userId),
+      department: dto.department,
+      academicYear: dto.academicYear,
+      specialization: dto.specialization,
+      photoUrl: dto.photoUrl,
+      description: dto.description ?? null,
+    });
+    await board.save();
 
-    // Best-effort, same reasoning as postFeedAnnouncement below -- never fail the upload itself.
+    // Best-effort, same reasoning as postFeedAnnouncement above -- never fail the upload itself.
     this.postBoardFeedAnnouncement(board, user).catch((err) =>
       this.logger.warn(`Failed to auto-post schedule board ${board._id} to feed: ${err instanceof Error ? err.message : err}`),
     );
@@ -133,23 +133,50 @@ export class ScheduleService {
     });
   }
 
-  async getBoardForGroup(group: Group): Promise<ScheduleBoardDocument | null> {
-    return this.scheduleBoardModel.findOne(group).exec();
+  // Replaces a board's photo/description in place, and/or flips `active` -- the show/hide toggle
+  // ScheduleBoardPhoto.tsx uses instead of a hard delete. Never re-posts to the feed (matches
+  // ScheduleEntry.update()'s own "create announces, update doesn't" behavior).
+  async updateBoard(id: string, dto: UpdateScheduleBoardDto): Promise<ScheduleBoardDocument> {
+    const board = await this.findBoardById(id);
+    if (dto.photoUrl !== undefined) board.photoUrl = dto.photoUrl;
+    if (dto.description !== undefined) board.description = dto.description;
+    if (dto.active !== undefined) board.active = dto.active;
+    return board.save();
+  }
+
+  async removeBoard(id: string): Promise<void> {
+    const board = await this.findBoardById(id);
+    await this.scheduleBoardModel.findByIdAndDelete(board._id).exec();
+  }
+
+  private async findBoardById(id: string): Promise<ScheduleBoardDocument> {
+    const board = await this.scheduleBoardModel.findById(id).exec();
+    if (!board) throw new NotFoundException('صورة الجدول غير موجودة');
+    return board;
+  }
+
+  // `includeInactive` is only ever passed true by a manager (canManage in the UI) so they can see
+  // -- and toggle back on -- a photo they'd previously hidden. Students/professors always get only
+  // the active ones.
+  async getBoardsForGroup(group: Group, includeInactive = false): Promise<ScheduleBoardDocument[]> {
+    return this.scheduleBoardModel
+      .find(includeInactive ? group : { ...group, active: true })
+      .sort({ createdAt: 1 })
+      .exec();
   }
 
   // Mirrors findForUser() -- resolves the caller's own group from their profile.
-  async getBoardForUser(userId: string): Promise<ScheduleBoardDocument | null> {
+  async getBoardsForUser(userId: string, includeInactive = false): Promise<ScheduleBoardDocument[]> {
     const user = await this.usersService.findById(userId);
-    if (!user.department || !user.academicYear || !user.specialization) return null;
-    return this.getBoardForGroup({
-      department: user.department,
-      academicYear: user.academicYear,
-      specialization: user.specialization,
-    });
-  }
-
-  async removeBoard(group: Group): Promise<void> {
-    await this.scheduleBoardModel.deleteOne(group).exec();
+    if (!user.department || !user.academicYear || !user.specialization) return [];
+    return this.getBoardsForGroup(
+      {
+        department: user.department,
+        academicYear: user.academicYear,
+        specialization: user.specialization,
+      },
+      includeInactive,
+    );
   }
 
   async update(id: string, dto: UpdateScheduleEntryDto): Promise<ScheduleEntryDocument> {

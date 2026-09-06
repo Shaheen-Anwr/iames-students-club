@@ -3,7 +3,9 @@ import { Department } from '../../common/enums/department.enum';
 import { AcademicYear } from '../../common/enums/academic-year.enum';
 import { Specialization } from '../../common/enums/specialization.enum';
 
-export class UpsertScheduleBoardDto {
+// Adds one more schedule-board photo to a group -- always a new document (a group can hold any
+// number, see ScheduleBoard's schema comment), never a replace.
+export class CreateScheduleBoardDto {
   @IsEnum(Department, { message: 'القسم غير صالح' })
   department: Department;
 

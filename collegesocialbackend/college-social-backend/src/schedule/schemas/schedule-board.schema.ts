@@ -7,9 +7,10 @@ import { Specialization } from '../../common/enums/specialization.enum';
 export type ScheduleBoardDocument = HydratedDocument<ScheduleBoard>;
 
 // The "just upload a photo of the whole timetable" alternative to building it lecture-by-lecture
-// via ScheduleEntry -- one photo (+ optional note) per department/academicYear/specialization
-// group, admin/professor-published. Uploading (or replacing) one also auto-posts to the main feed,
-// same as ScheduleEntry -- see ScheduleService.upsertBoard()/postFeedAnnouncement().
+// via ScheduleEntry -- any number of photos (+ optional note each) per
+// department/academicYear/specialization group, admin/professor-published (e.g. one per term, or
+// multiple pages of the same printed table). Adding one also auto-posts to the main feed, same as
+// ScheduleEntry -- see ScheduleService.addBoard()/postBoardFeedAnnouncement().
 @Schema({ timestamps: true })
 export class ScheduleBoard {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
@@ -29,9 +30,14 @@ export class ScheduleBoard {
 
   @Prop({ type: String, required: false, default: null, trim: true, maxlength: 1500 })
   description: string | null;
+
+  // Show/hide toggle, replacing a hard delete in the UI (ScheduleBoardPhoto.tsx) -- an admin can
+  // flip an old term's photo off without losing it, and flip it back on later. Students/professors
+  // only ever see active:true ones (see ScheduleService.getBoardsForGroup()'s includeInactive gate).
+  @Prop({ type: Boolean, default: true, index: true })
+  active: boolean;
 }
 
 export const ScheduleBoardSchema = SchemaFactory.createForClass(ScheduleBoard);
-// One board per group -- upsertBoard() replaces the existing document for a group rather than
-// accumulating a history of old timetable photos.
-ScheduleBoardSchema.index({ department: 1, academicYear: 1, specialization: 1 }, { unique: true });
+// Not unique -- a group can have any number of board photos now (see class comment above).
+ScheduleBoardSchema.index({ department: 1, academicYear: 1, specialization: 1, createdAt: 1 });
