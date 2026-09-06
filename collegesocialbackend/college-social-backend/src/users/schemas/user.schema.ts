@@ -230,6 +230,19 @@ export class User {
 
   @Prop({ type: String, default: null, trim: true })
   aiPreferredName: string | null;
+
+  // The student's customized /home layout (profile > "تخصيص الرئيسية"). `order` is the full
+  // widget-id order they dragged into place; `hidden` is the subset they toggled off. Both are
+  // sanitized server-side against the known WidgetId list on every write (UsersService.setHomeLayout)
+  // so a stale/forged client can't smuggle an arbitrary string in. Empty `order` (the default, never
+  // customized) means the home page falls back to its own smart/situational default ordering --
+  // see the frontend's lib/home-widgets.tsx::computeSmartOrder.
+  @Prop({
+    type: { order: { type: [String], default: [] }, hidden: { type: [String], default: [] } },
+    default: () => ({ order: [], hidden: [] }),
+    _id: false,
+  })
+  homeLayoutPrefs: { order: string[]; hidden: string[] };
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);

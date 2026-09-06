@@ -250,7 +250,9 @@ export function ProgressDashboard() {
 
 /* -------------------------------- pieces --------------------------------- */
 
-function StatTile({
+// Exported for components/home/QuickStatsCard.tsx, which reuses this exact tile look for the same
+// GPA/attendance/points/streak headline numbers on the home page.
+export function StatTile({
   icon: Icon,
   label,
   value,
