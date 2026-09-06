@@ -29,7 +29,20 @@ interface Group {
 // (student/professor), same split GET /schedule itself uses. `canManage` gates adding/editing --
 // showing/hiding an existing photo is a Switch, not a trash-icon delete button (the photo itself
 // is the "replace" affordance: tap it to swap the image, same as the initial-upload tile).
-export function ScheduleBoardPhoto({ group, canManage }: { group?: Group; canManage: boolean }) {
+//
+// `onCountChange` lets ScheduleGrid know whether any photo exists here, so its own "no schedule
+// published yet" empty state (driven by the separate, entry-based grid) doesn't keep showing once
+// a whole-timetable photo already covers that need -- the two are independent publishing paths for
+// the same underlying "has this group's schedule been published" question.
+export function ScheduleBoardPhoto({
+  group,
+  canManage,
+  onCountChange,
+}: {
+  group?: Group;
+  canManage: boolean;
+  onCountChange?: (count: number) => void;
+}) {
   const { showToast } = useToast();
   const queryKey = group
     ? ['schedule-boards', group.department, group.academicYear, group.specialization, canManage]
@@ -51,6 +64,11 @@ export function ScheduleBoardPhoto({ group, canManage }: { group?: Group; canMan
   useEffect(() => {
     if (data) setBoards(data);
   }, [data]);
+
+  useEffect(() => {
+    if (!isPending) onCountChange?.(boards.length);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isPending, boards.length]);
 
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState<ScheduleBoard | null>(null); // null while adding a new one

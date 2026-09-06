@@ -44,6 +44,10 @@ export function ScheduleGrid() {
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<ScheduleEntry | undefined>(undefined);
+  // Whether the group has any whole-timetable photo(s) published (ScheduleBoardPhoto, above) --
+  // used below so the entry-list empty state doesn't say "nothing published yet" when a photo
+  // already covers that need.
+  const [hasBoardPhotos, setHasBoardPhotos] = useState(false);
 
   // Admins aren't tied to one class, so they pick which group's schedule to view/manage.
   // Students/professors always see their own group, resolved server-side from their profile.
@@ -168,6 +172,7 @@ export function ScheduleGrid() {
               : undefined
           }
           canManage={isAdmin}
+          onCountChange={(n) => setHasBoardPhotos(n > 0)}
         />
       )}
 
@@ -183,25 +188,32 @@ export function ScheduleGrid() {
           <p className="text-sm font-medium text-foreground">اختر القسم والسنة الدراسية والتخصص لعرض الجدول وتعديله</p>
         </div>
       ) : entries.length === 0 ? (
-        <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
-          <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
-            <CalendarDays className="h-7 w-7" />
+        // For a student/professor, a whole-timetable photo (ScheduleBoardPhoto above) already
+        // satisfies "has a schedule been published" -- showing "لم يُنشر جدول دراسي بعد" underneath
+        // it would flatly contradict the photo they can already see, so this empty state is skipped
+        // when one exists. Admins always see it (it's entry-specific -- "no lectures added" -- and
+        // still true/actionable regardless of whether a photo was also published).
+        !isAdmin && hasBoardPhotos ? null : (
+          <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
+              <CalendarDays className="h-7 w-7" />
+            </div>
+            <div className="space-y-1">
+              <p className="text-sm font-medium text-foreground">
+                {isAdmin ? 'لم يتم نشر أي محاضرات لهذه الفئة بعد' : 'لم يُنشر جدول دراسي لفئتك بعد'}
+              </p>
+              <p className="text-xs text-muted-foreground">
+                {isAdmin ? 'أضف أول محاضرة لهذا القسم والسنة والتخصص.' : 'سيظهر هنا الجدول الدراسي بمجرد نشره من إدارة الكلية.'}
+              </p>
+            </div>
+            {isAdmin && (
+              <Button size="sm" onClick={openCreate}>
+                <Plus className="h-4 w-4" />
+                إضافة محاضرة
+              </Button>
+            )}
           </div>
-          <div className="space-y-1">
-            <p className="text-sm font-medium text-foreground">
-              {isAdmin ? 'لم يتم نشر أي محاضرات لهذه الفئة بعد' : 'لم يُنشر جدول دراسي لفئتك بعد'}
-            </p>
-            <p className="text-xs text-muted-foreground">
-              {isAdmin ? 'أضف أول محاضرة لهذا القسم والسنة والتخصص.' : 'سيظهر هنا الجدول الدراسي بمجرد نشره من إدارة الكلية.'}
-            </p>
-          </div>
-          {isAdmin && (
-            <Button size="sm" onClick={openCreate}>
-              <Plus className="h-4 w-4" />
-              إضافة محاضرة
-            </Button>
-          )}
-        </div>
+        )
       ) : (
         <>
           {/* Desktop/tablet grid */}
