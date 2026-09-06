@@ -78,12 +78,16 @@ export function MessageInput({
     // For video, api.upload re-encodes/segments in the browser and pushes the bytes straight to
     // Cloudinary (see lib/cloudinary-upload.ts); the first stretch of progress is that prep step.
     setProgress({ label: category === 'videos' ? 'جارٍ تجهيز الفيديو…' : 'جارٍ الرفع…', pct: 0 });
-    const uploaded = await api.upload<{ url: string; size: number; mimeType: string; originalName?: string }>(
+    const uploaded = await api.upload<{ url: string; size: number; mimeType: string; originalName?: string; chunkCount?: number }>(
       endpoint,
       file,
       (pct) => setProgress({ label: 'جارٍ الرفع…', pct: Math.round(pct) }),
     );
-    return { url: uploaded.url, type, name: file.name, size: uploaded.size, mimeType: uploaded.mimeType };
+    // chunkCount > 1 means the file was too large for a single Cloudinary asset and got split on
+    // upload -- must be stored alongside the url so the backend can reassemble it on read (see
+    // ChatController's GET messages/:id/attachments/:index/download). Dropping this silently
+    // truncated any document attachment past Cloudinary's ~10MB raw-asset cap to just its first piece.
+    return { url: uploaded.url, type, name: file.name, size: uploaded.size, mimeType: uploaded.mimeType, chunkCount: uploaded.chunkCount };
   }
 
   async function handleSend() {

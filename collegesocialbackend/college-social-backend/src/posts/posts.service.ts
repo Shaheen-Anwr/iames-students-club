@@ -38,6 +38,7 @@ import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { UsersService } from '../users/users.service';
 import { extractMentionIds, parseHashtags } from '../common/utils/tag-parser.util';
 import { Role } from '../common/enums/role.enum';
+import { StorageService } from '../upload/storage.service';
 
 // Uploading course material (a lecture or video attachment) is admin/professor only; a plain
 // caption/image/generic-file post stays open to everyone. FILE is deliberately excluded here --
@@ -73,6 +74,7 @@ export class PostsService {
     private readonly lectureIndexService: LectureIndexService,
     private readonly realtimeEmitter: RealtimeEmitterService,
     private readonly usersService: UsersService,
+    private readonly storageService: StorageService,
   ) {}
 
   // Shared by posts/comments: pulls @mention tokens out of raw text and keeps only ids that both
@@ -548,22 +550,10 @@ export class PostsService {
     return post;
   }
 
-  private static readonly ATTACHMENT_MIME_BY_EXT: Record<string, string> = {
-    pdf: 'application/pdf',
-    ppt: 'application/vnd.ms-powerpoint',
-    pptx: 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-    doc: 'application/msword',
-    docx: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-    txt: 'text/plain',
-  };
-
-  // Streams a post's 'lecture'/'file' (raw) attachment to the response. An ordinary, unsplit
-  // attachment is just a 302 redirect straight to Cloudinary -- zero extra bandwidth through this
-  // server. A chunked one (attachmentChunkCount > 1, see StorageService.upload()'s raw-splitting
-  // path) is reassembled here by fetching each "<group>-part-<i>" piece in turn and writing its
-  // bytes to the response in order, so the client only ever sees one continuous file and never has
-  // to know it was split. Buffers one part (well under Cloudinary's per-asset cap) at a time rather
-  // than the whole reconstructed file, keeping memory bounded regardless of the total size.
+  // Streams a post's 'lecture'/'file' (raw) attachment to the response -- the actual Cloudinary
+  // reassembly (for one that was too large for a single asset and got split, see
+  // StorageService.upload()'s raw-splitting path) is shared with every other feature that can carry
+  // one; see StorageService.streamRawAttachment().
   async streamAttachment(id: string, res: Response, viewerId: string): Promise<void> {
     const post = await this.postModel.findById(id).lean().exec();
     if (!post || !post.attachmentUrl) throw new NotFoundException('المرفق غير موجود');
@@ -573,77 +563,11 @@ export class PostsService {
       throw new NotFoundException('المرفق غير موجود');
     }
 
-    const chunkCount = post.attachmentChunkCount ?? 1;
-    if (chunkCount <= 1) {
-      res.redirect(post.attachmentUrl);
-      return;
-    }
-
-    const ext = (post.attachmentOriginalName ?? '').split('.').pop()?.toLowerCase() ?? '';
-    const displayName = post.attachmentOriginalName ?? 'file';
-    // Non-ASCII (e.g. Arabic) filenames aren't valid in a plain `filename=` header value -- give a
-    // sanitized ASCII fallback alongside the real name via the RFC 5987 `filename*=` form.
-    const asciiFallback = displayName.replace(/[^\x20-\x7E]/g, '_');
-    const contentType = PostsService.ATTACHMENT_MIME_BY_EXT[ext] ?? 'application/octet-stream';
-    const contentDisposition = `inline; filename="${asciiFallback}"; filename*=UTF-8''${encodeURIComponent(displayName)}`;
-
-    const FETCH_RETRIES = 3;
-    let bytesWritten = 0;
-
-    for (let i = 0; i < chunkCount; i += 1) {
-      const partUrl = i === 0 ? post.attachmentUrl : post.attachmentUrl.replace('-part-0', `-part-${i}`);
-      let lastError: unknown;
-      let fetched = false;
-
-      for (let attempt = 1; attempt <= FETCH_RETRIES && !fetched; attempt += 1) {
-        try {
-          const partRes = await fetch(partUrl);
-          if (!partRes.ok) throw new Error(`part ${i} responded ${partRes.status}`);
-          const buffer = Buffer.from(await partRes.arrayBuffer());
-          // Headers (and the 200 status they imply) are only committed once we know there's
-          // actually a first byte to send -- setting them any earlier and then failing on part 0
-          // would have sent the browser a "successful" empty response with the right Content-Type,
-          // which looks exactly like a real file but silently opens/downloads as nothing.
-          if (bytesWritten === 0) {
-            res.setHeader('Content-Type', contentType);
-            res.setHeader('Content-Disposition', contentDisposition);
-            // A post's attachment never changes after upload (a new upload is a new post, not an
-            // edit to this one), so it's safe to tell the browser to keep this reconstructed file
-            // indefinitely instead of re-fetching and re-stitching every part again on every single
-            // open -- that per-open cost was the main reason a chunked file felt slow to view
-            // repeatedly. `private` (not `public`) since the URL carries a per-viewer access token
-            // in its query string -- this is a per-browser cache, not a shared/CDN one.
-            res.setHeader('Cache-Control', 'private, max-age=31536000, immutable');
-          }
-          res.write(buffer);
-          bytesWritten += buffer.length;
-          fetched = true;
-        } catch (error) {
-          lastError = error;
-          // A transient read timeout/connection drop mid-fetch is common enough on a real network
-          // (confirmed directly against this app's own Cloudinary account: intermittent "terminated"
-          // errors on nothing more than a plain sequential fetch) that it shouldn't cost the user a
-          // truncated file -- retry a couple of times with a short backoff before giving up on this
-          // part entirely.
-          if (attempt < FETCH_RETRIES) await new Promise((r) => setTimeout(r, 500 * attempt));
-        }
-      }
-
-      if (!fetched) {
-        this.logger.error(`streamAttachment: failed fetching part ${i} of post ${id} after ${FETCH_RETRIES} attempts: ${(lastError as Error)?.message}`);
-        if (bytesWritten === 0) {
-          // Nothing sent to the client yet -- safe to return a real error status instead of a fake
-          // empty "200 OK" that the browser would otherwise treat as a genuine, if empty, file.
-          res.status(502).json({ message: 'تعذّر تحميل المرفق، حاول مرة أخرى.' });
-          return;
-        }
-        // Otherwise, a part failing mid-stream after earlier parts were already written can't
-        // cleanly become a fresh error response (headers/body are already sent) -- end what we
-        // have rather than hang the request open.
-        break;
-      }
-    }
-    res.end();
+    await this.storageService.streamRawAttachment(res, {
+      url: post.attachmentUrl,
+      chunkCount: post.attachmentChunkCount ?? 1,
+      originalName: post.attachmentOriginalName,
+    });
   }
 
   // One reaction per user per post: picking the same type again removes it, a different type

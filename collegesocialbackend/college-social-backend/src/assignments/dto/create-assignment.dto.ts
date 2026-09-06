@@ -1,4 +1,4 @@
-import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString, ValidateIf } from 'class-validator';
+import { IsBoolean, IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString, ValidateIf } from 'class-validator';
 import { AssignmentAttachmentType } from '../schemas/assignment.schema';
 
 export class CreateAssignmentDto {
@@ -36,4 +36,10 @@ export class CreateAssignmentDto {
   @IsOptional()
   @IsString()
   attachmentOriginalName?: string;
+
+  // From the upload response's `chunkCount` field -- >1 when the file was too large for a single
+  // Cloudinary asset and got split (see StorageService.upload()'s chunked path).
+  @IsOptional()
+  @IsNumber()
+  attachmentChunkCount?: number;
 }

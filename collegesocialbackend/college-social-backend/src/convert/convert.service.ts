@@ -1,5 +1,5 @@
 import { createReadStream } from 'fs';
-import { stat, unlink } from 'fs/promises';
+import { readFile, stat, unlink } from 'fs/promises';
 import {
   Injectable,
   Logger,
@@ -12,9 +12,7 @@ import { Response } from 'express';
 import { maxUploadSizeMb } from '../upload/multer.config';
 import { Conversion, ConversionDocument } from './schemas/conversion.schema';
 import { ALL_TARGETS, contentTypeFor, FORMATS, SUPPORTED } from './formats';
-
-// eslint-disable-next-line @typescript-eslint/no-var-requires
-const AdmZip = require('adm-zip');
+import { zipBuffers } from './engines/zip.util';
 
 const HISTORY_TTL_HOURS = 24;
 const HISTORY_LIMIT = 40;
@@ -33,6 +31,8 @@ export interface JobSummary {
   error: string | null;
   createdAt: string;
   expiresAt: string;
+  tool: string;
+  outputIsZip: boolean;
 }
 
 @Injectable()
@@ -94,7 +94,7 @@ export class ConvertService {
     if (!doc?.outputPath) throw new NotFoundException('التحويل غير جاهز أو انتهت صلاحيته');
     if (!(await this.fileExists(doc.outputPath))) throw new NotFoundException('لم يعد ملف التحويل متاحًا');
 
-    res.setHeader('Content-Type', contentTypeFor(doc.targetFormat));
+    res.setHeader('Content-Type', doc.outputIsZip ? 'application/zip' : contentTypeFor(doc.targetFormat));
     res.setHeader('Content-Length', String(doc.sizeBytes));
     res.setHeader(
       'Content-Disposition',
@@ -119,16 +119,10 @@ export class ConvertService {
     for (const r of rows) if (r.outputPath && (await this.fileExists(r.outputPath))) usable.push(r);
     if (!usable.length) throw new NotFoundException('لا توجد ملفات جاهزة للتنزيل');
 
-    const zip = new AdmZip();
-    const seen = new Map<string, number>();
-    for (const r of usable) {
-      let name = r.outputFilename;
-      const n = seen.get(name) ?? 0;
-      seen.set(name, n + 1);
-      if (n) name = name.replace(/(\.[^.]+)$/, `-${n}$1`);
-      zip.addLocalFile(r.outputPath, '', name);
-    }
-    const buf: Buffer = zip.toBuffer();
+    const files = await Promise.all(
+      usable.map(async (r) => ({ name: r.outputFilename, data: await readFile(r.outputPath!) })),
+    );
+    const buf = zipBuffers(files);
     res.setHeader('Content-Type', 'application/zip');
     res.setHeader('Content-Length', String(buf.length));
     res.setHeader('Content-Disposition', `attachment; filename="converted-${Date.now()}.zip"`);
@@ -161,6 +155,8 @@ export class ConvertService {
       error: doc.error ?? null,
       createdAt: new Date(doc.createdAt).toISOString(),
       expiresAt: new Date(doc.expiresAt).toISOString(),
+      tool: doc.tool ?? 'convert',
+      outputIsZip: !!doc.outputIsZip,
     };
   }
 }

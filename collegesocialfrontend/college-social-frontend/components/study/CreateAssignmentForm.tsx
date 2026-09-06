@@ -79,6 +79,7 @@ export function CreateAssignmentForm({
     try {
       let attachmentUrl: string | undefined;
       let attachmentOriginalName: string | undefined;
+      let attachmentChunkCount: number | undefined;
 
       // 1. File Upload Processing
       if (file && pendingType) {
@@ -88,6 +89,11 @@ export function CreateAssignmentForm({
         const data = rawUploaded?.data ?? rawUploaded;
         attachmentUrl = data?.url || data?.secure_url || data?.fileUrl || data?.path || data?.location || data?.link;
         attachmentOriginalName = file.name;
+        // >1 when the file was too large for a single Cloudinary asset and got split on upload --
+        // must be stored alongside attachmentUrl so the backend can reassemble it on read (see
+        // AssignmentsController's GET :id/attachment). Dropping this silently truncated any
+        // assignment attachment past Cloudinary's ~10MB raw-asset cap to just its first piece.
+        attachmentChunkCount = typeof data?.chunkCount === 'number' ? data.chunkCount : undefined;
 
         if (!attachmentUrl) {
           throw new Error('فشل رفع الملف: لم يتم استلام رابط الملف من السيرفر.');
@@ -106,6 +112,7 @@ export function CreateAssignmentForm({
       if (isMilitary) payload.isMilitary = true;
       if (attachmentUrl) payload.attachmentUrl = attachmentUrl;
       if (attachmentOriginalName) payload.attachmentOriginalName = attachmentOriginalName;
+      if (attachmentChunkCount) payload.attachmentChunkCount = attachmentChunkCount;
 
       const endpoint = groupId ? `/assignments/group/${groupId}` : '/assignments';
       const rawResult = await api.post<Assignment | { data: Assignment }>(endpoint, payload);

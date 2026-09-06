@@ -1,6 +1,7 @@
 import { ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import type { Response } from 'express';
 import { Assignment, AssignmentDocument } from './schemas/assignment.schema';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { CreateGroupAssignmentDto } from './dto/create-group-assignment.dto';
@@ -9,6 +10,7 @@ import { POINTS } from '../gamification/badges';
 import { LectureIndexService } from '../ai/lecture-index.service';
 import { Role } from '../common/enums/role.enum';
 import { GroupsService } from '../groups/groups.service';
+import { StorageService } from '../upload/storage.service';
 
 export interface AssignmentStats {
   totalAssignments: number;
@@ -24,6 +26,7 @@ export class AssignmentsService {
     private readonly gamificationService: GamificationService,
     private readonly lectureIndexService: LectureIndexService,
     private readonly groupsService: GroupsService,
+    private readonly storageService: StorageService,
   ) {}
 
   // Assignments a student creates are personal (visible only to them); professor-created ones
@@ -51,6 +54,7 @@ export class AssignmentsService {
       attachmentType: dto.attachmentType ?? 'none',
       attachmentUrl: dto.attachmentUrl ?? null,
       attachmentOriginalName: dto.attachmentOriginalName ?? null,
+      attachmentChunkCount: dto.attachmentChunkCount ?? null,
       isPersonal: !isMilitary && creatorRole === Role.STUDENT,
       isMilitary,
     });
@@ -118,6 +122,21 @@ export class AssignmentsService {
     return assignment;
   }
 
+  // Streams a 'lecture'/'file' (raw) attachment, reassembling it if it was too large for a single
+  // Cloudinary asset and got split on upload (see StorageService.upload()'s chunked path) --
+  // mirrors PostsService.streamAttachment(). findOne() already enforces the same
+  // personal/group-membership visibility a viewer would need to see the assignment at all.
+  async streamAttachment(id: string, res: Response, viewerId: string): Promise<void> {
+    const assignment = await this.findOne(id, viewerId);
+    if (!assignment.attachmentUrl) throw new NotFoundException('المرفق غير موجود');
+
+    await this.storageService.streamRawAttachment(res, {
+      url: assignment.attachmentUrl,
+      chunkCount: assignment.attachmentChunkCount ?? 1,
+      originalName: assignment.attachmentOriginalName,
+    });
+  }
+
   async createForGroup(groupId: string, creatorId: string, dto: CreateGroupAssignmentDto): Promise<AssignmentDocument> {
     await this.groupsService.assertOwner(groupId, creatorId);
     const assignment = new this.assignmentModel({
@@ -129,6 +148,7 @@ export class AssignmentsService {
       attachmentType: dto.attachmentType ?? 'none',
       attachmentUrl: dto.attachmentUrl ?? null,
       attachmentOriginalName: dto.attachmentOriginalName ?? null,
+      attachmentChunkCount: dto.attachmentChunkCount ?? null,
       isPersonal: false,
       group: new Types.ObjectId(groupId),
     });

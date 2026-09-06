@@ -29,11 +29,12 @@ const ALLOWED_MIME_BY_CATEGORY: Record<UploadCategory, RegExp> = {
   videos: /^video\/(mp4|quicktime|x-matroska|webm)$/,
   // Covers both regular audio files and recorded voice notes (MediaRecorder typically emits webm/ogg).
   audio: /^audio\/(mpeg|mp4|wav|webm|ogg|x-m4a)$/,
-  // محوّل الملفات: PDF + the three OOXML office types only. octet-stream / zip are allowed because
-  // browsers frequently mislabel .docx/.pptx/.xlsx that way -- ConvertService re-validates by
-  // extension against the supported matrix.
+  // محوّل الملفات: PDF + the three OOXML office types, plus images (images-to-pdf tool) and
+  // text/html/markdown (new format-pair sources). octet-stream / zip are allowed because browsers
+  // frequently mislabel .docx/.pptx/.xlsx that way -- ConvertService re-validates by extension
+  // against the supported matrix.
   conversions:
-    /^application\/(pdf|zip|octet-stream|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet))$/,
+    /^(application\/(pdf|zip|octet-stream|vnd\.openxmlformats-officedocument\.(wordprocessingml\.document|presentationml\.presentation|spreadsheetml\.sheet))|image\/(jpe?g|png|webp|gif)|text\/(plain|html|markdown))$/,
 };
 
 // The actual per-asset ceiling the connected Cloudinary account's plan enforces on its own servers

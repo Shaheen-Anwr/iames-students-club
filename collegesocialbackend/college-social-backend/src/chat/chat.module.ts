@@ -11,6 +11,7 @@ import { AuthModule } from '../auth/auth.module';
 import { GroupsModule } from '../groups/groups.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
+import { UploadModule } from '../upload/upload.module';
 
 @Module({
   imports: [
@@ -22,6 +23,7 @@ import { UsersModule } from '../users/users.module';
     GroupsModule, // ChatGateway also carries group-channel real-time traffic over the same socket
     NotificationsModule,
     UsersModule, // presence (online/last-seen) tracking on connect/disconnect
+    UploadModule,
   ],
   controllers: [ChatController],
   providers: [ChatService, ChatGateway, ChatPresenceService, LinkPreviewService],

@@ -444,6 +444,9 @@ export interface Assignment {
   attachmentType: PostAttachmentType;
   attachmentUrl?: string | null;
   attachmentOriginalName?: string | null;
+  // >1 when the attachment was too large for a single Cloudinary asset and got split on upload --
+  // see AttachmentPreview's isChunked handling (same as a post's attachmentChunkCount).
+  attachmentChunkCount?: number | null;
   completedBy: string[];
   createdAt: string;
   isPersonal?: boolean;
@@ -692,6 +695,9 @@ export interface Attachment {
   size?: number | null;
   mimeType?: string | null;
   duration?: number | null;
+  // >1 when this ('document') attachment was too large for a single Cloudinary asset and got split
+  // on upload -- see MessageBubble/ChannelMessageBubble's chunked-download handling.
+  chunkCount?: number | null;
 }
 
 export interface MessageReaction {
@@ -1072,7 +1078,11 @@ export interface AttendanceSummary {
 
 // --- File converter / محوّل الملفات (src/convert) -- PDF / Word / PowerPoint / Excel only ---
 
-export type ConvertExt = 'pdf' | 'docx' | 'pptx' | 'xlsx';
+export type ConvertExt = 'pdf' | 'docx' | 'pptx' | 'xlsx' | 'jpg' | 'png' | 'webp' | 'html' | 'md' | 'txt';
+
+// PDF tools (src/convert/convert-tools.controller.ts) -- everything besides plain format
+// conversion. 'convert' is the ConversionRecord.tool default for the original feature.
+export type PdfTool = 'merge' | 'images-to-pdf' | 'split' | 'reorder' | 'rotate' | 'pages' | 'watermark';
 
 export interface ConvertFormatMeta {
   ext: ConvertExt;
@@ -1106,6 +1116,13 @@ export interface ConversionRecord {
   error: string | null;
   createdAt: string;
   expiresAt: string;
+  tool: string; // 'convert' | PdfTool
+  outputIsZip: boolean;
+}
+
+export interface StagedPdf {
+  stagedId: string;
+  pageCount: number;
 }
 
 // --- السوق (student marketplace) -- شعبة-scoped listings (src/marketplace) ---

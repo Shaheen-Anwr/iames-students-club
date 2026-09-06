@@ -25,6 +25,14 @@ export class Attachment {
   // Seconds -- only set for 'voice' (recorded notes) and 'audio'/'video' when known client-side.
   @Prop({ type: Number, default: null })
   duration: number | null;
+
+  // Set when this attachment was too large for a single Cloudinary raw asset and got split (see
+  // StorageService.upload()'s chunked path) -- null/1 for an ordinary unsplit attachment. Only ever
+  // set for 'document' attachments (images/video/audio aren't split this way). Needed to
+  // reconstruct the full file on read; see ChatController's/GroupsController's attachment-download
+  // routes. Shared by ChannelMessage's `attachments`, which reuses this same schema.
+  @Prop({ type: Number, default: null })
+  chunkCount: number | null;
 }
 
 export const AttachmentSchema = SchemaFactory.createForClass(Attachment);

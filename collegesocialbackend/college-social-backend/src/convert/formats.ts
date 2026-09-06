@@ -9,7 +9,17 @@
 // pipeline (a spreadsheet has no page canvas). The from-scratch pdfkit draw is only a last-resort
 // fallback when neither engine is installed.
 
-export type ConvertFormat = 'pdf' | 'docx' | 'pptx' | 'xlsx';
+export type ConvertFormat = 'pdf' | 'docx' | 'pptx' | 'xlsx' | 'jpg' | 'png' | 'webp' | 'html' | 'md' | 'txt';
+
+// The original 4-format matrix -- Adobe/LibreOffice/the Block[] pipeline only ever operate on
+// these; the newer one-way formats (jpg/png/webp/html/md/txt) are handled by dedicated branches in
+// engines/index.ts's runConversion() before any of that code runs, and are never passed down into it.
+export type OfficeFormat = 'pdf' | 'docx' | 'pptx' | 'xlsx';
+
+// Targets whose output is a zip of several files, fixed at job-creation time (not derived from
+// the runtime page/image count) -- pdf->jpg/png always zips, even a 1-page PDF, so download logic
+// branches on the target format alone. Mirrors ZIP_OUTPUT_TOOLS in convert-queue.service.ts.
+export const ALWAYS_ZIP_TARGETS: ReadonlySet<ConvertFormat> = new Set(['jpg', 'png']);
 
 // (percent 0-100, short Arabic stage label) -- an engine calls this so the worker can relay live
 // progress onto the job row.
@@ -38,6 +48,12 @@ export const FORMATS: Record<ConvertFormat, FormatMeta> = {
     label: 'Excel',
     contentType: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   },
+  jpg: { ext: 'jpg', label: 'JPG', contentType: 'image/jpeg' },
+  png: { ext: 'png', label: 'PNG', contentType: 'image/png' },
+  webp: { ext: 'webp', label: 'WebP', contentType: 'image/webp' },
+  html: { ext: 'html', label: 'HTML', contentType: 'text/html' },
+  md: { ext: 'md', label: 'Markdown', contentType: 'text/markdown' },
+  txt: { ext: 'txt', label: 'نص عادي', contentType: 'text/plain' },
 };
 
 // Only these input extensions are accepted (legacy .doc/.ppt/.xls are not).
@@ -46,6 +62,15 @@ const EXT_ALIASES: Record<string, ConvertFormat> = {
   docx: 'docx',
   pptx: 'pptx',
   xlsx: 'xlsx',
+  jpg: 'jpg',
+  jpeg: 'jpg',
+  png: 'png',
+  webp: 'webp',
+  html: 'html',
+  htm: 'html',
+  md: 'md',
+  markdown: 'md',
+  txt: 'txt',
 };
 
 // "Report.FINAL.DOCX" / ".pptx" / "pdf" -> canonical format, or null if unsupported.
@@ -59,10 +84,17 @@ export function normalizeFormat(nameOrExt: string): ConvertFormat | null {
 // Excel->PowerPoint) do something sensible with the text but obviously can't invent structure the
 // source never had.
 export const SUPPORTED: Record<ConvertFormat, ConvertFormat[]> = {
-  pdf: ['docx', 'pptx', 'xlsx'],
+  pdf: ['docx', 'pptx', 'xlsx', 'jpg', 'png'],
   docx: ['pdf', 'pptx', 'xlsx'],
   pptx: ['pdf', 'docx', 'xlsx'],
   xlsx: ['pdf', 'docx', 'pptx'],
+  // One-way: a raster image, HTML page, or plain-text/Markdown document becoming a PDF.
+  jpg: ['pdf'],
+  png: ['pdf'],
+  webp: ['pdf'],
+  html: ['pdf'],
+  md: ['pdf'],
+  txt: ['pdf'],
 };
 
 export const ALL_TARGETS: ConvertFormat[] = [...new Set(Object.values(SUPPORTED).flat())];

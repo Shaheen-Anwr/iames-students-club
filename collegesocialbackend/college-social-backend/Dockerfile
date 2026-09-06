@@ -30,6 +30,8 @@ FROM node:22-bookworm-slim AS runtime
 RUN apt-get update && apt-get install -y --no-install-recommends \
       libreoffice-core libreoffice-writer libreoffice-calc libreoffice-impress \
       poppler-utils \
+      ghostscript \
+      curl \
       fonts-noto-core fonts-noto-cjk fonts-kacst fontconfig \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
@@ -40,6 +42,13 @@ ENV NODE_ENV=production \
 COPY --from=builder /app/node_modules ./node_modules
 COPY --from=builder /app/dist ./dist
 COPY --from=builder /app/package.json ./
+# OCR (ocr.engine.ts) trained data -- pre-fetched at build time so the first real OCR request on a
+# fresh instance doesn't pay this download itself; ocr.engine.ts falls back to fetching at runtime
+# (with retries) if this ever comes up empty, so a transient failure here doesn't break the build.
+RUN mkdir -p .tessdata-cache && \
+    ( curl -fsSL -o .tessdata-cache/eng.traineddata.gz https://cdn.jsdelivr.net/npm/@tesseract.js-data/eng/4.0.0/eng.traineddata.gz && \
+      curl -fsSL -o .tessdata-cache/ara.traineddata.gz https://cdn.jsdelivr.net/npm/@tesseract.js-data/ara/4.0.0/ara.traineddata.gz || \
+      echo "tessdata prefetch failed, will fetch on first use instead" )
 RUN mkdir -p /var/data/uploads && chown -R node:node /app /var/data/uploads
 USER node
 EXPOSE 3001

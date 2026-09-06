@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import {
   ArrowLeft,
   CheckCircle2,
@@ -11,6 +12,7 @@ import {
   Loader2,
   MoreHorizontal,
   Trash2,
+  Wrench,
   X,
 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
@@ -26,6 +28,7 @@ import { useRawQuery } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { saveBlob } from '@/lib/download';
 import { cn } from '@/lib/utils';
+import { formatBytes, timeLeft } from '@/lib/convert-format';
 import type { ConversionRecord, ConversionStatus, ConvertCapabilities } from '@/lib/types';
 
 function extOf(name: string): string {
@@ -46,6 +49,13 @@ const MIME_BY_EXT: Record<string, string> = {
   txt: 'text/plain',
   csv: 'text/csv',
   rtf: 'application/rtf',
+  jpg: 'image/jpeg',
+  jpeg: 'image/jpeg',
+  png: 'image/png',
+  webp: 'image/webp',
+  html: 'text/html',
+  htm: 'text/html',
+  md: 'text/markdown',
 };
 
 // The matrix normally comes from GET /api/convert/capabilities, but the feature must stay usable
@@ -53,30 +63,26 @@ const MIME_BY_EXT: Record<string, string> = {
 // picker is disabled and every file reads as "unsupported". Mirrors the backend's
 // src/convert/formats.ts SUPPORTED map + FORMATS labels; keep them in sync.
 const FALLBACK_MATRIX: Record<string, string[]> = {
-  pdf: ['docx', 'pptx', 'xlsx'],
+  pdf: ['docx', 'pptx', 'xlsx', 'jpg', 'png'],
   docx: ['pdf', 'pptx', 'xlsx'],
   pptx: ['pdf', 'docx', 'xlsx'],
   xlsx: ['pdf', 'docx', 'pptx'],
+  jpg: ['pdf'],
+  png: ['pdf'],
+  webp: ['pdf'],
+  html: ['pdf'],
+  md: ['pdf'],
+  txt: ['pdf'],
 };
 const FALLBACK_FORMATS = [
   { ext: 'pdf', label: 'PDF' },
   { ext: 'docx', label: 'Word' },
   { ext: 'pptx', label: 'PowerPoint' },
   { ext: 'xlsx', label: 'Excel' },
+  { ext: 'jpg', label: 'JPG' },
+  { ext: 'png', label: 'PNG' },
 ];
 const FALLBACK_MAX_MB = 25;
-function formatBytes(n: number): string {
-  if (!n) return '';
-  if (n < 1024) return `${n} ب`;
-  if (n < 1024 * 1024) return `${(n / 1024).toFixed(0)} ك.ب`;
-  return `${(n / 1024 / 1024).toFixed(1)} م.ب`;
-}
-function timeLeft(iso: string): string {
-  const ms = new Date(iso).getTime() - Date.now();
-  if (ms <= 0) return 'انتهت الصلاحية';
-  const h = Math.floor(ms / 3_600_000);
-  return h >= 1 ? `تنتهي خلال ${h} ساعة` : `تنتهي خلال ${Math.max(1, Math.round(ms / 60_000))} دقيقة`;
-}
 
 async function downloadOne(id: string, fallbackName: string, onError: (m: string) => void) {
   try {
@@ -321,7 +327,17 @@ export function FileConverter() {
 
   return (
     <div className="space-y-6">
-      <SectionHeader icon={FileCog} title="محوّل الملفات" description="حوّل بين PDF وWord وPowerPoint وExcel" />
+      <SectionHeader
+        icon={FileCog}
+        title="محوّل الملفات"
+        description="حوّل بين PDF وWord وPowerPoint وExcel"
+        action={
+          <Link href="/convert/tools" className="inline-flex items-center gap-1.5 text-accent hover:underline">
+            <Wrench className="h-3.5 w-3.5" />
+            أدوات PDF
+          </Link>
+        }
+      />
 
       {/* Big tap target on touch: the whole card opens the picker. The <Button> inside is the
           accessible/keyboard trigger, so the card stays a plain div (no nested button role). */}

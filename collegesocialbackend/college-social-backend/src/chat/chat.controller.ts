@@ -1,4 +1,5 @@
-import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -54,6 +55,20 @@ export class ChatController {
     @Query('limit') limit?: string,
   ) {
     return this.chatService.getMessages(id, user.userId, Number(page) || 1, Number(limit) || 30);
+  }
+
+  // GET /api/chat/messages/:id/attachments/:index/download -- streams a message's document
+  // attachment, reassembling it if it was too large for a single Cloudinary asset and got split on
+  // upload. The frontend should always link/embed a chunked document attachment through this
+  // instead of its raw url, mirroring PostsController's GET :id/attachment.
+  @Get('messages/:id/attachments/:index/download')
+  async downloadMessageAttachment(
+    @Param('id') id: string,
+    @Param('index') index: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    await this.chatService.streamMessageAttachment(id, Number(index), res, user.userId);
   }
 
   @Get('conversations/:id/search')
