@@ -54,7 +54,19 @@ interface RenderedPage {
   text: string; // plain text for the hidden layer
 }
 
-async function renderPages(input: Buffer, onProgress: ProgressFn): Promise<RenderedPage[]> {
+// Renders one already-loaded mupdf page to a PNG buffer at the given DPI -- the pixel-level core
+// shared by the full-deck renderer below and the single-page helpers (thumbnails, OCR, PDF->image).
+function renderPagePng(mupdf: any, page: any, dpi: number): Buffer {
+  const scale = dpi / 72;
+  const pix = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
+  try {
+    return Buffer.from(pix.asPNG());
+  } finally {
+    pix.destroy();
+  }
+}
+
+async function renderPages(input: Buffer, onProgress: ProgressFn, dpi = DPI): Promise<RenderedPage[]> {
   const mupdf = await loadMupdf();
   const doc = mupdf.Document.openDocument(new Uint8Array(input), 'application/pdf');
   try {
@@ -62,7 +74,6 @@ async function renderPages(input: Buffer, onProgress: ProgressFn): Promise<Rende
     if (!total) throw new Error('pdf has no pages');
     if (total > MAX_PAGES) throw new Error(`pdf has ${total} pages (limit ${MAX_PAGES})`);
 
-    const scale = DPI / 72;
     const out: RenderedPage[] = [];
     for (let i = 0; i < total; i += 1) {
       const page = doc.loadPage(i);
@@ -71,13 +82,7 @@ async function renderPages(input: Buffer, onProgress: ProgressFn): Promise<Rende
         const wPt = Math.abs(x1 - x0);
         const hPt = Math.abs(y1 - y0);
 
-        const pix = page.toPixmap(mupdf.Matrix.scale(scale, scale), mupdf.ColorSpace.DeviceRGB, false, true);
-        let png: Buffer;
-        try {
-          png = Buffer.from(pix.asPNG());
-        } finally {
-          pix.destroy();
-        }
+        const png = renderPagePng(mupdf, page, dpi);
 
         let text = '';
         try {
@@ -96,6 +101,43 @@ async function renderPages(input: Buffer, onProgress: ProgressFn): Promise<Rende
   } finally {
     doc.destroy?.();
   }
+}
+
+// Page count only -- no rasterization -- used when staging an upload for the visual page editor
+// (merge/reorder/rotate/pages/split), where the thumbnails themselves are rendered lazily per-page.
+export async function countPdfPages(input: Buffer): Promise<number> {
+  const mupdf = await loadMupdf();
+  const doc = mupdf.Document.openDocument(new Uint8Array(input), 'application/pdf');
+  try {
+    return doc.countPages();
+  } finally {
+    doc.destroy?.();
+  }
+}
+
+// One page, rendered small, for the page-editor thumbnail grid. Random-access (loadPage(pageIndex)
+// directly) so a single thumbnail request never pays for rendering every other page.
+export async function renderPageThumbnail(input: Buffer, pageIndex: number, dpi = 90): Promise<Buffer> {
+  const mupdf = await loadMupdf();
+  const doc = mupdf.Document.openDocument(new Uint8Array(input), 'application/pdf');
+  try {
+    const total: number = doc.countPages();
+    if (pageIndex < 0 || pageIndex >= total) throw new Error('page index out of range');
+    const page = doc.loadPage(pageIndex);
+    try {
+      return renderPagePng(mupdf, page, dpi);
+    } finally {
+      page.destroy?.();
+    }
+  } finally {
+    doc.destroy?.();
+  }
+}
+
+// Every page as a standalone PNG -- the pdf->image(s) format target (engines/index.ts zips these).
+export async function pdfToImages(input: Buffer, onProgress: ProgressFn, dpi = 150): Promise<Buffer[]> {
+  const pages = await renderPages(input, onProgress, dpi);
+  return pages.map((p) => p.png);
 }
 
 // Strip the C0 control chars XML 1.0 forbids (all except TAB/LF/CR). Built from char codes so no

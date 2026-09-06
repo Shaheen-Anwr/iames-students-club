@@ -11,6 +11,17 @@ const mammoth = require('mammoth');
 const XLSX = require('xlsx');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const AdmZip = require('adm-zip');
+// `marked` v18 ships ESM-only (no CJS export at all) -- tsc emits CommonJS here, so `require()`
+// can't load it. Same trick already used for mupdf/pdfjs-dist: force a genuine dynamic import()
+// through `new Function` so a real ESM import happens at runtime instead of being down-leveled to
+// require() by tsc's module transform.
+// eslint-disable-next-line @typescript-eslint/no-implied-eval
+const importESM = new Function('s', 'return import(s)') as (s: string) => Promise<any>;
+let markedPromise: Promise<{ parse: (md: string) => string }> | null = null;
+function loadMarked(): Promise<{ parse: (md: string) => string }> {
+  if (!markedPromise) markedPromise = importESM('marked').then((m: any) => m);
+  return markedPromise;
+}
 
 function decodeXml(s: string): string {
   return s
@@ -135,4 +146,26 @@ export async function pdfToBlocks(input: Buffer): Promise<Block[]> {
     throw new Error('لا يوجد نص قابل للاستخراج في ملف PDF (قد يكون صورًا ممسوحة ضوئيًا).');
   }
   return deduped;
+}
+
+// Markdown -> HTML (via `marked`) -> the existing htmlToBlocks() parser, so md->pdf reuses the
+// already-hardened, Arabic-correct blocksToPdf() renderer with zero new rendering logic.
+export async function markdownToBlocks(input: Buffer): Promise<Block[]> {
+  const { parse } = await loadMarked();
+  const html = parse(input.toString('utf8'));
+  const blocks = htmlToBlocks(html);
+  if (!blocks.length) throw new Error('لا يحتوي الملف على نص.');
+  return blocks;
+}
+
+// Plain text -> blank-line-separated paragraphs. No markdown syntax to interpret.
+export function textToBlocks(input: Buffer): Block[] {
+  const text = input.toString('utf8');
+  const blocks: Block[] = text
+    .split(/\r?\n\s*\r?\n/)
+    .map((p) => p.replace(/\s+/g, ' ').trim())
+    .filter(Boolean)
+    .map((text) => ({ type: 'para' as const, text }));
+  if (!blocks.length) throw new Error('الملف فارغ.');
+  return blocks;
 }

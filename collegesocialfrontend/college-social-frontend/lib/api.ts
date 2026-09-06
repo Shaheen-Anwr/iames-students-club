@@ -13,10 +13,14 @@ import {
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? '/api';
 export const TOKEN_COOKIE = 'college_social_token';
 
-// A 'lecture'/'file' post's attachment should always be linked/embedded through this rather than
-// its raw attachmentUrl -- the backend transparently reassembles it here when it was too large for
-// a single Cloudinary asset and got split on upload (see the backend's StorageService.upload() and
-// PostsController's GET :id/attachment), and just redirects straight to Cloudinary otherwise.
+// A chunked 'lecture'/'file'/'document' attachment (post, assignment, or chat/channel message)
+// should always be linked/embedded through its backend reassembly route rather than its raw
+// attachmentUrl -- the backend transparently reassembles it there when it was too large for a
+// single Cloudinary asset and got split on upload (see the backend's StorageService.upload() and
+// e.g. PostsController's GET :id/attachment), and just redirects straight to Cloudinary otherwise.
+// `path` is everything after `${API_URL}/`, e.g. `posts/${id}/attachment` or
+// `assignments/${id}/attachment` or `chat/messages/${id}/attachments/${index}/download`.
+//
 // Plain markup (<a>/<iframe>) can't attach a custom Authorization header, so the current access
 // token is embedded directly as a query param instead -- the backend's JwtStrategy accepts it from
 // there as a fallback. (A same-site cookie fallback also exists server-side, but confirmed in
@@ -28,28 +32,29 @@ export const TOKEN_COOKIE = 'college_social_token';
 // gets silently refreshed after render -- points at an expired token and 401s when finally opened.
 // Prefer fetchAttachmentObjectUrl() below, which fetches on demand through the normal
 // refresh-on-401 path; use this only where an eager string URL is genuinely required.
-export function postAttachmentUrl(postId: string): string {
+export function attachmentDownloadUrl(path: string): string {
   const token = getToken();
   const query = token ? `?token=${encodeURIComponent(token)}` : '';
-  return `${API_URL}/posts/${postId}/attachment${query}`;
+  return `${API_URL}/${path}${query}`;
 }
 
-// Fetches a 'lecture'/'file' post's attachment and returns a short-lived blob: object URL for it.
-// Unlike postAttachmentUrl(), the request carries a live Authorization header and retries once
-// through refreshAccessToken() on a 401, so an attachment opened after its access token has already
-// expired still works instead of surfacing the 401. The caller owns the returned URL and must
-// URL.revokeObjectURL() it when done (see useAttachmentObjectUrl()).
-export async function fetchAttachmentObjectUrl(postId: string, isRetry = false): Promise<string> {
+// Fetches a chunked attachment (see attachmentDownloadUrl() above) and returns a short-lived
+// blob: object URL for it. Unlike attachmentDownloadUrl(), the request carries a live
+// Authorization header and retries once through refreshAccessToken() on a 401, so an attachment
+// opened after its access token has already expired still works instead of surfacing the 401. The
+// caller owns the returned URL and must URL.revokeObjectURL() it when done (see
+// useAttachmentObjectUrl()).
+export async function fetchAttachmentObjectUrl(path: string, isRetry = false): Promise<string> {
   const token = getToken();
   const headers = new Headers();
   if (token) headers.set('Authorization', `Bearer ${token}`);
 
-  const res = await fetch(`${API_URL}/posts/${postId}/attachment`, { headers, credentials: 'include' });
+  const res = await fetch(`${API_URL}/${path}`, { headers, credentials: 'include' });
 
   if (res.status === 401 && !isRetry) {
     try {
       await refreshAccessToken();
-      return fetchAttachmentObjectUrl(postId, true);
+      return fetchAttachmentObjectUrl(path, true);
     } catch {
       clearToken();
       // fall through -- report the original 401 below
@@ -493,6 +498,89 @@ export const api = {
     for (const f of files) formData.append('files', f);
     formData.append('target', target);
     return uploadWithProgress<T>('/convert', formData, onProgress);
+  },
+};
+
+// A staged PDF page's thumbnail is a plain <img src>, which can't carry an Authorization header --
+// same reasoning/caveat as attachmentDownloadUrl() above (token baked in at call time; fine for a
+// page editor's short, active session, not for anything left open longer than the ~15min access
+// token).
+export function stagedThumbUrl(stagedId: string, page: number): string {
+  const token = getToken();
+  const query = token ? `?token=${encodeURIComponent(token)}` : '';
+  return `${API_URL}/convert/tools/stage/${stagedId}/pages/${page}/thumb${query}`;
+}
+
+// PDF tools (merge/images-to-pdf/split/reorder/rotate/pages/watermark) -- see
+// ConvertToolsController. reorder/rotate/pages/split operate on a PDF already uploaded via
+// convertTools.stage(); merge/images-to-pdf/watermark upload directly since they don't need the
+// visual page-thumbnail editor. Every call returns { id } (or { stagedId, pageCount } for stage) --
+// the caller polls GET /convert/jobs?ids= exactly like the plain converter above.
+export const convertTools = {
+  stage: async (file: File, onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return uploadWithProgress<{ stagedId: string; pageCount: number }>('/convert/tools/stage', formData, onProgress);
+  },
+  reorder: (stagedId: string, order: number[]) => api.post<{ id: string }>('/convert/tools/reorder', { stagedId, order }),
+  rotate: (stagedId: string, rotations: Record<string, number>) =>
+    api.post<{ id: string }>('/convert/tools/rotate', { stagedId, rotations }),
+  pages: (stagedId: string, pages: number[], mode: 'keep' | 'delete') =>
+    api.post<{ id: string }>('/convert/tools/pages', { stagedId, pages, mode }),
+  split: (stagedId: string, groups: number[][]) => api.post<{ id: string }>('/convert/tools/split', { stagedId, groups }),
+  merge: (files: File[], onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f);
+    return uploadWithProgress<{ id: string }>('/convert/tools/merge', formData, onProgress);
+  },
+  imagesToPdf: (files: File[], onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    for (const f of files) formData.append('files', f);
+    return uploadWithProgress<{ id: string }>('/convert/tools/images-to-pdf', formData, onProgress);
+  },
+  watermark: (
+    file: File,
+    params: { text: string; opacity?: number; fontSize?: number; rotationDeg?: number },
+    onProgress?: UploadProgressHandler,
+  ) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('text', params.text);
+    if (params.opacity !== undefined) formData.append('opacity', String(params.opacity));
+    if (params.fontSize !== undefined) formData.append('fontSize', String(params.fontSize));
+    if (params.rotationDeg !== undefined) formData.append('rotationDeg', String(params.rotationDeg));
+    return uploadWithProgress<{ id: string }>('/convert/tools/watermark', formData, onProgress);
+  },
+  // protect/remove-password are Adobe-only (no pure-JS PDF encryption library here); compress
+  // prefers Ghostscript with Adobe as its fallback. Gate the UI on these flags rather than letting
+  // a submit fail.
+  capabilities: () => api.get<{ protectAvailable: boolean; compressAvailable: boolean }>('/convert/tools/capabilities'),
+  protect: (file: File, password: string, onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('password', password);
+    return uploadWithProgress<{ id: string }>('/convert/tools/protect', formData, onProgress);
+  },
+  removePassword: (file: File, password: string, onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('password', password);
+    return uploadWithProgress<{ id: string }>('/convert/tools/remove-password', formData, onProgress);
+  },
+  compress: (file: File, level: 'low' | 'medium' | 'high', onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('level', level);
+    return uploadWithProgress<{ id: string }>('/convert/tools/compress', formData, onProgress);
+  },
+  // Self-hosted (tesseract.js, WASM) -- not Adobe, whose OCR has no Arabic locale at all. First run
+  // per language downloads trained data server-side and can take a while; expect a slower job here
+  // than the other tools.
+  ocr: (file: File, language: 'ara' | 'eng' | 'ara+eng', onProgress?: UploadProgressHandler) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('language', language);
+    return uploadWithProgress<{ id: string }>('/convert/tools/ocr', formData, onProgress);
   },
 };
 

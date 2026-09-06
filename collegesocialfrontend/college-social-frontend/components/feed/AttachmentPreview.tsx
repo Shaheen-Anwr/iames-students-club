@@ -26,9 +26,10 @@ type AttachmentPreviewProps = Pick<
   Post,
   'attachmentType' | 'attachmentUrl' | 'attachmentOriginalName' | 'attachmentSize' | 'attachmentChunkCount' | 'images'
 > & {
-  // Required to open a chunked 'lecture'/'file' attachment (attachmentChunkCount > 1), which has to
-  // be reassembled by the backend. Not needed for 'image'/'video'/'none' or an unsplit attachment.
-  postId?: string;
+  // The backend's reassembly route for this attachment, e.g. `posts/${id}/attachment` or
+  // `assignments/${id}/attachment` -- required to open a chunked 'lecture'/'file' attachment
+  // (attachmentChunkCount > 1). Not needed for 'image'/'video'/'none' or an unsplit attachment.
+  attachmentPath?: string;
 };
 
 export function isPdf(url: string, name?: string | null) {
@@ -76,7 +77,7 @@ export function AttachmentPreview({
   attachmentSize,
   attachmentChunkCount,
   images,
-  postId,
+  attachmentPath,
 }: AttachmentPreviewProps) {
   if (attachmentType === 'none') return null;
 
@@ -101,7 +102,7 @@ export function AttachmentPreview({
       attachmentOriginalName={attachmentOriginalName}
       attachmentSize={attachmentSize}
       attachmentChunkCount={attachmentChunkCount}
-      postId={postId}
+      attachmentPath={attachmentPath}
     />
   );
 }
@@ -117,22 +118,22 @@ function DocumentAttachment({
   attachmentOriginalName,
   attachmentSize,
   attachmentChunkCount,
-  postId,
+  attachmentPath,
 }: {
   attachmentType: 'lecture' | 'file';
   attachmentUrl: string;
   attachmentOriginalName?: string | null;
   attachmentSize?: number | null;
   attachmentChunkCount?: number | null;
-  postId?: string;
+  attachmentPath?: string;
 }) {
   const [previewOpen, setPreviewOpen] = useState(false);
   const isChunked = (attachmentChunkCount ?? 1) > 1;
-  const { url, loading, error, load, download } = useAttachmentObjectUrl(isChunked ? postId : undefined);
+  const { url, loading, error, load, download } = useAttachmentObjectUrl(isChunked ? attachmentPath : undefined);
 
-  // Only a chunked attachment with a known postId needs the backend-reassembled blob; everything
-  // else points straight at the Cloudinary asset (no token, nothing to expire).
-  const directUrl = isChunked && postId ? null : assetUrl(attachmentUrl);
+  // Only a chunked attachment with a known reassembly path needs the backend-reassembled blob;
+  // everything else points straight at the Cloudinary asset (no token, nothing to expire).
+  const directUrl = isChunked && attachmentPath ? null : assetUrl(attachmentUrl);
 
   const Icon = attachmentType === 'lecture' ? FileText : Paperclip;
   const colors = DOCUMENT_COLORS[attachmentType];

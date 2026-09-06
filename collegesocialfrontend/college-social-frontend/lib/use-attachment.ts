@@ -18,11 +18,13 @@ export interface AttachmentObjectUrl {
   download: (filename?: string | null) => Promise<void>;
 }
 
-// On-demand loader for a 'lecture'/'file' post attachment. Nothing is fetched until load()/download()
-// is called, the request goes through the authenticated refresh-on-401 path (see
-// fetchAttachmentObjectUrl), and the blob: URL is revoked automatically when the postId changes or
-// the component unmounts -- so a link/preview built from this never carries a stale access token.
-export function useAttachmentObjectUrl(postId: string | undefined): AttachmentObjectUrl {
+// On-demand loader for a chunked 'lecture'/'file'/'document' attachment (post, assignment, or
+// chat/channel message). Nothing is fetched until load()/download() is called, the request goes
+// through the authenticated refresh-on-401 path (see fetchAttachmentObjectUrl), and the blob: URL
+// is revoked automatically when `path` changes or the component unmounts -- so a link/preview
+// built from this never carries a stale access token. `path` is the backend's reassembly route,
+// e.g. `posts/${id}/attachment` -- see fetchAttachmentObjectUrl()'s doc comment.
+export function useAttachmentObjectUrl(path: string | undefined): AttachmentObjectUrl {
   const [url, setUrl] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(false);
@@ -30,7 +32,7 @@ export function useAttachmentObjectUrl(postId: string | undefined): AttachmentOb
   const promiseRef = useRef<Promise<string | null> | null>(null);
 
   useEffect(() => {
-    // Reset when the target post changes, and clean up on unmount.
+    // Reset when the target attachment changes, and clean up on unmount.
     setUrl(null);
     setError(false);
     return () => {
@@ -40,15 +42,15 @@ export function useAttachmentObjectUrl(postId: string | undefined): AttachmentOb
       }
       promiseRef.current = null;
     };
-  }, [postId]);
+  }, [path]);
 
   const load = useCallback(async (): Promise<string | null> => {
     if (urlRef.current) return urlRef.current;
-    if (!postId) return null;
+    if (!path) return null;
     if (!promiseRef.current) {
       setLoading(true);
       setError(false);
-      promiseRef.current = fetchAttachmentObjectUrl(postId)
+      promiseRef.current = fetchAttachmentObjectUrl(path)
         .then((objectUrl) => {
           urlRef.current = objectUrl;
           setUrl(objectUrl);
@@ -62,7 +64,7 @@ export function useAttachmentObjectUrl(postId: string | undefined): AttachmentOb
         .finally(() => setLoading(false));
     }
     return promiseRef.current;
-  }, [postId]);
+  }, [path]);
 
   const download = useCallback(
     async (filename?: string | null) => {

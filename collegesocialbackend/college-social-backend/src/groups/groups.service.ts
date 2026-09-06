@@ -6,6 +6,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import type { Response } from 'express';
 import * as crypto from 'crypto';
 import { GroupVisibility, StudyGroup, StudyGroupDocument } from './schemas/study-group.schema';
 import { Channel, ChannelDocument } from './schemas/channel.schema';
@@ -15,6 +16,7 @@ import { UpdateGroupDto } from './dto/update-group.dto';
 import { CreateChannelDto } from './dto/create-channel.dto';
 import { AttachmentDto } from '../chat/dto/create-message.dto';
 import { NotificationsService } from '../notifications/notifications.service';
+import { StorageService } from '../upload/storage.service';
 import {
   ATLAS_SEARCH_ENABLED,
   ATLAS_INDEX,
@@ -84,6 +86,7 @@ export class GroupsService {
     @InjectModel(Channel.name) private channelModel: Model<ChannelDocument>,
     @InjectModel(ChannelMessage.name) private channelMessageModel: Model<ChannelMessageDocument>,
     private readonly notificationsService: NotificationsService,
+    private readonly storageService: StorageService,
   ) {}
 
   async create(ownerId: string, dto: CreateGroupDto): Promise<StudyGroupDocument> {
@@ -392,6 +395,22 @@ export class GroupsService {
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
     await this.assertChannelMember(message.channel.toString(), userId);
     return message;
+  }
+
+  // Streams one attachment of a channel message, reassembling it if it was too large for a single
+  // Cloudinary asset and got split on upload (see StorageService.upload()'s chunked path) --
+  // mirrors PostsService.streamAttachment(). Any channel member may open it, same as they can
+  // already see the message itself (assertMessageVisible).
+  async streamChannelMessageAttachment(messageId: string, index: number, res: Response, userId: string): Promise<void> {
+    const message = await this.assertMessageVisible(messageId, userId);
+    const attachment = message.attachments?.[index];
+    if (!attachment) throw new NotFoundException('المرفق غير موجود');
+
+    await this.storageService.streamRawAttachment(res, {
+      url: attachment.url,
+      chunkCount: attachment.chunkCount ?? 1,
+      originalName: attachment.name,
+    });
   }
 
   async editChannelMessage(messageId: string, userId: string, text: string): Promise<ChannelMessageDocument> {

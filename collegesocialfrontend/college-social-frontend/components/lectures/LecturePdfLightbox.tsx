@@ -26,7 +26,7 @@ export function LecturePdfLightbox({
   // than an <iframe src> carrying a pre-baked, soon-to-expire access token.
   const isChunked = (attachmentChunkCount ?? 1) > 1;
   const directUrl = isChunked ? null : assetUrl(attachmentUrl);
-  const { url, error, load } = useAttachmentObjectUrl(isChunked ? postId : undefined);
+  const { url, error, load } = useAttachmentObjectUrl(isChunked ? `posts/${postId}/attachment` : undefined);
 
   useEffect(() => {
     if (open && isChunked) void load();

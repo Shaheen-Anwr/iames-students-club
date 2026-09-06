@@ -9,6 +9,7 @@ import { GamificationModule } from '../gamification/gamification.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { AiModule } from '../ai/ai.module';
 import { UsersModule } from '../users/users.module';
+import { UploadModule } from '../upload/upload.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { UsersModule } from '../users/users.module';
     NotificationsModule,
     AiModule,
     UsersModule,
+    UploadModule,
   ],
   controllers: [PostsController],
   providers: [PostsService],

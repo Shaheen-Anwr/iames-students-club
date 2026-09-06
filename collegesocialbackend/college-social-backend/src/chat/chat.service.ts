@@ -1,6 +1,7 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import type { Response } from 'express';
 import { Conversation, ConversationDocument } from './schemas/conversation.schema';
 import { Message, MessageDocument } from './schemas/message.schema';
 import { CreateConversationDto } from './dto/create-conversation.dto';
@@ -17,6 +18,7 @@ import {
 import { extractMentionIds } from '../common/utils/tag-parser.util';
 import { UsersService } from '../users/users.service';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
+import { StorageService } from '../upload/storage.service';
 
 export interface PaginatedConversations {
   data: unknown[];
@@ -50,6 +52,7 @@ export class ChatService {
     private readonly notificationsService: NotificationsService,
     private readonly usersService: UsersService,
     private readonly realtimeEmitter: RealtimeEmitterService,
+    private readonly storageService: StorageService,
   ) {}
 
   async createConversation(creatorId: string, dto: CreateConversationDto): Promise<ConversationDocument> {
@@ -337,6 +340,25 @@ export class ChatService {
     message.editedAt = new Date();
     await message.save();
     return message.populate(MESSAGE_POPULATE);
+  }
+
+  // Streams one attachment of a message, reassembling it if it was too large for a single
+  // Cloudinary asset and got split on upload (see StorageService.upload()'s chunked path) --
+  // mirrors PostsService.streamAttachment(). Any participant of the conversation may open it, same
+  // as they can already see the message itself.
+  async streamMessageAttachment(messageId: string, index: number, res: Response, userId: string): Promise<void> {
+    const message = await this.messageModel.findById(messageId).exec();
+    if (!message) throw new NotFoundException('المرفق غير موجود');
+    await this.assertCanAccessConversation(message.conversation.toString(), userId);
+
+    const attachment = message.attachments?.[index];
+    if (!attachment) throw new NotFoundException('المرفق غير موجود');
+
+    await this.storageService.streamRawAttachment(res, {
+      url: attachment.url,
+      chunkCount: attachment.chunkCount ?? 1,
+      originalName: attachment.name,
+    });
   }
 
   async deleteMessage(messageId: string, userId: string, forEveryone: boolean): Promise<MessageDocument> {

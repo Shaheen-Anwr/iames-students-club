@@ -141,7 +141,7 @@ export function LectureCard({
 
       <div className="mt-3">
         <AttachmentPreview
-          postId={post._id}
+          attachmentPath={`posts/${post._id}/attachment`}
           attachmentType={post.attachmentType}
           attachmentUrl={post.attachmentUrl}
           attachmentOriginalName={post.attachmentOriginalName}

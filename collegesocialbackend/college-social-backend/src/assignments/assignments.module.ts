@@ -6,6 +6,7 @@ import { AssignmentsController } from './assignments.controller';
 import { GamificationModule } from '../gamification/gamification.module';
 import { AiModule } from '../ai/ai.module';
 import { GroupsModule } from '../groups/groups.module';
+import { UploadModule } from '../upload/upload.module';
 
 @Module({
   imports: [
@@ -16,6 +17,7 @@ import { GroupsModule } from '../groups/groups.module';
     forwardRef(() => AiModule),
     // One-directional: GroupsModule never imports AssignmentsModule back, so no forwardRef needed.
     GroupsModule,
+    UploadModule,
   ],
   controllers: [AssignmentsController],
   providers: [AssignmentsService],

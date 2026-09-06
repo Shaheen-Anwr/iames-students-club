@@ -8,6 +8,7 @@ import {
   Copy,
   FileText,
   Forward,
+  Loader2,
   Pencil,
   Reply,
   RotateCw,
@@ -22,6 +23,8 @@ import { TaggedText } from '@/components/shared/TaggedText';
 import { assetUrl, cn, formatBytes, timeAgo } from '@/lib/utils';
 import { cldOptimize } from '@/lib/images';
 import { extractFirstUrl, tickStatus } from '@/lib/chat-helpers';
+import { fetchAttachmentObjectUrl, ApiError } from '@/lib/api';
+import { useToast } from '@/lib/toast-context';
 import type { Conversation, Message } from '@/lib/types';
 
 import { EmojiPicker, QuickReactionBar } from './EmojiPicker';
@@ -80,6 +83,10 @@ export function MessageBubble({
   const [fullPickerOpen, setFullPickerOpen] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  // Index (within this message's attachments) currently being fetched for a chunked document open
+  // -- see openDocumentAttachment below.
+  const [downloadingIndex, setDownloadingIndex] = useState<number | null>(null);
+  const { showToast } = useToast();
 
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
@@ -89,6 +96,26 @@ export function MessageBubble({
   const isStarred = message.starredBy?.includes(currentUserId);
   const status = tickStatus(message, conversation, currentUserId);
   const previewUrl = extractFirstUrl(message.text);
+
+  // A document attachment that was too large for a single Cloudinary asset (chunkCount > 1, see
+  // StorageService.upload()'s chunked path) only has its FIRST piece at `attachment.url` -- opening
+  // that directly would silently open a truncated file. Fetch the backend's reassembled copy
+  // instead; an unsplit attachment just points straight at its Cloudinary URL as before.
+  async function openDocumentAttachment(rawUrl: string, index: number, chunkCount?: number | null) {
+    if (!chunkCount || chunkCount <= 1) {
+      window.open(rawUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    setDownloadingIndex(index);
+    try {
+      const objectUrl = await fetchAttachmentObjectUrl(`chat/messages/${message._id}/attachments/${index}/download`);
+      window.open(objectUrl, '_blank', 'noopener,noreferrer');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر فتح المرفق.', 'error');
+    } finally {
+      setDownloadingIndex(null);
+    }
+  }
 
   const reactionGroups = (message.reactions ?? []).reduce<Record<string, number>>(
     (acc, r) => {
@@ -491,20 +518,25 @@ export function MessageBubble({
                   // long-press-for-actions / tap-to-open pattern instead.
                   onClick={(event) => {
                     event.stopPropagation();
-                    if (!isLongPress.current) window.open(url, '_blank', 'noopener,noreferrer');
+                    if (!isLongPress.current) void openDocumentAttachment(url, i, attachment.chunkCount);
                     isLongPress.current = false;
                   }}
                   onTouchStart={handleTouchStart}
                   onTouchEnd={handleTouchEnd}
                   onTouchMove={handleTouchMove}
+                  disabled={downloadingIndex === i}
                   className={cn(
-                    'flex w-full max-w-full items-center gap-2.5 rounded-2xl px-4 py-3 text-start text-[15px] transition-colors',
+                    'flex w-full max-w-full items-center gap-2.5 rounded-2xl px-4 py-3 text-start text-[15px] transition-colors disabled:opacity-70',
                     isOwn
                       ? 'bg-gradient-accent text-white'
                       : 'bg-surface-2/70 text-foreground hover:bg-surface-2',
                   )}
                 >
-                  <FileText className="h-5 w-5 shrink-0" />
+                  {downloadingIndex === i ? (
+                    <Loader2 className="h-5 w-5 shrink-0 animate-spin" />
+                  ) : (
+                    <FileText className="h-5 w-5 shrink-0" />
+                  )}
                   <span className="min-w-0">
                     <span className="block truncate">{attachment.name ?? 'مرفق'}</span>
                     {attachment.size != null && (

@@ -11,7 +11,7 @@
 //   docx<->pptx<->xlsx      chained: source -> Create PDF -> pdf -> Export PDF -> target
 
 import { Readable } from 'stream';
-import type { ConvertFormat, ProgressFn } from '../formats';
+import type { OfficeFormat, ProgressFn } from '../formats';
 
 // The SDK pulls in log4js and prints "No logging configuration" on load; silence it first.
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -35,7 +35,7 @@ export function adobeAvailable(): boolean {
   return !!(clientId() && clientSecret());
 }
 
-const MIME: Record<ConvertFormat, string> = {
+const MIME: Record<OfficeFormat, string> = {
   pdf: adobe.MimeType.PDF,
   docx: adobe.MimeType.DOCX,
   pptx: adobe.MimeType.PPTX,
@@ -117,7 +117,7 @@ async function runJob(
   }
 }
 
-function createPdf(input: Buffer, source: ConvertFormat, onProgress: ProgressFn, band: [number, number]): Promise<Buffer> {
+function createPdf(input: Buffer, source: OfficeFormat, onProgress: ProgressFn, band: [number, number]): Promise<Buffer> {
   return runJob(input, MIME[source], (inputAsset) => new adobe.CreatePDFJob({ inputAsset }), adobe.CreatePDFResult, onProgress, band);
 }
 
@@ -126,10 +126,51 @@ function exportPdf(input: Buffer, target: 'docx' | 'pptx' | 'xlsx', onProgress: 
   return runJob(input, adobe.MimeType.PDF, (inputAsset) => new adobe.ExportPDFJob({ inputAsset, params }), adobe.ExportPDFResult, onProgress, band);
 }
 
+// Password protect / remove -- Adobe only. pdf-lib has no encryption support at all, and qpdf
+// isn't installed anywhere (dev box or Docker image), so there's no pure-JS fallback for these two;
+// ConvertToolsController gates their availability on adobeAvailable().
+export function protectPdf(input: Buffer, password: string, onProgress: ProgressFn = noProgress): Promise<Buffer> {
+  // AES-256 supports full Unicode passwords (Arabic included) -- AES-128 is LATIN-1 only.
+  const params = new adobe.ProtectPDFParams({ userPassword: password, encryptionAlgorithm: adobe.EncryptionAlgorithm.AES_256 });
+  return runJob(input, adobe.MimeType.PDF, (inputAsset) => new adobe.ProtectPDFJob({ inputAsset, params }), adobe.ProtectPDFResult, onProgress, [8, 92]);
+}
+
+export function removeProtection(input: Buffer, password: string, onProgress: ProgressFn = noProgress): Promise<Buffer> {
+  const params = new adobe.RemoveProtectionParams({ password });
+  return runJob(
+    input,
+    adobe.MimeType.PDF,
+    (inputAsset) => new adobe.RemoveProtectionJob({ inputAsset, params }),
+    adobe.RemoveProtectionResult,
+    onProgress,
+    [8, 92],
+  );
+}
+
+// HTML -> PDF, real CSS/visual styling preserved (the point of converting HTML at all, unlike the
+// htmlToBlocks()+blocksToPdf() fallback which throws away all styling and keeps only text
+// structure). A static HTML file with inline CSS uploads directly as mimeType text/html -- no
+// zip-with-index.html needed for that simpler single-file case.
+export function htmlToPdf(input: Buffer, onProgress: ProgressFn = noProgress): Promise<Buffer> {
+  return runJob(input, adobe.MimeType.HTML, (inputAsset) => new adobe.HTMLToPDFJob({ inputAsset }), adobe.HTMLToPDFResult, onProgress, [8, 92]);
+}
+
+const COMPRESSION_LEVEL: Record<'low' | 'medium' | 'high', string> = {
+  low: adobe.CompressionLevel.LOW,
+  medium: adobe.CompressionLevel.MEDIUM,
+  high: adobe.CompressionLevel.HIGH,
+};
+
+// Fallback for when Ghostscript isn't installed (see ghostscript.engine.ts, the primary path).
+export function compressPdfViaAdobe(input: Buffer, level: 'low' | 'medium' | 'high', onProgress: ProgressFn = noProgress): Promise<Buffer> {
+  const params = new adobe.CompressPDFParams({ compressionLevel: COMPRESSION_LEVEL[level] });
+  return runJob(input, adobe.MimeType.PDF, (inputAsset) => new adobe.CompressPDFJob({ inputAsset, params }), adobe.CompressPDFResult, onProgress, [8, 92]);
+}
+
 export async function runViaAdobe(
   input: Buffer,
-  source: ConvertFormat,
-  target: ConvertFormat,
+  source: OfficeFormat,
+  target: OfficeFormat,
   onProgress: ProgressFn = noProgress,
 ): Promise<Buffer> {
   if (source === 'pdf') return exportPdf(input, target as 'docx' | 'pptx' | 'xlsx', onProgress, [8, 92]);

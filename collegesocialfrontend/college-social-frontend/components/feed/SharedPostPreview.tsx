@@ -44,7 +44,7 @@ export function SharedPostPreview({ post }: { post: Post }) {
 
       {post.attachmentType !== 'none' && (
         <AttachmentPreview
-          postId={post._id}
+          attachmentPath={`posts/${post._id}/attachment`}
           attachmentType={post.attachmentType}
           attachmentUrl={post.attachmentUrl}
           attachmentOriginalName={post.attachmentOriginalName}

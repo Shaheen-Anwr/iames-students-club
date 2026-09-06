@@ -21,9 +21,10 @@
 // Every Office INPUT is first run through the structural Arabic normalizer (a no-op unless it
 // carries frozen presentation-form glyphs from some earlier bad conversion).
 
-import type { ConvertFormat, ProgressFn } from '../formats';
+import type { ConvertFormat, OfficeFormat, ProgressFn } from '../formats';
 import type { Block } from './blocks';
-import { docxToBlocks, pdfToBlocks, pptxToBlocks, xlsxToBlocks } from './extract.engine';
+import { htmlToBlocks } from './blocks';
+import { docxToBlocks, markdownToBlocks, pdfToBlocks, pptxToBlocks, textToBlocks, xlsxToBlocks } from './extract.engine';
 import { blocksToPdf } from './pdf.engine';
 import { blocksToDocx } from './docx.engine';
 import { blocksToPptx } from './pptx.engine';
@@ -34,11 +35,16 @@ import {
   libreOfficeHandles,
   runViaLibreOffice,
 } from './libreoffice.engine';
-import { adobeAvailable, isAdobeRecoverable, runViaAdobe } from './adobe.engine';
+import { adobeAvailable, htmlToPdf, isAdobeRecoverable, runViaAdobe } from './adobe.engine';
 import { llamaParseAvailable, runViaLlamaParse } from './llamaparse.engine';
-import { pageImageAvailable, pdfToPageImageFile } from './pageimage.engine';
+import { pageImageAvailable, pdfToImages, pdfToPageImageFile } from './pageimage.engine';
 import { normalizeArabicInOfficeFile } from './office-arabic-normalize.util';
 import { fixLibreOfficePdfImport } from './libreoffice-pdf-import.util';
+import { runPdfTool } from './pdf-tools.engine';
+import { zipBuffers } from './zip.util';
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const sharp = require('sharp');
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { Logger } = require('@nestjs/common');
@@ -48,7 +54,7 @@ const logger = new Logger('ConvertEngine');
 // encoding (Arabic as frozen presentation-form glyphs). Post-process those so the text is clean,
 // editable Unicode while every bit of the engine's layout is kept. A no-op for PDF output and for
 // files that are already clean (e.g. our own pure-JS docx builder).
-function finish(buf: Buffer, target: ConvertFormat): Buffer {
+function finish(buf: Buffer, target: OfficeFormat): Buffer {
   if (target === 'pdf') return buf;
   try {
     return normalizeArabicInOfficeFile(buf);
@@ -57,7 +63,7 @@ function finish(buf: Buffer, target: ConvertFormat): Buffer {
   }
 }
 
-async function extract(input: Buffer, source: ConvertFormat): Promise<Block[]> {
+async function extract(input: Buffer, source: OfficeFormat): Promise<Block[]> {
   switch (source) {
     case 'docx':
       return docxToBlocks(input);
@@ -70,7 +76,7 @@ async function extract(input: Buffer, source: ConvertFormat): Promise<Block[]> {
   }
 }
 
-function render(blocks: Block[], target: ConvertFormat): Promise<Buffer> | Buffer {
+function render(blocks: Block[], target: OfficeFormat): Promise<Buffer> | Buffer {
   switch (target) {
     case 'pdf':
       return blocksToPdf(blocks);
@@ -83,13 +89,13 @@ function render(blocks: Block[], target: ConvertFormat): Promise<Buffer> | Buffe
   }
 }
 
-async function pureJs(input: Buffer, source: ConvertFormat, target: ConvertFormat): Promise<Buffer> {
+async function pureJs(input: Buffer, source: OfficeFormat, target: OfficeFormat): Promise<Buffer> {
   return render(await extract(input, source), target);
 }
 
 const noop: ProgressFn = () => undefined;
 
-async function officeToPdf(input: Buffer, source: ConvertFormat, onProgress: ProgressFn): Promise<Buffer> {
+async function officeToPdf(input: Buffer, source: OfficeFormat, onProgress: ProgressFn): Promise<Buffer> {
   const tryAdobe = async (): Promise<Buffer | null> => {
     if (!adobeAvailable()) return null;
     try {
@@ -129,7 +135,7 @@ async function officeToPdf(input: Buffer, source: ConvertFormat, onProgress: Pro
 }
 
 // pdf -> xlsx only: no page canvas to preserve, so Adobe's table recovery -> flat block pipeline.
-async function pdfToOffice(input: Buffer, target: ConvertFormat, onProgress: ProgressFn): Promise<Buffer> {
+async function pdfToOffice(input: Buffer, target: OfficeFormat, onProgress: ProgressFn): Promise<Buffer> {
   if (adobeAvailable()) {
     try {
       const out = await runViaAdobe(input, 'pdf', target, onProgress);
@@ -219,7 +225,7 @@ async function pdfToPaged(
 // then recover that PDF into the target app as editable objects.
 async function officeToPaged(
   input: Buffer,
-  source: ConvertFormat,
+  source: OfficeFormat,
   target: 'docx' | 'pptx',
   onProgress: ProgressFn,
 ): Promise<Buffer> {
@@ -256,12 +262,60 @@ async function officeToPaged(
   return finish(await render(blocks, target), target);
 }
 
+// HTML -> PDF: Adobe (real CSS/visual styling) first, the flat block pipeline (structure only, no
+// styling) as the fallback -- same "always degrade gracefully, never hard-fail" pattern every other
+// pair in this file already follows.
+async function htmlSourceToPdf(input: Buffer, onProgress: ProgressFn): Promise<Buffer> {
+  if (adobeAvailable()) {
+    try {
+      const out = await htmlToPdf(input, onProgress);
+      logger.log(`Adobe html->pdf ok (${out.length}b)`);
+      return out;
+    } catch (err) {
+      logger.warn(`Adobe html->pdf ${isAdobeRecoverable(err) ? 'unavailable' : 'failed'} (${(err as Error).message}); using local pipeline`);
+    }
+  }
+  onProgress(30, 'رسم المستند');
+  return blocksToPdf(htmlToBlocks(input.toString('utf8')));
+}
+
+// PDF -> jpg/png: every page rasterised (pageimage.engine's already-verified mupdf renderer) then
+// always zipped, even a single-page PDF -- see formats.ts's ALWAYS_ZIP_TARGETS comment for why a
+// fixed output shape per target beats branching on the runtime page count.
+async function pdfToImageZip(input: Buffer, target: 'jpg' | 'png', onProgress: ProgressFn): Promise<Buffer> {
+  const pngs = await pdfToImages(input, onProgress);
+  const converted =
+    target === 'jpg' ? await Promise.all(pngs.map((p) => sharp(p).jpeg({ quality: 90 }).toBuffer())) : pngs;
+  onProgress(95, 'ضغط الصور في ملف واحد');
+  return zipBuffers(converted.map((data, i) => ({ name: `page-${i + 1}.${target}`, data })));
+}
+
 export async function runConversion(
   input: Buffer,
   source: ConvertFormat,
   target: ConvertFormat,
   onProgress: ProgressFn = noop,
 ): Promise<Buffer> {
+  // New simple one-way sources -- always -> pdf, none of the Office Adobe/LibreOffice chain below
+  // applies to them.
+  if (source === 'jpg' || source === 'png' || source === 'webp') {
+    onProgress(10, 'تجهيز الصورة');
+    const out = await runPdfTool('images-to-pdf', [input], {}, onProgress);
+    return Array.isArray(out) ? out[0] : out;
+  }
+  if (source === 'html') return htmlSourceToPdf(input, onProgress);
+  if (source === 'md') {
+    onProgress(20, 'تحليل Markdown');
+    return blocksToPdf(await markdownToBlocks(input));
+  }
+  if (source === 'txt') {
+    onProgress(20, 'تحليل النص');
+    return blocksToPdf(textToBlocks(input));
+  }
+
+  // New simple target -- pdf -> jpg/png.
+  if (target === 'jpg' || target === 'png') return pdfToImageZip(input, target as 'jpg' | 'png', onProgress);
+
   // Clean up any frozen presentation-form Arabic a user's Office file might already carry, so it
   // never leaks into the output. No-op for a pristine file.
   if (source !== 'pdf') {
@@ -283,9 +337,12 @@ export async function runConversion(
     return finish(await render(blocks, 'xlsx'), 'xlsx');
   }
 
-  // target is docx | pptx: keep the source's visual structure.
+  // target is docx | pptx (every other ConvertFormat member was handled by an early return above --
+  // the new one-way source formats always target pdf, and jpg/png/xlsx/pdf targets are handled
+  // above too): keep the source's visual structure.
+  const pagedTarget = target as 'docx' | 'pptx';
   if (source === 'pdf') {
-    return pdfToPaged(input, target, onProgress, { viaPageImage: true, viaLlamaParse: true });
+    return pdfToPaged(input, pagedTarget, onProgress, { viaPageImage: true, viaLlamaParse: true });
   }
-  return officeToPaged(input, source, target, onProgress);
+  return officeToPaged(input, source as OfficeFormat, pagedTarget, onProgress);
 }

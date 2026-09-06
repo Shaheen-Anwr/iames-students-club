@@ -65,6 +65,28 @@ export class Conversion {
 
   @Prop({ required: true })
   expiresAt: Date;
+
+  // 'convert' = plain format conversion (the original feature). Anything else is a PDF tool
+  // (merge/images-to-pdf/split/reorder/rotate/pages/compress/protect/remove-password/watermark/ocr)
+  // -- see engines/pdf-tools.engine.ts's runPdfTool() dispatcher.
+  @Prop({ type: String, default: 'convert' })
+  tool: string;
+
+  // Merge/images-to-pdf only -- several input files in order. `inputPath` above stays the single-
+  // input case for every other tool and for plain conversion.
+  @Prop({ type: [String], default: null })
+  inputPaths: string[] | null;
+
+  // Tool-specific arguments (rotation map, page order/selection, password, watermark text/opacity,
+  // OCR language, compress level). Opaque here -- each tool's own DTO validates its shape.
+  @Prop({ type: Object, default: null })
+  params: Record<string, unknown> | null;
+
+  // True when the output is a zip of several files (split, pdf->images) -- set once at job-creation
+  // time from a static shape table, never derived from the runtime file count, so a split into
+  // exactly 1 piece still downloads as a .zip like every other split.
+  @Prop({ type: Boolean, default: false })
+  outputIsZip: boolean;
 }
 
 export const ConversionSchema = SchemaFactory.createForClass(Conversion);

@@ -311,7 +311,7 @@ export function PostCard({
       {post.attachmentType !== 'none' && (
         <div className="mt-4">
           <AttachmentPreview
-            postId={post._id}
+            attachmentPath={`posts/${post._id}/attachment`}
             attachmentType={post.attachmentType}
             attachmentUrl={post.attachmentUrl}
             attachmentOriginalName={post.attachmentOriginalName}

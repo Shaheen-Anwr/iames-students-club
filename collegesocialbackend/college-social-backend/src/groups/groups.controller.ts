@@ -8,10 +8,12 @@ import {
   Patch,
   Post,
   Query,
+  Res,
   UploadedFile,
   UseGuards,
   UseInterceptors,
 } from '@nestjs/common';
+import type { Response } from 'express';
 import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
@@ -140,6 +142,19 @@ export class GroupsController {
   @Get('channels/:channelId/media')
   async getChannelMedia(@Param('channelId') channelId: string, @CurrentUser() user: AuthenticatedUser) {
     return this.groupsService.getChannelSharedMedia(channelId, user.userId);
+  }
+
+  // GET /api/groups/channels/messages/:messageId/attachments/:index/download -- streams a channel
+  // message's document attachment, reassembling it if it was too large for a single Cloudinary
+  // asset and got split on upload. Mirrors ChatController's twin route for personal-chat messages.
+  @Get('channels/messages/:messageId/attachments/:index/download')
+  async downloadChannelMessageAttachment(
+    @Param('messageId') messageId: string,
+    @Param('index') index: string,
+    @CurrentUser() user: AuthenticatedUser,
+    @Res() res: Response,
+  ) {
+    await this.groupsService.streamChannelMessageAttachment(messageId, Number(index), res, user.userId);
   }
 
   @Post('channels/messages/:messageId/star')

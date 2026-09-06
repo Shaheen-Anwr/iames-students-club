@@ -38,6 +38,13 @@ export class Assignment {
   @Prop({ type: String, required: false, default: null })
   attachmentOriginalName: string | null;
 
+  // Set when the upload was too large for a single Cloudinary raw asset and got split into
+  // multiple pieces (see StorageService.upload()'s chunked path) -- null/1 for an ordinary unsplit
+  // attachment. Needed to reconstruct the full file on read; see
+  // AssignmentsController's GET :id/attachment.
+  @Prop({ type: Number, required: false, default: null })
+  attachmentChunkCount: number | null;
+
   // `ref` must sit at this outer level, not nested inside the array's object literal -- see the
   // NOTE in chat/schemas/conversation.schema.ts's `participants` prop for why.
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })

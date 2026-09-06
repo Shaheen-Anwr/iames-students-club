@@ -1,4 +1,5 @@
-import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Query, Res, UseGuards } from '@nestjs/common';
+import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
 import { Roles } from '../common/decorators/roles.decorator';
@@ -67,6 +68,15 @@ export class AssignmentsController {
   @Get(':id')
   async findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
     return this.assignmentsService.findOne(id, user.userId);
+  }
+
+  // GET /api/assignments/:id/attachment -- streams the assignment's raw 'lecture'/'file' attachment,
+  // reassembling it if it was too large for a single Cloudinary asset and got split on upload.
+  // Frontend should always link/embed a document assignment attachment through this rather than its
+  // raw attachmentUrl, mirroring PostsController's GET :id/attachment.
+  @Get(':id/attachment')
+  async streamAttachment(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser, @Res() res: Response) {
+    await this.assignmentsService.streamAttachment(id, res, user.userId);
   }
 
   @Post(':id/complete')

@@ -1,4 +1,4 @@
-import { IsDateString, IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsDateString, IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
 import { AssignmentAttachmentType } from '../schemas/assignment.schema';
 
 export class CreateGroupAssignmentDto {
@@ -30,4 +30,8 @@ export class CreateGroupAssignmentDto {
   @IsOptional()
   @IsString()
   attachmentOriginalName?: string;
+
+  @IsOptional()
+  @IsNumber()
+  attachmentChunkCount?: number;
 }

@@ -125,6 +125,8 @@ export function AssignmentCard({ assignment, onDeleted }: { assignment: Assignme
             attachmentType={assignment.attachmentType}
             attachmentUrl={assignment.attachmentUrl}
             attachmentOriginalName={assignment.attachmentOriginalName}
+            attachmentChunkCount={assignment.attachmentChunkCount}
+            attachmentPath={`assignments/${assignment._id}/attachment`}
           />
         </div>
       )}
