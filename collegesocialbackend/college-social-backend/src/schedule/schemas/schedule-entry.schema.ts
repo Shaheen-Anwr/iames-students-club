@@ -7,7 +7,10 @@ import { Specialization } from '../../common/enums/specialization.enum';
 export type ScheduleEntryDocument = HydratedDocument<ScheduleEntry>;
 
 // The official weekly timetable for one department/academicYear/specialization group --
-// admin-published, read by every student and professor in that group (see ScheduleService).
+// admin/professor-published, read by every student and professor in that group (see
+// ScheduleService). Creating an entry also auto-posts it to the main feed (scoped to the same
+// department, public otherwise) so it reaches everyone there too -- students and professors
+// alike, same as any other department-tagged post (see PostsService.buildFeedFilter()).
 @Schema({ timestamps: true })
 export class ScheduleEntry {
   // The admin who published this entry -- audit only, not used for access control (mirrors
@@ -40,6 +43,17 @@ export class ScheduleEntry {
 
   @Prop({ type: String, required: false, default: null, trim: true })
   location: string | null;
+
+  // Optional free-text note shown alongside the entry (e.g. "احضروا الحاسوب المحمول") and echoed
+  // into the auto-posted feed post below -- see ScheduleService.create().
+  @Prop({ type: String, required: false, default: null, trim: true, maxlength: 1500 })
+  description: string | null;
+
+  // A photo of the physical timetable/board, uploaded via the same POST /upload/post-images
+  // endpoint the marketplace/feed composer use (see ScheduleEntryForm.tsx) -- the URL is just
+  // attached here and to the auto-posted feed post, no dedicated upload route needed.
+  @Prop({ type: String, required: false, default: null })
+  photoUrl: string | null;
 }
 
 export const ScheduleEntrySchema = SchemaFactory.createForClass(ScheduleEntry);

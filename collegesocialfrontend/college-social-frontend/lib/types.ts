@@ -653,7 +653,24 @@ export interface ScheduleEntry {
   startTime: string;
   endTime: string;
   location?: string | null;
+  description?: string | null;
+  photoUrl?: string | null;
   createdAt: string;
+}
+
+// One photo of the whole physical/printed timetable per department/academicYear/specialization
+// group -- the "upload it as one photo" alternative to building it lecture-by-lecture as
+// individual ScheduleEntry rows. See components/study/ScheduleBoardPhoto.tsx.
+export interface ScheduleBoard {
+  _id: string;
+  updatedBy: string;
+  department: string;
+  academicYear: string;
+  specialization: string;
+  photoUrl: string;
+  description?: string | null;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface MutedEntry {

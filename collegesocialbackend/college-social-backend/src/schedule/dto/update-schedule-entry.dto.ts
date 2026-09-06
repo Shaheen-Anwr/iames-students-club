@@ -1,4 +1,4 @@
-import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, Min } from 'class-validator';
+import { IsEnum, IsInt, IsNotEmpty, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { Department } from '../../common/enums/department.enum';
 import { AcademicYear } from '../../common/enums/academic-year.enum';
 import { Specialization } from '../../common/enums/specialization.enum';
@@ -40,4 +40,13 @@ export class UpdateScheduleEntryDto {
   @IsOptional()
   @IsString()
   location?: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(1500, { message: 'الوصف طويل جدًا' })
+  description?: string;
+
+  @IsOptional()
+  @IsString()
+  photoUrl?: string;
 }
