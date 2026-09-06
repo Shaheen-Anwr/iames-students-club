@@ -114,10 +114,14 @@ export class PostsService {
     // dto.department/academicYear/specialization, so it snapshots the author's own profile values
     // instead -- same idea as the department snapshot below, just sourced from the User doc since
     // the JWT payload only carries department.
-    const author = dto.academicYear === undefined || dto.specialization === undefined ? await this.usersService.findById(authorId) : null;
-
     const caption = dto.caption ?? '';
-    const mentions = await this.resolveMentions(caption, authorId);
+    // Independent lookups -- one reads the author's own profile (only when needed to snapshot
+    // academicYear/specialization), the other reads mentioned users -- run together instead of one
+    // after another.
+    const [author, mentions] = await Promise.all([
+      dto.academicYear === undefined || dto.specialization === undefined ? this.usersService.findById(authorId) : Promise.resolve(null),
+      this.resolveMentions(caption, authorId),
+    ]);
 
     const post = new this.postModel({
       author: new Types.ObjectId(authorId),
@@ -138,27 +142,6 @@ export class PostsService {
     });
     await post.save();
 
-    // Don't ping someone about a mention in a post they wouldn't be allowed to open: never for a
-    // 'private' post, and for a 'friends' post only if they're actually in the author's friends list.
-    const notifiableMentions =
-      scope === PostScope.PRIVATE
-        ? []
-        : scope === PostScope.FRIENDS
-          ? await (async () => {
-              const friendIds = new Set(await this.usersService.getFriendIds(authorId));
-              return mentions.filter((m) => friendIds.has(m.toString()));
-            })()
-          : mentions;
-    for (const recipient of notifiableMentions) {
-      await this.notificationsService.create({
-        recipient,
-        actor: authorId,
-        type: 'mention',
-        postId: post.id,
-        preview: caption.slice(0, 120),
-      });
-    }
-
     // Fire-and-forget: a failed extraction just means this lecture isn't searchable by the AI
     // assistant yet, never a user-facing error blocking the post from being created.
     void this.lectureIndexService.indexIfLecture({
@@ -171,9 +154,44 @@ export class PostsService {
       department: post.department,
     });
 
-    await this.gamificationService.awardPoints(authorId, POINTS.POST_CREATED, 'post_created', { postId: post.id, courseCode: post.courseCode ?? null });
-    const postCount = await this.postModel.countDocuments({ author: post.author }).exec();
-    if (postCount === 1) await this.gamificationService.maybeAwardBadge(authorId, 'first_post');
+    // Independent post-save side effects -- mention notifications, gamification points, and the
+    // "first post" badge check -- none of these need each other's result (the badge check chains
+    // off its own count fetch), so they run together instead of one after another. Same
+    // error-propagation contract as before (any failure here still fails the request) -- purely a
+    // latency fix, not a behavior change.
+    const notifyMentions = async (): Promise<void> => {
+      // Don't ping someone about a mention in a post they wouldn't be allowed to open: never for a
+      // 'private' post, and for a 'friends' post only if they're actually in the author's friends list.
+      let notifiable = mentions;
+      if (scope === PostScope.PRIVATE) {
+        notifiable = [];
+      } else if (scope === PostScope.FRIENDS) {
+        const friendIds = new Set(await this.usersService.getFriendIds(authorId));
+        notifiable = mentions.filter((m) => friendIds.has(m.toString()));
+      }
+      await Promise.all(
+        notifiable.map((recipient) =>
+          this.notificationsService.create({
+            recipient,
+            actor: authorId,
+            type: 'mention',
+            postId: post.id,
+            preview: caption.slice(0, 120),
+          }),
+        ),
+      );
+    };
+
+    const awardFirstPostBadgeIfNeeded = async (): Promise<void> => {
+      const postCount = await this.postModel.countDocuments({ author: post.author }).exec();
+      if (postCount === 1) await this.gamificationService.maybeAwardBadge(authorId, 'first_post');
+    };
+
+    await Promise.all([
+      notifyMentions(),
+      this.gamificationService.awardPoints(authorId, POINTS.POST_CREATED, 'post_created', { postId: post.id, courseCode: post.courseCode ?? null }),
+      awardFirstPostBadgeIfNeeded(),
+    ]);
 
     this.realtimeEmitter.emitToAdmins('admin:activity', {
       type: 'post',
@@ -202,6 +220,10 @@ export class PostsService {
     viewerDepartment?: Department | null,
     filters?: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization },
     viewerId?: string,
+    // Main-feed branch only: when the caller already resolved this (see feed()/feedCursor(), which
+    // need it anyway for the academic-year tier), reuse it instead of this method fetching the
+    // viewer's friend list itself -- one fewer DB round trip on the hottest endpoint in the app.
+    preloadedFriendIds?: string[],
   ): Promise<Record<string, unknown>> {
     const filter: Record<string, unknown> = {};
     if (courseCode) filter.courseCode = courseCode;
@@ -240,7 +262,8 @@ export class PostsService {
       if (viewerDepartment) publicPosts.department = { $in: [viewerDepartment, null] };
       const or: Record<string, unknown>[] = [publicPosts];
       if (viewerId) {
-        const friendObjectIds = (await this.usersService.getFriendIds(viewerId)).map((id) => new Types.ObjectId(id));
+        const friendIds = preloadedFriendIds ?? (await this.usersService.getFriendIds(viewerId));
+        const friendObjectIds = friendIds.map((id) => new Types.ObjectId(id));
         or.push({ scope: PostScope.FRIENDS, author: { $in: friendObjectIds } });
         or.push({
           author: new Types.ObjectId(viewerId),
@@ -255,15 +278,18 @@ export class PostsService {
     return filter;
   }
 
-  /** True when the own-academic-year priority tier applies (see the tiering comment above). */
-  private async viewerYearForTiering(
+  // True when the own-academic-year priority tier applies (see the tiering comment on feed()
+  // below) -- pure condition check, no lookup. Whenever this is true, feed()/feedCursor() also
+  // need the viewer's academicYear (for the tier boundary) and, via buildFeedFilter's main-feed
+  // branch, their friend list -- both come from ONE combined query
+  // (usersService.getFriendIdsAndAcademicYear) rather than each being fetched separately.
+  private tieringApplies(
     authorId: string | undefined,
     courseCode: string | undefined,
     explicitYear: AcademicYear | undefined,
     viewerId: string | undefined,
-  ): Promise<AcademicYear | null> {
-    if (authorId || courseCode || explicitYear || !viewerId) return null;
-    return (await this.usersService.findById(viewerId))?.academicYear ?? null;
+  ): viewerId is string {
+    return !authorId && !courseCode && !explicitYear && !!viewerId;
   }
 
   async feed(
@@ -277,6 +303,10 @@ export class PostsService {
     filters?: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization },
     viewerId?: string,
   ): Promise<PostDocument[]> {
+    const viewerCtx = this.tieringApplies(authorId, courseCode, filters?.academicYear, viewerId)
+      ? await this.usersService.getFriendIdsAndAcademicYear(viewerId)
+      : null;
+
     const filter = await this.buildFeedFilter(
       courseCode,
       authorId,
@@ -285,6 +315,7 @@ export class PostsService {
       viewerDepartment,
       filters,
       viewerId,
+      viewerCtx?.friendIds,
     );
 
     const skip = (page - 1) * limit;
@@ -294,8 +325,8 @@ export class PostsService {
     // every other year's, each tier still newest-first. Skipped for the profile feed, a
     // course-filtered view, an explicit academicYear filter the viewer chose, or a viewer with no
     // academicYear of their own to prioritise.
-    if (!authorId && !courseCode && !filters?.academicYear && viewerId) {
-      const viewerYear = (await this.usersService.findById(viewerId))?.academicYear ?? null;
+    if (viewerCtx) {
+      const viewerYear = viewerCtx.academicYear;
       if (viewerYear) {
         const ownYear = { ...filter, academicYear: { $in: [viewerYear, null] } };
         const otherYears = { ...filter, academicYear: { $nin: [viewerYear, null] } };
@@ -368,6 +399,10 @@ export class PostsService {
     filters?: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization },
     viewerId?: string,
   ): Promise<{ items: PostDocument[]; nextCursor: string | null }> {
+    const viewerCtx = this.tieringApplies(authorId, courseCode, filters?.academicYear, viewerId)
+      ? await this.usersService.getFriendIdsAndAcademicYear(viewerId)
+      : null;
+
     const filter = await this.buildFeedFilter(
       courseCode,
       authorId,
@@ -376,9 +411,10 @@ export class PostsService {
       viewerDepartment,
       filters,
       viewerId,
+      viewerCtx?.friendIds,
     );
     const cur = decodeCursor(before);
-    const viewerYear = await this.viewerYearForTiering(authorId, courseCode, filters?.academicYear, viewerId);
+    const viewerYear = viewerCtx?.academicYear ?? null;
 
     // Non-tiered: one keyset query.
     if (!viewerYear) {
@@ -706,37 +742,54 @@ export class PostsService {
   }
 
   async addComment(postId: string, authorId: string, text: string): Promise<CommentDocument> {
-    const post = await this.findOneForViewer(postId, authorId);
-    const mentions = await this.resolveMentions(text, authorId);
+    // Independent lookups -- one reads the post (+ visibility check), the other reads mentioned
+    // users -- run together instead of one after another; neither needs the other's result.
+    const [post, mentions] = await Promise.all([this.findOneForViewer(postId, authorId), this.resolveMentions(text, authorId)]);
     const comment = await new this.commentModel({
       post: post._id,
       author: new Types.ObjectId(authorId),
       text,
       mentions,
     }).save();
-    await this.postModel.findByIdAndUpdate(postId, { $inc: { commentCount: 1 } }).exec();
-    await this.gamificationService.awardPoints(authorId, POINTS.COMMENT_ADDED, 'comment_added');
+
+    // Independent post-save side effects (counter bump, gamification points, notifications) --
+    // none of these need each other's result, so they run together instead of one after another.
+    // Same error-propagation contract as before (any failure here still fails the request, since
+    // Promise.all rejects as soon as one does) -- this is purely a latency fix, not a behavior
+    // change.
+    const notifications: Promise<unknown>[] = [];
     if (post.author && post.author._id.toString() !== authorId) {
-      await this.notificationsService.create({
-        recipient: post.author._id,
-        actor: authorId,
-        type: 'post_comment',
-        postId,
-        preview: text.slice(0, 120),
-      });
+      notifications.push(
+        this.notificationsService.create({
+          recipient: post.author._id,
+          actor: authorId,
+          type: 'post_comment',
+          postId,
+          preview: text.slice(0, 120),
+        }),
+      );
     }
     // The post author already got a post_comment notification above -- skip re-pinging them here
     // as a mention too.
     for (const recipient of mentions) {
       if (post.author && recipient.equals(post.author._id)) continue;
-      await this.notificationsService.create({
-        recipient,
-        actor: authorId,
-        type: 'mention',
-        postId,
-        preview: text.slice(0, 120),
-      });
+      notifications.push(
+        this.notificationsService.create({
+          recipient,
+          actor: authorId,
+          type: 'mention',
+          postId,
+          preview: text.slice(0, 120),
+        }),
+      );
     }
+
+    await Promise.all([
+      this.postModel.findByIdAndUpdate(postId, { $inc: { commentCount: 1 } }).exec(),
+      this.gamificationService.awardPoints(authorId, POINTS.COMMENT_ADDED, 'comment_added'),
+      ...notifications,
+    ]);
+
     return comment.populate('author', 'name role photoUrl');
   }
 

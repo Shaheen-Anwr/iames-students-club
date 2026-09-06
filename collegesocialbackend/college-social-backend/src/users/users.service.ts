@@ -7,7 +7,7 @@ import { RegisterDto } from '../auth/dto/register.dto';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { HOME_WIDGET_IDS, UpdateHomeLayoutDto, type HomeWidgetId } from './dto/update-home-layout.dto';
 import { Role } from '../common/enums/role.enum';
-import { getAcademicYearsForDepartment } from '../common/enums/academic-year.enum';
+import { AcademicYear, getAcademicYearsForDepartment } from '../common/enums/academic-year.enum';
 import { SPECIALIZATIONS_BY_DEPARTMENT } from '../common/enums/specialization.enum';
 import { EmailService } from '../email/email.service';
 import {
@@ -192,6 +192,20 @@ export class UsersService {
   async getFriendIds(userId: string): Promise<string[]> {
     const me = await this.userModel.findById(userId).select('friends').lean<{ friends: Types.ObjectId[] }>().exec();
     return (me?.friends ?? []).map((f) => f.toString());
+  }
+
+  // Both of the viewer-derived facts PostsService.feed()/feedCursor() need for the main "عام"
+  // feed -- the friend list (for its FRIENDS-scope OR-clause) and academicYear (for the own-year
+  // priority tier) -- fetched in ONE round trip instead of two separate findById-shaped queries.
+  // Every extra round trip here costs a full network hop to the DB on every single feed request,
+  // so this one merge alone removes a guaranteed hop from the single most-hit endpoint in the app.
+  async getFriendIdsAndAcademicYear(userId: string): Promise<{ friendIds: string[]; academicYear: AcademicYear | null }> {
+    const me = await this.userModel
+      .findById(userId)
+      .select('friends academicYear')
+      .lean<{ friends: Types.ObjectId[]; academicYear: AcademicYear | null }>()
+      .exec();
+    return { friendIds: (me?.friends ?? []).map((f) => f.toString()), academicYear: me?.academicYear ?? null };
   }
 
   // Own pending requests only (received + sent), populated the same way -- unlike listFriends,
