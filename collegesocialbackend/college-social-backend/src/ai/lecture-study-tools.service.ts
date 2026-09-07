@@ -133,14 +133,15 @@ export class LectureStudyToolsService {
     return this.kitModel.findOne({ post: new Types.ObjectId(postId) }).exec();
   }
 
-  // Mirrors FeedContextService's public/department visibility: a lecture is usable here by anyone
-  // whose شعبة matches it (or the lecture is college-wide). friends/private lectures aren't a
-  // real study-library use case -- denied rather than specially handled.
+  // STRICT شعبة isolation for lecture material (matches PostsService.browseAttachments): a viewer
+  // with a شعبة may build a study kit only for a lecture tagged with their exact شعبة -- not for
+  // another شعبة's, and not for an untagged / college-wide (null) one either. A viewer with no
+  // شعبة (admin / super admin) is unrestricted. friends/private lectures aren't a real study-
+  // library use case -- denied rather than specially handled.
   private canView(post: PostDocument, viewerDepartment?: Department | null): boolean {
-    if (post.scope === PostScope.PUBLIC) {
-      return !viewerDepartment || post.department == null || post.department === viewerDepartment;
+    if (post.scope === PostScope.PUBLIC || post.scope === PostScope.DEPARTMENT) {
+      return !viewerDepartment || post.department === viewerDepartment;
     }
-    if (post.scope === PostScope.DEPARTMENT) return post.department === (viewerDepartment ?? null);
     return false;
   }
 

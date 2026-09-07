@@ -18,6 +18,7 @@ import { FileInterceptor } from '@nestjs/platform-express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { StorageService } from '../upload/storage.service';
 import { buildMulterOptions } from '../upload/multer.config';
 import { GroupsService } from './groups.service';
@@ -36,7 +37,7 @@ export class GroupsController {
 
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateGroupDto) {
-    return this.groupsService.create(user.userId, dto);
+    return this.groupsService.create(user.userId, user.department, dto);
   }
 
   @Get()
@@ -51,14 +52,19 @@ export class GroupsController {
 
   // Must be declared before GET /groups/:id -- otherwise ":id" would swallow "discover".
   @Get('discover')
-  async discover(@Query('search') search?: string, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.groupsService.discover(search, Number(page) || 1, Number(limit) || 20);
+  async discover(
+    @CurrentUser() user: AuthenticatedUser,
+    @Query('search') search?: string,
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.groupsService.discover(search, Number(page) || 1, Number(limit) || 20, viewerScopeDepartment(user));
   }
 
   // Also before GET /groups/:id. Every group in the app for the unified explorer list.
   @Get('all')
   async listAll(@CurrentUser() user: AuthenticatedUser, @Query('search') search?: string) {
-    return this.groupsService.listAll(user.userId, search);
+    return this.groupsService.listAll(user.userId, search, viewerScopeDepartment(user));
   }
 
   @Get(':id')

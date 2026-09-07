@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { Department } from '../../common/enums/department.enum';
 
 export type StudyGroupDocument = HydratedDocument<StudyGroup>;
 
@@ -34,6 +35,13 @@ export class StudyGroup {
   // collide on the unique index.
   @Prop({ type: String, default: null, unique: true, sparse: true })
   inviteCode: string | null;
+
+  // Snapshotted from the owner's شعبة at creation time. The group explorer (`GET /groups/all`)
+  // and public discovery are STRICT-walled to the viewer's own شعبة -- a student never sees
+  // another شعبة's groups in a listing. `null` = created by staff with no شعبة. Opening a group
+  // by direct link / invite code is NOT walled (see GroupsService.findOne / joinByCode).
+  @Prop({ type: String, required: false, enum: Department, default: null, index: true })
+  department: Department | null;
 }
 
 export const StudyGroupSchema = SchemaFactory.createForClass(StudyGroup);

@@ -249,7 +249,7 @@ export class DigestService {
   ): Promise<PushPayload | null> {
     const [todayClasses, dueSoon, newAnnouncements] = await Promise.all([
       this.todayClassesFor(user, todayDow, scheduleCache),
-      this.dueSoonFor(user.id),
+      this.dueSoonFor(user.id, user.department),
       this.newAnnouncementsCountFor(user.department, announcementCache),
     ]);
 
@@ -326,11 +326,14 @@ export class DigestService {
 
   // Global/professor assignments plus this student's personal ones, due within DUE_SOON_DAYS and
   // not yet marked done -- mirrors how DashboardService derives its "due" list.
-  private async dueSoonFor(userId: string): Promise<{ count: number; soonestTitle: string | null }> {
+  private async dueSoonFor(
+    userId: string,
+    department: Department | null,
+  ): Promise<{ count: number; soonestTitle: string | null }> {
     const horizon = new Date(Date.now() + DUE_SOON_DAYS * 86_400_000);
     const uid = new Types.ObjectId(userId);
 
-    const upcoming = await this.assignmentsService.findAll(1, 50, undefined, true, userId);
+    const upcoming = await this.assignmentsService.findAll(1, 50, undefined, true, userId, false, department);
     const relevant = upcoming
       .filter((a) => a.dueDate <= horizon && !a.completedBy.some((cid) => cid.equals(uid)))
       .sort((a, b) => a.dueDate.getTime() - b.dueDate.getTime());

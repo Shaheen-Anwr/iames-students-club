@@ -15,6 +15,7 @@ import { ScheduleEntryDocument } from '../schedule/schemas/schedule-entry.schema
 import { AnnouncementDocument } from '../announcements/schemas/announcement.schema';
 import { UserDocument } from '../users/schemas/user.schema';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { urgencyOf, Urgency } from '../common/utils/urgency.util';
 import { Role } from '../common/enums/role.enum';
 
@@ -114,7 +115,7 @@ export class DashboardService {
     const [schedule, plannerTasks, upcomingAssignments, leaderboard, announcements] = await Promise.all([
       this.scheduleService.findForUser(user.userId),
       this.plannerService.findAllForOwner(user.userId),
-      this.assignmentsService.findAll(1, 10, undefined, true, user.userId),
+      this.assignmentsService.findAll(1, 10, undefined, true, user.userId, false, viewerScopeDepartment(user)),
       // شعبة-scoped so the home leaderboard shows classmates the student is actually competing
       // with (falls back to college-wide for a student with no شعبة set).
       this.gamificationService.getLeaderboard(5, user.department),
@@ -173,7 +174,7 @@ export class DashboardService {
         this.gpaService.findAllForOwner(user.userId),
         this.gpaService.getSummaryForOwner(user.userId),
         this.attendanceService.getSummaryForOwner(user.userId),
-        this.assignmentsService.findAll(1, 100, undefined, false, user.userId, false),
+        this.assignmentsService.findAll(1, 100, undefined, false, user.userId, false, viewerScopeDepartment(user)),
       ]);
       return {
         gpa: { courses: gpaCourses, summary: gpaSummary },

@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { CacheService } from '../common/cache/cache.service';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { PostsService } from '../posts/posts.service';
 import { AssignmentsService } from '../assignments/assignments.service';
 import { QaService } from '../qa/qa.service';
@@ -29,12 +30,14 @@ export class CoursesService {
     // not a staleness trade-off.
     const key = `course-overview:${norm}:${user.userId}`;
 
+    const viewerDepartment = viewerScopeDepartment(user);
+
     return this.cache.wrap(key, 15, async () => {
       const [lectures, assignments, questions, quizzes, allSlots] = await Promise.allSettled([
-        this.posts.feed(1, 50, code, undefined, true, undefined, user.department, {}, user.userId),
-        this.assignments.findAll(1, 50, code, false, user.userId, false),
-        this.qa.listQuestions(1, 50, code, undefined, user.department),
-        this.quizzes.findAll(1, 50, code, user.userId),
+        this.posts.feed(1, 50, code, undefined, true, undefined, viewerDepartment, {}, user.userId),
+        this.assignments.findAll(1, 50, code, false, user.userId, false, viewerDepartment),
+        this.qa.listQuestions(1, 50, code, undefined, viewerDepartment),
+        this.quizzes.findAll(1, 50, code, user.userId, viewerDepartment),
         this.schedule.findForUser(user.userId),
       ]);
 

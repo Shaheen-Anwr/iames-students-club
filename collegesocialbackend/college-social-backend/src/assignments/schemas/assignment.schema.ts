@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { Department } from '../../common/enums/department.enum';
 
 export type AssignmentDocument = HydratedDocument<Assignment>;
 
@@ -61,6 +62,14 @@ export class Assignment {
   @Prop({ type: Boolean, default: false, index: true })
   isMilitary: boolean;
 
+  // Snapshotted from the creator's شعبة at creation time (same pattern as Post.department). The
+  // global الواجبات board + course hub + calendar are STRICT-walled to the viewer's own شعبة:
+  // a student never sees another شعبة's assignments. `null` = created by staff with no شعبة, OR a
+  // military assignment (those stay university-wide -- see AssignmentsService.findAll). Group and
+  // personal assignments ignore this field (their visibility is membership/creator based).
+  @Prop({ type: String, required: false, enum: Department, default: null, index: true })
+  department: Department | null;
+
   // Set only for assignments created inside a study group (by its owner) -- null for every
   // pre-existing global/personal assignment. Visibility for these is gated by group membership
   // instead of isPersonal, see AssignmentsService.visibilityFilter().
@@ -71,5 +80,6 @@ export class Assignment {
 export const AssignmentSchema = SchemaFactory.createForClass(Assignment);
 AssignmentSchema.index({ group: 1, dueDate: 1 });
 // Global assignments board + course hub (AssignmentsService.findAll): non-group assignments,
-// optionally by course, military ones filtered out, sorted by due date.
+// optionally by course, military ones filtered out, شعبة-scoped, sorted by due date.
+AssignmentSchema.index({ department: 1, isMilitary: 1, dueDate: 1 });
 AssignmentSchema.index({ courseCode: 1, isMilitary: 1, dueDate: 1 });

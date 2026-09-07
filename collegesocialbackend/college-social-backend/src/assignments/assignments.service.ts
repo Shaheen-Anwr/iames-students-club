@@ -9,6 +9,7 @@ import { GamificationService } from '../gamification/gamification.service';
 import { POINTS } from '../gamification/badges';
 import { LectureIndexService } from '../ai/lecture-index.service';
 import { Role } from '../common/enums/role.enum';
+import { Department } from '../common/enums/department.enum';
 import { GroupsService } from '../groups/groups.service';
 import { StorageService } from '../upload/storage.service';
 
@@ -41,7 +42,12 @@ export class AssignmentsService {
     };
   }
 
-  async create(creatorId: string, creatorRole: Role, dto: CreateAssignmentDto): Promise<AssignmentDocument> {
+  async create(
+    creatorId: string,
+    creatorRole: Role,
+    creatorDepartment: Department | null,
+    dto: CreateAssignmentDto,
+  ): Promise<AssignmentDocument> {
     // التربية العسكرية assignments are always global (visible to every student) and carry a
     // fixed course label when none is given -- see the isMilitary prop on the schema.
     const isMilitary = !!dto.isMilitary;
@@ -57,6 +63,9 @@ export class AssignmentsService {
       attachmentChunkCount: dto.attachmentChunkCount ?? null,
       isPersonal: !isMilitary && creatorRole === Role.STUDENT,
       isMilitary,
+      // Non-military assignments are walled to the creator's شعبة; military ones stay
+      // university-wide (null). See findAll()/findDueInRange().
+      department: isMilitary ? null : (creatorDepartment ?? null),
     });
     await assignment.save();
 
@@ -82,6 +91,7 @@ export class AssignmentsService {
     upcoming?: boolean,
     requesterId?: string,
     military?: boolean,
+    viewerDepartment?: Department | null,
   ): Promise<AssignmentDocument[]> {
     const filter: Record<string, unknown> = this.visibilityFilter(requesterId);
     if (courseCode) filter.courseCode = courseCode;
@@ -89,6 +99,10 @@ export class AssignmentsService {
     // The military section asks for its own assignments; every other caller gets the normal
     // list with military ones excluded so they don't leak into the general الواجبات board.
     filter.isMilitary = military ? true : { $ne: true };
+    // STRICT شعبة wall on the normal board: a viewer with a شعبة sees only their own شعبة's
+    // assignments. The military list stays university-wide. Deptless staff / super admins
+    // (viewerDepartment null/undefined) are unrestricted.
+    if (!military && viewerDepartment) filter.department = viewerDepartment;
     return this.assignmentModel
       .find(filter)
       .sort({ dueDate: 1 })
@@ -99,10 +113,21 @@ export class AssignmentsService {
   }
 
   // Used by CalendarService to pull the month's due dates -- global assignments are shared by
-  // everyone, personal ones only show up on their creator's own calendar.
-  async findDueInRange(start: Date, end: Date, requesterId?: string): Promise<AssignmentDocument[]> {
+  // everyone in the same شعبة (plus university-wide military ones), personal ones only show up on
+  // their creator's own calendar. `viewerDepartment` null/undefined = unrestricted (deptless
+  // staff / super admin).
+  async findDueInRange(
+    start: Date,
+    end: Date,
+    requesterId?: string,
+    viewerDepartment?: Department | null,
+  ): Promise<AssignmentDocument[]> {
+    const base = { ...this.visibilityFilter(requesterId), dueDate: { $gte: start, $lt: end } };
+    const filter = viewerDepartment
+      ? { $and: [base, { $or: [{ department: viewerDepartment }, { isMilitary: true }] }] }
+      : base;
     return this.assignmentModel
-      .find({ ...this.visibilityFilter(requesterId), dueDate: { $gte: start, $lt: end } })
+      .find(filter)
       .sort({ dueDate: 1 })
       .populate('createdBy', 'name role photoUrl')
       .exec();

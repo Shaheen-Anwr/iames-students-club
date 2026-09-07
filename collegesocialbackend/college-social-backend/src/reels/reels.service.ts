@@ -149,6 +149,16 @@ export class ReelsService {
     return reel;
   }
 
+  // STRICT شعبة isolation, extended to a direct link / detail view: a viewer WITH a شعبة may only
+  // open a reel tagged with their exact شعبة. A reel from another شعبة (or an untagged one) 404s --
+  // indistinguishable from a deleted reel -- so a shared cross-شعبة link is a dead end, not a
+  // back door around the feed filter. A viewer with no شعبة (admin / super admin) is unrestricted.
+  private assertViewerCanSee(reel: ReelDocument, viewerDepartment?: Department | null): void {
+    if (viewerDepartment && reel.department !== viewerDepartment) {
+      throw new NotFoundException('الريل غير موجود');
+    }
+  }
+
   // --- create -----------------------------------------------------------------
 
   async create(userId: string, dto: CreateReelDto): Promise<ReelView> {
@@ -246,13 +256,13 @@ export class ReelsService {
     if (authorId && Types.ObjectId.isValid(authorId)) filter.author = new Types.ObjectId(authorId);
     if (hashtag) filter.hashtags = hashtag.toLowerCase().replace(/^#/, '');
 
-    // شعبة (department) wall for the "اكاديميا" feed -- mirrors PostsService's main feed + lecture
-    // library: a viewer WITH a شعبة sees only their own شعبة's reels plus college-wide ones (no
-    // شعبة tag); another شعبة's reels never surface. A viewer with no شعبة (admin / super admin)
-    // is unrestricted. Skipped for a single author's profile grid, matching the posts feed, which
-    // only walls the main feed, not a profile view.
-    if (viewerDepartment && !authorId) {
-      filter.department = { $in: [viewerDepartment, null] };
+    // STRICT شعبة (department) wall for "اكاديميا": a viewer WITH a شعبة sees ONLY reels tagged
+    // with their exact شعبة -- never another شعبة's, and never untagged / college-wide (null) reels
+    // either. Applies to every shape of this feed (main, hashtag, and a single author's profile
+    // grid) so no reel from another شعبة is ever reachable through browsing. A viewer with no شعبة
+    // (admin / super admin) is unrestricted.
+    if (viewerDepartment) {
+      filter.department = viewerDepartment;
     }
 
     const capped = Math.min(Math.max(limit, 1), 20);
@@ -273,8 +283,19 @@ export class ReelsService {
     };
   }
 
-  async findOne(id: string, viewerId: string): Promise<ReelView> {
-    return this.toReelView(await this.loadReel(id), viewerId);
+  async findOne(id: string, viewerId: string, viewerDepartment?: Department | null): Promise<ReelView> {
+    const reel = await this.loadReel(id);
+    this.assertViewerCanSee(reel, viewerDepartment);
+    return this.toReelView(reel, viewerId);
+  }
+
+  // Comment reads/writes go through here too, so a cross-شعبة reel can't be inspected or replied to
+  // via a leaked id even though its feed row is filtered out. (like/save/view are left alone -- they
+  // don't expose another شعبة's content, and the id is undiscoverable through browsing anyway.)
+  private async loadVisibleReel(id: string, viewerDepartment?: Department | null): Promise<ReelDocument> {
+    const reel = await this.loadReel(id);
+    this.assertViewerCanSee(reel, viewerDepartment);
+    return reel;
   }
 
   // --- engagement ---------------------------------------------------------
@@ -348,8 +369,9 @@ export class ReelsService {
     page = 1,
     limit = 20,
     parent?: string,
+    viewerDepartment?: Department | null,
   ): Promise<ReelCommentView[]> {
-    await this.loadReel(reelId);
+    await this.loadVisibleReel(reelId, viewerDepartment);
     const capped = Math.min(Math.max(limit, 1), 50);
     const comments = await this.commentModel
       .find({
@@ -369,8 +391,9 @@ export class ReelsService {
     authorId: string,
     text: string,
     parentId?: string,
+    viewerDepartment?: Department | null,
   ): Promise<ReelCommentView> {
-    const reel = await this.loadReel(reelId);
+    const reel = await this.loadVisibleReel(reelId, viewerDepartment);
     const trimmed = text.trim();
     if (!trimmed) throw new BadRequestException('التعليق لا يمكن أن يكون فارغًا');
 

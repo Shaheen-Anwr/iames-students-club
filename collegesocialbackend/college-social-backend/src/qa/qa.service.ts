@@ -46,13 +46,19 @@ export class QaService {
       body: dto.body,
       courseCode: dto.courseCode ?? null,
       scope,
-      department: scope === QuestionScope.DEPARTMENT ? authorDepartment : null,
+      // Snapshot the author's شعبة on EVERY question, `scope` regardless -- both the "عام" and
+      // "قسمي" tabs are STRICT-walled to the viewer's own شعبة now (see listQuestions/search),
+      // so a "عام" question still needs its شعبة recorded. `null` only for a deptless author.
+      department: authorDepartment ?? null,
     });
     return question.save();
   }
 
-  // Same public/department split as PostsService.feed() -- viewerDepartment comes from the JWT.
-  // group-scoped questions are excluded unconditionally, same as AssignmentsService.visibilityFilter.
+  // STRICT شعبة wall (matches lecture material / reels): a viewer WITH a شعبة only ever sees
+  // questions tagged with their exact شعبة -- on BOTH the "عام" and "قسمي" tabs and the course
+  // hub -- never another شعبة's, and never an untagged one. Deptless staff / super admins
+  // (viewerDepartment null/undefined) are unrestricted. group-scoped questions are excluded
+  // unconditionally, same as AssignmentsService.visibilityFilter.
   async listQuestions(
     page = 1,
     limit = 20,
@@ -62,12 +68,9 @@ export class QaService {
   ): Promise<QuestionDocument[]> {
     const filter: Record<string, unknown> = { group: null };
     if (courseCode) filter.courseCode = courseCode;
-    if (scope === QuestionScope.DEPARTMENT) {
-      filter.scope = QuestionScope.DEPARTMENT;
-      filter.department = viewerDepartment ?? null;
-    } else if (scope === QuestionScope.PUBLIC) {
-      filter.scope = QuestionScope.PUBLIC;
-    }
+    if (scope === QuestionScope.DEPARTMENT) filter.scope = QuestionScope.DEPARTMENT;
+    else if (scope === QuestionScope.PUBLIC) filter.scope = QuestionScope.PUBLIC;
+    if (viewerDepartment) filter.department = viewerDepartment;
     return this.questionModel
       .find(filter)
       .sort({ createdAt: -1 })
@@ -77,12 +80,15 @@ export class QaService {
       .exec();
   }
 
-  // Used by SearchService -- $text search over title/body, scoped the same way listQuestions() is.
+  // Used by SearchService -- $text search over title/body, STRICT-walled the same way
+  // listQuestions() is: a viewer with a شعبة only matches questions tagged with their شعبة.
   async search(query: string, limit: number, viewerDepartment?: Department | null): Promise<QuestionDocument[]> {
-    const scopeOr = [
-      { scope: QuestionScope.PUBLIC },
-      { scope: QuestionScope.DEPARTMENT, department: viewerDepartment ?? null },
-    ];
+    const scopeOr = viewerDepartment
+      ? [
+          { scope: QuestionScope.PUBLIC, department: viewerDepartment },
+          { scope: QuestionScope.DEPARTMENT, department: viewerDepartment },
+        ]
+      : [{ scope: QuestionScope.PUBLIC }, { scope: QuestionScope.DEPARTMENT }];
     if (ATLAS_SEARCH_ENABLED && query.trim()) {
       try {
         const docs = await this.questionModel
