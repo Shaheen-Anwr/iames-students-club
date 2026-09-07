@@ -41,7 +41,7 @@ export default function FeedPage() {
             </aside>
 
             <div className="min-w-0">
-              <FeedList />
+              <FeedList scrollRef={scrollRef} />
             </div>
 
             <aside className="hidden lg:block">

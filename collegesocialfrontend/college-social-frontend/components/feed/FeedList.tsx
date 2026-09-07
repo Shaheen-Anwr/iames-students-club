@@ -1,9 +1,9 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { Inbox } from 'lucide-react';
+import { ArrowDown, Inbox } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
@@ -11,6 +11,7 @@ import { LoadError } from '@/components/ui/LoadError';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
 import { useCursorInfiniteList } from '@/lib/query';
+import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { assetUrl } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { AnalyticsEvent, track } from '@/lib/analytics';
@@ -26,7 +27,31 @@ import { FeedFriendSuggestionsCarousel } from './FeedFriendSuggestionsCarousel';
 
 const PAGE_SIZE = 10;
 
-export function FeedList() {
+// Pull-to-refresh dip shown at the top of the list while dragging / refreshing.
+function PullIndicator({ pull, refreshing, threshold }: { pull: number; refreshing: boolean; threshold: number }) {
+  if (pull === 0 && !refreshing) return null;
+  const p = Math.min(pull / threshold, 1);
+  return (
+    <div
+      style={{ height: pull }}
+      className="-mb-4 flex items-end justify-center overflow-hidden transition-[height] duration-150"
+      aria-hidden
+    >
+      <div className="mb-2" style={{ opacity: p, transform: `scale(${0.6 + p * 0.4})` }}>
+        {refreshing ? (
+          <Spinner className="h-5 w-5 text-accent" />
+        ) : (
+          <ArrowDown
+            className="h-5 w-5 text-muted-foreground transition-transform"
+            style={{ transform: `rotate(${p >= 1 ? 180 : 0}deg)` }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement | null> } = {}) {
   const { user } = useAuth();
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -96,6 +121,10 @@ export function FeedList() {
     isFetchingNextPage,
     fetchNextPage,
   } = useCursorInfiniteList<Post>(`/posts?${baseQuery}`, { key: cacheKey, pageSize: PAGE_SIZE });
+
+  // Pull-to-refresh -- only when the page handed us its scroll container (mobile /feed does).
+  const fallbackRef = useRef<HTMLDivElement | null>(null);
+  const { pull, refreshing, threshold } = usePullToRefresh(scrollRef ?? fallbackRef, refetch);
 
   type FeedPage = { items: Post[]; nextCursor: string | null };
   type FeedCache = InfiniteData<FeedPage, string | null>;
@@ -176,6 +205,7 @@ export function FeedList() {
 
   return (
     <div className="space-y-4">
+      <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
       <div className="flex items-center gap-3">
         <Avatar src={assetUrl(user?.photoUrl)} name={user?.name ?? '?'} size="md" />
         <h1 className="text-gradient-accent text-xl font-extrabold tracking-tight text-balance">
