@@ -10,7 +10,7 @@ import { cn } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
 import { useChatUnread } from '@/lib/chat-unread-context';
 import { Sheet } from '@/components/ui/Sheet';
-import { getPrimaryNavItems, getSecondaryNavItems } from './nav-items';
+import { getPrimaryNavItems, getSecondaryNavItems, getNavGroups } from './nav-items';
 
 const isActive = (pathname: string, href: string) =>
   pathname === href || pathname.startsWith(`${href}/`);
@@ -24,9 +24,14 @@ export function MobileNav() {
 
   const primary = getPrimaryNavItems(user?.role);
   const more = getSecondaryNavItems(user?.role);
+  const groups = getNavGroups(user?.role);
   const moreActive = more.some((i) => isActive(pathname, i.href));
   const q = moreQuery.trim();
-  const filteredMore = q ? more.filter((i) => i.label.includes(q)) : more;
+  const filteredGroups = q
+    ? groups
+        .map((g) => ({ ...g, items: g.items.filter((i) => i.label.includes(q)) }))
+        .filter((g) => g.items.length > 0)
+    : groups;
 
   return (
     <>
@@ -96,7 +101,7 @@ export function MobileNav() {
 
             <button
               onClick={() => setMoreOpen(true)}
-              aria-label="المزيد"
+              aria-label="الكل"
               aria-haspopup="dialog"
               className="relative flex h-11 items-center justify-center rounded-2xl outline-none transition-transform active:scale-90"
             >
@@ -116,7 +121,7 @@ export function MobileNav() {
                 <LayoutGrid className="h-5 w-5 shrink-0" />
                 {moreActive && (
                   <span className="hidden whitespace-nowrap text-[13px] font-semibold min-[360px]:inline">
-                    المزيد
+                    الكل
                   </span>
                 )}
               </span>
@@ -131,38 +136,47 @@ export function MobileNav() {
           setMoreOpen(o);
           if (!o) setMoreQuery('');
         }}
-        title="المزيد"
+        title="كل الأقسام"
       >
         <input
           value={moreQuery}
           onChange={(e) => setMoreQuery(e.target.value)}
-          placeholder="ابحث في القائمة..."
+          placeholder="ابحث في الأقسام..."
           className="mb-3 h-10 w-full rounded-xl border border-border bg-surface-2 px-3 text-base text-foreground placeholder:text-muted-foreground focus:border-accent/40 focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/25 md:text-sm"
         />
-        {filteredMore.length === 0 ? (
+        {filteredGroups.length === 0 ? (
           <p className="py-8 text-center text-sm text-muted-foreground">لا توجد نتائج</p>
         ) : (
-          <div className="grid grid-cols-4 gap-2">
-            {filteredMore.map(({ href, label, icon: Icon }) => {
-              const active = isActive(pathname, href);
-              return (
-                <Link
-                  key={href}
-                  href={href}
-                  onClick={() => setMoreOpen(false)}
-                  aria-current={active ? 'page' : undefined}
-                  className={cn(
-                    'flex flex-col items-center gap-1.5 rounded-2xl p-3 text-center transition-colors active:scale-95',
-                    active
-                      ? 'bg-accent-100 text-accent-800'
-                      : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
-                  )}
-                >
-                  <Icon className="h-5 w-5" />
-                  <span className="text-[11px] font-medium leading-tight">{label}</span>
-                </Link>
-              );
-            })}
+          <div className="space-y-4">
+            {filteredGroups.map((group) => (
+              <div key={group.title}>
+                <p className="mb-1.5 px-1 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+                  {group.title}
+                </p>
+                <div className="grid grid-cols-4 gap-2">
+                  {group.items.map(({ href, label, icon: Icon }) => {
+                    const active = isActive(pathname, href);
+                    return (
+                      <Link
+                        key={href}
+                        href={href}
+                        onClick={() => setMoreOpen(false)}
+                        aria-current={active ? 'page' : undefined}
+                        className={cn(
+                          'flex flex-col items-center gap-1.5 rounded-2xl p-3 text-center transition-colors active:scale-95',
+                          active
+                            ? 'bg-accent-100 text-accent-800'
+                            : 'text-muted-foreground hover:bg-surface-2 hover:text-foreground',
+                        )}
+                      >
+                        <Icon className="h-5 w-5" />
+                        <span className="text-[11px] font-medium leading-tight">{label}</span>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
           </div>
         )}
       </Sheet>
