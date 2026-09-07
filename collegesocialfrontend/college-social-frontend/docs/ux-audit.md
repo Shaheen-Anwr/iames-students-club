@@ -13,7 +13,7 @@ that's how the reels squish shipped unnoticed).
 
 | # | Sev | Finding | Notes |
 |---|---|---|---|
-| X1 | **High** (in progress) | **~80 routes / ~20 top-level sections.** No clear hierarchy; the "المزيد" menu was a dumping ground. | **Stage 1 done:** 5-hub IA (`الرئيسية / المجتمع / الدراسة / المحادثات / حسابي`), `nav-items.ts` `getNavGroups()`, grouped "كل الأقسام" sheet replaces the flat dump. **Next:** `/feed` → tabbed "المجتمع" shell; trim `StudyTabs` (12 → ~6 + overflow). |
+| X1 | **High** (in progress) | **~80 routes / ~20 top-level sections.** No clear hierarchy; the "المزيد" menu was a dumping ground. | **Stage 1:** 5-hub IA + grouped "كل الأقسام" sheet (`f008d70`). **Stage 2:** `CommunityTabs` strip on /feed(mobile)/wall/events/marketplace; `StudyTabs` trimmed 12→6 + "المزيد" overflow, `/quizzes` folded into the study hub. **Next (Stage 3):** merge `/friends` into `/profile`; consider a `/study/quizzes` redirect; per-hub polish. |
 | X2 | ~~High~~ ✅ | **Activation blocked on manual admin approval** of college email. Turned out `collegeEmailVerifiedAt` gated *nothing* and the email is already domain-enforced at signup. | **Fixed (Phase 1):** signup auto-verifies (`UsersService.create`), existing base backfilled (`main.ts`), `VerifyEmailBanner` deleted. |
 | X3 | **Med** | **RTL bidi**: Latin/digit runs (emails, codes, times) reverse inside Arabic unless wrapped in `dir=ltr`/`<bdi>`. Recurring bug class. | Audit every place Latin meets Arabic. Lint rule if possible. |
 | X4 | **Med** | **"tsc clean, not run in-app"** is the default ship state across the codebase. Regressions like the reels squish reach prod. | Track A3: a real preview/QA gate; screenshot tests on key screens. |

@@ -8,6 +8,7 @@ import { FeedChatsCard } from '@/components/feed/FeedChatsCard';
 import { FeedTodayCard } from '@/components/feed/FeedTodayCard';
 import { FeedFriendSuggestionsCard } from '@/components/feed/FeedFriendSuggestionsCard';
 import { ChatProvider } from '@/components/chat/ChatProvider';
+import { CommunityTabs } from '@/components/community/CommunityTabs';
 
 export default function FeedPage() {
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -27,6 +28,11 @@ export default function FeedPage() {
       <div aria-hidden className="bg-mesh pointer-events-none absolute inset-0 opacity-70" />
       <div ref={scrollRef} className="relative h-full overflow-y-auto scrollbar-thin">
         <ChatProvider>
+          {/* "المجتمع" hub strip -- mobile only; on desktop the top nav + right rail already
+              cover cross-navigation and /feed is a full dashboard. */}
+          <div className="mx-auto w-full max-w-2xl px-4 pt-4 lg:hidden">
+            <CommunityTabs />
+          </div>
           <div className="mx-auto grid w-full max-w-6xl grid-cols-1 gap-4 px-4 py-6 lg:grid-cols-[300px_minmax(0,1fr)_300px]">
             <aside className="hidden lg:block">
               <div className="sticky top-0">
