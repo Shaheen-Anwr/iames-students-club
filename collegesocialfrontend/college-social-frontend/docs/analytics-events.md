@@ -61,11 +61,12 @@ The event dictionary for the UI/UX + retention roadmap. Names live in `lib/analy
 | Event | Fires when | Properties |
 |---|---|---|
 | `notification_opened` | a notification row is tapped in `NotificationBell` | `type`, `was_unread` |
-| `digest_opened` | the app loads with `?src=digest` in the URL (`Observability`) | — |
+| `push_opened` | the app loads with any `?src=...` in the URL (`Observability`) | `src` (`digest` / `classreminder` / …) |
+| `digest_opened` | `push_opened` where `src=digest` (kept for existing funnels) | — |
 
-Backend: the morning digest + weekly recap push URLs now carry `?src=digest`
-(`digest.service.ts`). Add the same `?src=` tag to other push types (`release`, `announcement`)
-when you want their click-through measured too.
+Backend push URLs carry a `?src=` tag for click-through attribution: `digest.service.ts` →
+`?src=digest`, `schedule-reminder.service.ts` → `?src=classreminder`. Add the same to
+`release` / `announcement` pushes when you want those measured.
 
 ## Not yet instrumented — candidates for later
 

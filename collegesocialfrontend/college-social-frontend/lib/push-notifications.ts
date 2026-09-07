@@ -67,21 +67,30 @@ export async function unsubscribeFromPush(): Promise<void> {
   await api.post('/push/unsubscribe', { endpoint });
 }
 
-// --- Morning digest preference ---
-// A once-a-day push summarising the day ahead (lectures, assignments due soon, new
-// announcements). Server-side default is opted-in; this only matters once push is enabled.
+// --- Push notification preferences ---
+// Two opt-in-by-default pushes: the once-a-day morning digest, and a "your lecture starts in
+// 15 min" reminder. Both only matter once phone push is enabled.
 
-export async function getDigestPreference(): Promise<boolean> {
-  const { dailyDigest } = await api.get<{ dailyDigest: boolean }>('/push/preferences');
-  return dailyDigest;
+export interface PushPreferences {
+  dailyDigest: boolean;
+  classReminders: boolean;
 }
 
-export async function setDigestPreference(dailyDigest: boolean): Promise<void> {
-  await api.patch('/push/preferences', { dailyDigest });
+export async function getPushPreferences(): Promise<PushPreferences> {
+  return api.get<PushPreferences>('/push/preferences');
+}
+
+export async function setPushPreferences(patch: Partial<PushPreferences>): Promise<PushPreferences> {
+  return api.patch<PushPreferences>('/push/preferences', patch);
 }
 
 // Fires the caller's own digest immediately so they can see what it looks like. `delivered` is
 // false when there was nothing to summarise today.
 export async function sendDigestTest(): Promise<{ delivered: boolean; message: string }> {
   return api.post<{ delivered: boolean; message: string }>('/digest/test');
+}
+
+// Sends a sample "lecture in 15 min" push to the caller.
+export async function sendClassReminderTest(): Promise<{ message: string }> {
+  return api.post<{ message: string }>('/schedule/reminders/test');
 }

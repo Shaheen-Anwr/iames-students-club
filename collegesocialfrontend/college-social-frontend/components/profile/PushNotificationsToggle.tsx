@@ -1,20 +1,22 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, BellOff, BellRing, Sunrise } from 'lucide-react';
+import { Bell, BellOff, BellRing, Sunrise, Clock3 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Switch } from '@/components/ui/Switch';
 import { ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import {
-  getDigestPreference,
+  getPushPreferences,
   getPushSubscriptionState,
   isPushSupported,
+  sendClassReminderTest,
   sendDigestTest,
-  setDigestPreference,
+  setPushPreferences,
   subscribeToPush,
   unsubscribeFromPush,
+  type PushPreferences,
   type PushSubscriptionState,
 } from '@/lib/push-notifications';
 
@@ -25,10 +27,15 @@ export function PushNotificationsToggle() {
   const { showToast } = useToast();
   const [state, setState] = useState<PushSubscriptionState | 'checking'>('checking');
   const [busy, setBusy] = useState(false);
-  // Morning digest opt-in -- null until loaded (only fetched once push is actually enabled).
-  const [digest, setDigest] = useState<boolean | null>(null);
-  const [digestBusy, setDigestBusy] = useState(false);
-  const [testBusy, setTestBusy] = useState(false);
+  // Preferences -- null until loaded (only fetched once push is actually enabled).
+  const [prefs, setPrefs] = useState<PushPreferences | null>(null);
+  const [prefsBusy, setPrefsBusy] = useState(false);
+  const [testBusy, setTestBusy] = useState<'digest' | 'class' | null>(null);
+
+  const loadPrefs = () =>
+    getPushPreferences()
+      .then(setPrefs)
+      .catch(() => setPrefs({ dailyDigest: true, classReminders: true }));
 
   useEffect(() => {
     if (!isPushSupported()) {
@@ -37,7 +44,7 @@ export function PushNotificationsToggle() {
     }
     getPushSubscriptionState().then((next) => {
       setState(next);
-      if (next === 'subscribed') getDigestPreference().then(setDigest).catch(() => setDigest(true));
+      if (next === 'subscribed') loadPrefs();
     });
   }, []);
 
@@ -47,7 +54,7 @@ export function PushNotificationsToggle() {
       await subscribeToPush();
       setState('subscribed');
       showToast('تم تفعيل إشعارات الهاتف بنجاح.');
-      getDigestPreference().then(setDigest).catch(() => setDigest(true));
+      loadPrefs();
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'تعذّر تفعيل الإشعارات.', 'error');
       setState(await getPushSubscriptionState());
@@ -61,7 +68,7 @@ export function PushNotificationsToggle() {
     try {
       await unsubscribeFromPush();
       setState('granted');
-      setDigest(null);
+      setPrefs(null);
       showToast('تم إلغاء تفعيل إشعارات الهاتف.');
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إلغاء تفعيل الإشعارات.', 'error');
@@ -70,29 +77,30 @@ export function PushNotificationsToggle() {
     }
   }
 
-  async function handleDigestChange(next: boolean) {
-    const prev = digest;
-    setDigest(next);
-    setDigestBusy(true);
+  async function updatePref(patch: Partial<PushPreferences>) {
+    if (!prefs) return;
+    const prev = prefs;
+    setPrefs({ ...prefs, ...patch });
+    setPrefsBusy(true);
     try {
-      await setDigestPreference(next);
+      setPrefs(await setPushPreferences(patch));
     } catch {
-      setDigest(prev);
+      setPrefs(prev);
       showToast('تعذّر حفظ التفضيل.', 'error');
     } finally {
-      setDigestBusy(false);
+      setPrefsBusy(false);
     }
   }
 
-  async function handleSendTest() {
-    setTestBusy(true);
+  async function runTest(which: 'digest' | 'class') {
+    setTestBusy(which);
     try {
-      const { message } = await sendDigestTest();
+      const { message } = which === 'digest' ? await sendDigestTest() : await sendClassReminderTest();
       showToast(message);
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال الملخص التجريبي.', 'error');
+      showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال الإشعار التجريبي.', 'error');
     } finally {
-      setTestBusy(false);
+      setTestBusy(null);
     }
   }
 
@@ -128,42 +136,90 @@ export function PushNotificationsToggle() {
       </div>
 
       {state === 'subscribed' && (
-        <div className="mt-4 border-t border-border pt-4">
-          <div className="flex items-center justify-between gap-3">
-            <div className="flex items-start gap-2.5">
-              <Sunrise className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
-              <div>
-                <h3 id="digest-pref-label" className="text-sm font-medium text-foreground">
-                  ملخص الصباح اليومي
-                </h3>
-                <p className="mt-0.5 text-xs text-muted-foreground">
-                  محاضرات اليوم، التسليمات القريبة، والإعلانات الجديدة — في إشعار واحد كل صباح.
-                </p>
-              </div>
-            </div>
-            {digest === null ? (
-              <BellRing className="h-4 w-4 animate-pulse text-muted-foreground" />
-            ) : (
-              <Switch
-                checked={digest}
-                onCheckedChange={handleDigestChange}
-                disabled={digestBusy}
-                aria-labelledby="digest-pref-label"
+        <div className="mt-4 space-y-4 border-t border-border pt-4">
+          {prefs === null ? (
+            <BellRing className="h-4 w-4 animate-pulse text-muted-foreground" />
+          ) : (
+            <>
+              <PrefRow
+                icon={<Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />}
+                id="class-reminders-pref"
+                title="تنبيه قبل المحاضرة"
+                desc="إشعار قبل بدء كل محاضرة في جدولك بـ15 دقيقة، مع اسم المادة والقاعة."
+                checked={prefs.classReminders}
+                disabled={prefsBusy}
+                onChange={(v) => updatePref({ classReminders: v })}
+                onTest={() => runTest('class')}
+                testBusy={testBusy === 'class'}
+                testLabel="إرسال تنبيه تجريبي"
               />
-            )}
-          </div>
-          {digest && (
-            <button
-              type="button"
-              onClick={handleSendTest}
-              disabled={testBusy}
-              className="mt-2.5 text-xs font-medium text-accent hover:underline disabled:opacity-50"
-            >
-              إرسال ملخص تجريبي الآن
-            </button>
+              <PrefRow
+                icon={<Sunrise className="mt-0.5 h-4 w-4 shrink-0 text-accent" />}
+                id="digest-pref"
+                title="ملخص الصباح اليومي"
+                desc="محاضرات اليوم، التسليمات القريبة، والإعلانات الجديدة — في إشعار واحد كل صباح."
+                checked={prefs.dailyDigest}
+                disabled={prefsBusy}
+                onChange={(v) => updatePref({ dailyDigest: v })}
+                onTest={() => runTest('digest')}
+                testBusy={testBusy === 'digest'}
+                testLabel="إرسال ملخص تجريبي"
+              />
+            </>
           )}
         </div>
       )}
     </Card>
+  );
+}
+
+function PrefRow({
+  icon,
+  id,
+  title,
+  desc,
+  checked,
+  disabled,
+  onChange,
+  onTest,
+  testBusy,
+  testLabel,
+}: {
+  icon: React.ReactNode;
+  id: string;
+  title: string;
+  desc: string;
+  checked: boolean;
+  disabled: boolean;
+  onChange: (v: boolean) => void;
+  onTest: () => void;
+  testBusy: boolean;
+  testLabel: string;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex items-start gap-2.5">
+          {icon}
+          <div>
+            <h3 id={id} className="text-sm font-medium text-foreground">
+              {title}
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">{desc}</p>
+          </div>
+        </div>
+        <Switch checked={checked} onCheckedChange={onChange} disabled={disabled} aria-labelledby={id} />
+      </div>
+      {checked && (
+        <button
+          type="button"
+          onClick={onTest}
+          disabled={testBusy}
+          className="mt-2.5 text-xs font-medium text-accent hover:underline disabled:opacity-50"
+        >
+          {testLabel}
+        </button>
+      )}
+    </div>
   );
 }

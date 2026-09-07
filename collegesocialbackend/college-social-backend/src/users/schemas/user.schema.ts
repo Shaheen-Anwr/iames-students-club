@@ -198,6 +198,13 @@ export class User {
   @Prop({ default: false })
   dailyDigestOptOut: boolean;
 
+  // Opt-out for the "your lecture starts in 15 min" push (ScheduleReminderService's 5-min cron).
+  // Absent/false -> the student gets it, when they have a pushSubscription and a class in the
+  // window. Toggled from profile > "إشعارات الهاتف". On by default -- it's the strongest
+  // daily-return hook for a student app.
+  @Prop({ default: false })
+  classRemindersOptOut: boolean;
+
   // Per-user notification controls (profile > الإشعارات). Only the PUSH channel is gated -- the
   // in-app bell always records everything (it's a pull surface). See NotificationsService +
   // DigestService.

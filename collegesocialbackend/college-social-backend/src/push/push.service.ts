@@ -67,17 +67,30 @@ export class PushService {
   }
 
   // --- Notification preferences ---
-  // `dailyDigest` is stored inverted, as `dailyDigestOptOut`, so an existing user (field absent)
-  // defaults to opted-in. See DigestService for the digest itself.
+  // Both flags are stored inverted (`*OptOut`), so an existing user (field absent) defaults to
+  // opted-in. See DigestService / ScheduleReminderService for the pushes themselves.
 
-  async getDigestPreference(userId: string): Promise<{ dailyDigest: boolean }> {
-    const user = await this.userModel.findById(userId).select('dailyDigestOptOut').lean().exec();
-    return { dailyDigest: !(user?.dailyDigestOptOut ?? false) };
+  async getDigestPreference(userId: string): Promise<{ dailyDigest: boolean; classReminders: boolean }> {
+    const user = await this.userModel
+      .findById(userId)
+      .select('dailyDigestOptOut classRemindersOptOut')
+      .lean()
+      .exec();
+    return {
+      dailyDigest: !(user?.dailyDigestOptOut ?? false),
+      classReminders: !(user?.classRemindersOptOut ?? false),
+    };
   }
 
-  async setDigestPreference(userId: string, dailyDigest: boolean): Promise<{ dailyDigest: boolean }> {
-    await this.userModel.updateOne({ _id: userId }, { $set: { dailyDigestOptOut: !dailyDigest } }).exec();
-    return { dailyDigest };
+  async setDigestPreference(
+    userId: string,
+    prefs: { dailyDigest?: boolean; classReminders?: boolean },
+  ): Promise<{ dailyDigest: boolean; classReminders: boolean }> {
+    const set: Record<string, boolean> = {};
+    if (prefs.dailyDigest !== undefined) set.dailyDigestOptOut = !prefs.dailyDigest;
+    if (prefs.classReminders !== undefined) set.classRemindersOptOut = !prefs.classReminders;
+    if (Object.keys(set).length) await this.userModel.updateOne({ _id: userId }, { $set: set }).exec();
+    return this.getDigestPreference(userId);
   }
 
   // Never throws -- a push failure must never break the in-app notification path that calls it.

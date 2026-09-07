@@ -44,7 +44,8 @@ export const AnalyticsEvent = {
 
   // --- Re-engagement ----------------------------------------------------------------------
   NotificationOpened: 'notification_opened', // { type }
-  DigestOpened: 'digest_opened', // any deep link arriving with ?src=digest
+  DigestOpened: 'digest_opened', // deep link arriving with ?src=digest
+  PushOpened: 'push_opened', // any deep link arriving with ?src=... (e.g. classreminder), { src }
 } as const;
 
 export type AnalyticsEventName = (typeof AnalyticsEvent)[keyof typeof AnalyticsEvent];

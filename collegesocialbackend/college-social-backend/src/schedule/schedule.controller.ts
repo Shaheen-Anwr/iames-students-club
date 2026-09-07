@@ -6,6 +6,7 @@ import { Role } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { ScheduleService } from './schedule.service';
+import { ScheduleReminderService } from './schedule-reminder.service';
 import { CreateScheduleEntryDto } from './dto/create-schedule-entry.dto';
 import { UpdateScheduleEntryDto } from './dto/update-schedule-entry.dto';
 import { CreateScheduleBoardDto } from './dto/create-schedule-board.dto';
@@ -22,7 +23,18 @@ import { Specialization } from '../common/enums/specialization.enum';
 @UseGuards(JwtAuthGuard)
 @Controller('schedule')
 export class ScheduleController {
-  constructor(private readonly scheduleService: ScheduleService) {}
+  constructor(
+    private readonly scheduleService: ScheduleService,
+    private readonly scheduleReminderService: ScheduleReminderService,
+  ) {}
+
+  // POST /api/schedule/reminders/test -> sends a sample "lecture in 15 min" push to the caller,
+  // so they can confirm phone notifications are working. NOTE: distinct route shape from
+  // /schedule/:id, declared up here so intent is obvious.
+  @Post('reminders/test')
+  async testReminder(@CurrentUser() user: AuthenticatedUser) {
+    return this.scheduleReminderService.sendTestTo(user.userId);
+  }
 
   // GET /api/schedule -> the caller's own class schedule, resolved from their profile.
   // GET /api/schedule?department=&academicYear=&specialization= -> browse any group's schedule --
