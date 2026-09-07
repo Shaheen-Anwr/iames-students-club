@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { Modal } from '@/components/ui/Modal';
 import { ProgressBar } from '@/components/ui/ProgressBar';
 import { Spinner } from '@/components/ui/Spinner';
@@ -42,6 +43,7 @@ export function MarketplaceBoard() {
   const { showToast } = useToast();
   const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errored, setErrored] = useState(false);
   const [category, setCategory] = useState<ListingCategory | 'all'>('all');
   const [mine, setMine] = useState(false);
   const [q, setQ] = useState('');
@@ -49,16 +51,20 @@ export function MarketplaceBoard() {
 
   const load = useCallback(() => {
     setLoading(true);
+    setErrored(false);
     const params = new URLSearchParams({ limit: '50' });
     if (category !== 'all') params.set('category', category);
     if (mine) params.set('mine', 'true');
     if (q.trim()) params.set('q', q.trim());
     api
       .get<MarketplaceListing[]>(`/marketplace?${params.toString()}`)
-      .then(setListings)
-      .catch(() => showToast('تعذّر تحميل السوق', 'error'))
+      .then((data) => {
+        setListings(data);
+        setErrored(false);
+      })
+      .catch(() => setErrored(true))
       .finally(() => setLoading(false));
-  }, [category, mine, q, showToast]);
+  }, [category, mine, q]);
 
   useEffect(() => {
     const t = setTimeout(load, q ? 300 : 0);
@@ -140,6 +146,8 @@ export function MarketplaceBoard() {
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : errored && listings.length === 0 ? (
+        <LoadError title="تعذّر تحميل السوق" onRetry={load} retrying={loading} />
       ) : listings.length === 0 ? (
         <EmptyState icon={Store} title="لا إعلانات" description={mine ? 'لم تنشر أي إعلان بعد.' : 'كن أول من يعرض غرضًا للبيع.'} />
       ) : (

@@ -8,6 +8,7 @@ import { CalendarPlus, Clock3, MapPin, Trash2, Users } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { Modal } from '@/components/ui/Modal';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
@@ -27,10 +28,13 @@ export function EventsBoard() {
   const [createOpen, setCreateOpen] = useState(false);
 
   const eventsKey = ['/events', scope] as const;
-  const { data: events = [], isPending: loading } = useApiQuery<'/events', CampusEvent[]>(
-    `/events?scope=${scope}&limit=50`,
-    { key: [...eventsKey] },
-  );
+  const {
+    data: events = [],
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+  } = useApiQuery<'/events', CampusEvent[]>(`/events?scope=${scope}&limit=50`, { key: [...eventsKey] });
   const patchList = (fn: (list: CampusEvent[]) => CampusEvent[]) =>
     qc.setQueryData<CampusEvent[]>([...eventsKey], (list) => fn(list ?? []));
 
@@ -94,6 +98,8 @@ export function EventsBoard() {
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : isError && events.length === 0 ? (
+        <LoadError onRetry={() => void refetch()} retrying={isRefetching} />
       ) : events.length === 0 ? (
         <EmptyState
           icon={CalendarPlus}

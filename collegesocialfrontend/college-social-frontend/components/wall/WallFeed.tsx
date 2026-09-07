@@ -6,6 +6,7 @@ import { Flag, Heart, MessageCircle, MessagesSquare, Send, Trash2 } from 'lucide
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
@@ -48,15 +49,14 @@ export function WallFeed() {
     items: posts,
     isPending,
     isError,
+    isRefetching,
+    refetch,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
   } = useCursorInfiniteList<WallPost>(`/wall?sort=${sort}`, { key: cacheKey, pageSize: PAGE });
 
   const loading = isPending;
-  useEffect(() => {
-    if (isError) showToast('تعذّر تحميل الجدار', 'error');
-  }, [isError, showToast]);
 
   const [body, setBody] = useState('');
   const [posting, setPosting] = useState(false);
@@ -179,6 +179,8 @@ export function WallFeed() {
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : isError && posts.length === 0 ? (
+        <LoadError title="تعذّر تحميل الجدار" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : posts.length === 0 ? (
         <EmptyState icon={MessagesSquare} title="الجدار فارغ" description="كن أول من يكتب شيئًا." />
       ) : (

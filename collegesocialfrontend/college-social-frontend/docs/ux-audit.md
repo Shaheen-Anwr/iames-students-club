@@ -19,7 +19,7 @@ that's how the reels squish shipped unnoticed).
 | X4 | **Med** | **"tsc clean, not run in-app"** is the default ship state across the codebase. Regressions like the reels squish reach prod. | Track A3: a real preview/QA gate; screenshot tests on key screens. |
 | X5 | **Med** | Design system stuck mid-migration (`frontend_design_system_upgrade` Phase C). Mixed tokens vs one-off styles. | Track A1: finish tokens, enforce, delete one-offs. |
 | X6 | **Low** | Free-tier infra ceiling (Cloudinary 25GB/mo, Render, Atlas). Perf/scale cap. | Plan the paid upgrade before it bites. |
-| X7 | **Low** | No consistent "4 states" (skeleton → content → empty → error) across lists. | Track A3: checklist item per surface. |
+| X7 | **Low** (in progress) | Lists rendered the **empty** state on a fetch **error** — a network failure looked like "nothing here". | New `components/ui/LoadError.tsx` primitive; wired into feed / wall / events / marketplace / Q&A / rooms. **Remaining:** home mini-cards, admin panels, leaderboard/planner/attendance — adopt `LoadError` in their polish pass. |
 
 ---
 
