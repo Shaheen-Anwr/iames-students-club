@@ -191,7 +191,10 @@ export function TopNavbar() {
       </div>
 
       <nav className="hidden flex-1 items-center justify-center gap-1 md:flex">
-        {getPrimaryNavItems(user.role).map(({ href, label, icon: Icon }) => {
+        {/* Desktop drops /profile from the row -- the account avatar at the end already covers it. */}
+        {getPrimaryNavItems(user.role)
+          .filter((i) => i.href !== '/profile')
+          .map(({ href, label, icon: Icon }) => {
           const active = pathname === href || pathname.startsWith(`${href}/`);
           const badge = href === '/chat' ? chatUnread : 0;
           return (
