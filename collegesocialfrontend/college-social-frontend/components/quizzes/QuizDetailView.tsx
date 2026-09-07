@@ -12,6 +12,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { QuizAttemptResult, QuizDetail } from '@/lib/types';
 
 export function QuizDetailView({ quizId }: { quizId: string }) {
@@ -59,6 +60,9 @@ export function QuizDetailView({ quizId }: { quizId: string }) {
       setQuiz((prev) => (prev ? { ...prev, questions: prev.questions.map((q, i) => ({ ...q, correctIndex: result.correctIndexes[i] })) } : prev));
       setReviewAnswers(selected as number[]);
       setScore(result.score);
+      track(AnalyticsEvent.QuizSubmitted, {
+        score_pct: result.total ? Math.round((result.score / result.total) * 100) : null,
+      });
       showToast(`نتيجتك: ${result.score}/${result.total}`);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال الإجابات.', 'error');

@@ -10,6 +10,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { Comment } from '@/lib/types';
 import { CommentItem } from './CommentItem';
 
@@ -55,6 +56,7 @@ export function CommentsModal({
       setComments((prev) => [...prev, comment]);
       onCountChange((prev) => prev + 1);
       setText('');
+      track(AnalyticsEvent.CommentAdded, { surface: 'post' });
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إضافة التعليق.', 'error');
     } finally {

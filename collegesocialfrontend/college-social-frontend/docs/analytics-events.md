@@ -47,25 +47,30 @@ The event dictionary for the UI/UX + retention roadmap. Names live in `lib/analy
 | `schedule_viewed` | `ScheduleGrid` mounts | `role` — **leading aha-moment hypothesis** |
 | `feed_viewed` | `FeedList` mounts / scope tab changes | `scope` |
 | `post_created` | `POST /posts` succeeds in `CreatePostBox` | `scope`, `has_attachment`, `has_course` |
+| `post_reacted` | a reaction is added/changed in `PostCard` (un-react is skipped) | `type` |
+| `comment_added` | a comment posts in `CommentsModal` / `ReelCommentsSheet` | `surface` (`post`/`reel`) |
 | `reel_viewed` | a reel passes the 2s view threshold | — |
 | `reel_created` | a reel upload completes | — |
+| `message_sent` | a chat/channel message is emitted (`ChatWindow`/`ChannelWindow`) — **never the text** | `conversation_type` (`dm`/`group`/`group_public`/`channel`), `has_attachment` |
+| `question_asked` | `AskQuestionModal` submit succeeds | `scope` (`public`/`department`/`group`), `has_course` |
+| `assignment_completed` | `AssignmentCard` marked done (un-mark skipped) | — |
+| `quiz_submitted` | quiz attempt posts in `QuizDetailView` | `score_pct` |
+| `lecture_opened` | "فتح في وضع القراءة" tapped on a `LectureCard` | `kind` (`pdf`) |
 
 ### Re-engagement
 
 | Event | Fires when | Properties |
 |---|---|---|
 | `notification_opened` | a notification row is tapped in `NotificationBell` | `type`, `was_unread` |
+| `digest_opened` | the app loads with `?src=digest` in the URL (`Observability`) | — |
 
-## Not yet instrumented — next pass
+Backend: the morning digest + weekly recap push URLs now carry `?src=digest`
+(`digest.service.ts`). Add the same `?src=` tag to other push types (`release`, `announcement`)
+when you want their click-through measured too.
 
-Add `track()` at these call sites (constants already exist in `lib/analytics.ts`):
+## Not yet instrumented — candidates for later
 
-- `post_reacted` — `PostCard` reaction handler (`{ type }`)
-- `comment_added` — post + reel comment submit (`{ surface }`)
-- `message_sent` — chat send (DM / group / channel) — **properties only, never the text**
-- `question_asked` — `AskQuestionModal` submit (`{ scope }`)
-- `assignment_completed` — assignment toggle-complete
-- `quiz_submitted` — quiz attempt submit (`{ score_pct }`)
-- `lecture_opened` — opening a PDF/video lecture (`{ kind }`)
-- `digest_opened` — any deep link arriving with `?src=digest` (also add `src=digest` to the
-  morning-digest push URLs on the backend)
+- `lecture_opened` for **video** lectures (no clean single "open" action in `LectureCard` — the
+  player is inline in `AttachmentPreview`). Add if video engagement becomes a question.
+- RSVP'd an event, listed on marketplace, joined a room, joined a group, ran a converter job —
+  add per-feature as those surfaces get their polish pass.

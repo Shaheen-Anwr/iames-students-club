@@ -14,6 +14,7 @@ import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { ACADEMIC_YEAR_LABELS } from '@/lib/academic-years';
 import { SPECIALIZATION_LABELS } from '@/lib/specializations';
 import { assetUrl, timeAgo } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { Post } from '@/lib/types';
 import { LecturePdfLightbox } from './LecturePdfLightbox';
 import { LectureStudyToolsModal } from './LectureStudyToolsModal';
@@ -92,7 +93,10 @@ export function LectureCard({
             </button>
             <button
               type="button"
-              onClick={() => setLightboxOpen(true)}
+              onClick={() => {
+                track(AnalyticsEvent.LectureOpened, { kind: 'pdf' });
+                setLightboxOpen(true);
+              }}
               title="فتح في وضع القراءة"
               className="shrink-0 rounded-lg p-1.5 text-muted-foreground hover:bg-surface-2 hover:text-accent"
             >

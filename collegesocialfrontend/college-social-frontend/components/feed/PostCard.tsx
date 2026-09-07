@@ -16,6 +16,7 @@ import { useAi } from '@/lib/ai-context';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { ACADEMIC_YEAR_LABELS } from '@/lib/academic-years';
 import { SPECIALIZATION_LABELS } from '@/lib/specializations';
@@ -115,6 +116,9 @@ export function PostCard({
     else if (existing) next = reactions.map((r) => (r.user === uid ? { ...r, type } : r));
     else next = [...reactions, { user: uid, type }];
     setReactions(next);
+    if (existing?.type !== type) track(AnalyticsEvent.PostReacted, { type }); // skip un-react
+
+
 
     try {
       await api.post(`/posts/${post._id}/react`, { type });

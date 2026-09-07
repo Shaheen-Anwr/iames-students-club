@@ -24,6 +24,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/chat-helpers';
 import { assetUrl } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import { chatBackgroundStyle, useChatBackground } from '@/lib/chat-background';
 import type { Attachment, Message, User, Conversation } from '@/lib/types';
 import { useChat } from './ChatProvider';
@@ -347,6 +348,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     if (!socket) return;
     socket.emit('sendMessage', { conversationId, ...payload });
     socket.emit('stopTyping', conversationId);
+    // Engagement signal — type only, never the text.
+    track(AnalyticsEvent.MessageSent, {
+      conversation_type: conversation?.visibility === 'public' ? 'group_public' : conversation?.isGroup ? 'group' : 'dm',
+      has_attachment: !!payload.attachments?.length,
+    });
     armFailTimer(tempId);
   }
 
