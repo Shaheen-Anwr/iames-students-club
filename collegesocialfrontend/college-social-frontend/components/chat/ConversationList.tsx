@@ -6,7 +6,8 @@ import { usePathname } from 'next/navigation';
 import { Archive, BellOff, MessageSquarePlus, Pin, Search, Star, Users, UsersRound } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { Spinner } from '@/components/ui/Spinner';
+import { LoadError } from '@/components/ui/LoadError';
+import { Skeleton } from '@/components/ui/Skeleton';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
@@ -29,7 +30,7 @@ const FILTERS: { key: Filter; label: string }[] = [
 
 export function ConversationList() {
   const { user } = useAuth();
-  const { conversations, loading, refresh, typingConversationIds } = useChat();
+  const { conversations, loading, error, refresh, typingConversationIds } = useChat();
   const { showToast } = useToast();
   const pathname = usePathname();
   const [modalOpen, setModalOpen] = useState(false);
@@ -154,8 +155,20 @@ export function ConversationList() {
         }}
       >
         {loading ? (
-          <div className="flex justify-center py-10">
-            <Spinner className="h-5 w-5" />
+          <div className="space-y-1 p-2">
+            {Array.from({ length: 7 }).map((_, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl p-2.5">
+                <Skeleton className="h-11 w-11 shrink-0 rounded-full" />
+                <div className="min-w-0 flex-1 space-y-2">
+                  <Skeleton className="h-3.5 w-2/5" />
+                  <Skeleton className="h-3 w-3/4" />
+                </div>
+              </div>
+            ))}
+          </div>
+        ) : error && list.length === 0 ? (
+          <div className="flex h-full items-center justify-center">
+            <LoadError title="تعذّر تحميل المحادثات" onRetry={() => void refresh()} />
           </div>
         ) : list.length === 0 ? (
           <div className="flex h-full items-center justify-center">

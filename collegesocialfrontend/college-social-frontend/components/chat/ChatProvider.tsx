@@ -10,6 +10,8 @@ import type { Conversation, Message } from '@/lib/types';
 interface ChatContextValue {
   conversations: Conversation[];
   loading: boolean;
+  /** True when the last conversation-list fetch failed and we have nothing cached to show. */
+  error: boolean;
   refresh: () => Promise<void>;
   findConversation: (id: string) => Conversation | undefined;
   addConversation: (conversation: Conversation) => void;
@@ -26,6 +28,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
   const [typingConversationIds, setTypingConversationIds] = useState<Set<string>>(new Set());
 
   // The conversation the user is currently looking at (route: /chat/<id>). Messages that land
@@ -42,9 +45,20 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   const refresh = useCallback(async () => {
-    const data = await api.get<Conversation[]>('/chat/conversations');
-    setConversations(data);
-    setLoading(false);
+    try {
+      const data = await api.get<Conversation[]>('/chat/conversations');
+      setConversations(data);
+      setError(false);
+    } catch {
+      // Keep any list we already have on screen; only surface the error state on a cold failure
+      // (initial load). A failed background refresh (socket-triggered) shouldn't blank the list.
+      setConversations((prev) => {
+        if (prev.length === 0) setError(true);
+        return prev;
+      });
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   // Initial load
@@ -224,7 +238,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ChatContext.Provider
-      value={{ conversations, loading, refresh, findConversation, addConversation, typingConversationIds }}
+      value={{ conversations, loading, error, refresh, findConversation, addConversation, typingConversationIds }}
     >
       {children}
     </ChatContext.Provider>

@@ -18,6 +18,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Dropdown } from '@/components/ui/Dropdown';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
+import { LoadError } from '@/components/ui/LoadError';
 import { Input } from '@/components/ui/Input';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -47,6 +48,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
   const [typing, setTyping] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
@@ -101,17 +104,25 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    api.get<Message[]>(`/chat/conversations/${conversationId}/messages?limit=50`).then((data) => {
-      if (cancelled) return;
-      const conv = conversationRef.current;
-      const corrected = conv ? data.map((msg) => correctSenderPhoto(msg, conv)) : data;
-      setMessages(corrected.reverse());
-      setLoading(false);
-    });
+    setLoadError(false);
+    api
+      .get<Message[]>(`/chat/conversations/${conversationId}/messages?limit=50`)
+      .then((data) => {
+        if (cancelled) return;
+        const conv = conversationRef.current;
+        const corrected = conv ? data.map((msg) => correctSenderPhoto(msg, conv)) : data;
+        setMessages(corrected.reverse());
+        setLoading(false);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setLoadError(true);
+        setLoading(false);
+      });
     return () => {
       cancelled = true;
     };
-  }, [conversationId]);
+  }, [conversationId, reloadKey]);
 
   // Re-apply sender-photo corrections in place when the conversation object updates
   // (participant avatar changed, list finally loaded) -- without refetching or clearing the thread.
@@ -605,7 +616,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         {/* Cap the thread to a comfortable reading width and centre it, so bubbles don't stretch
             edge-to-edge (and own-messages don't hug the far side) on a wide conversation pane. */}
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
-        {loading || !conversation ? (
+        {loadError && messages.length === 0 ? (
+          <div className="flex flex-1 items-center justify-center">
+            <LoadError title="تعذّر تحميل الرسائل" onRetry={() => setReloadKey((k) => k + 1)} />
+          </div>
+        ) : loading || !conversation ? (
           <div className="flex flex-1 items-center justify-center">
             <Spinner className="h-6 w-6" />
           </div>
