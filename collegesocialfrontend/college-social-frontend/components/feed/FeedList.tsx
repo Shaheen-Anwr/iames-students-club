@@ -3,13 +3,14 @@
 import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { ArrowDown, Inbox } from 'lucide-react';
+import { ArrowDown, ArrowUp, Inbox } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadError } from '@/components/ui/LoadError';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
+import { api } from '@/lib/api';
 import { useCursorInfiniteList } from '@/lib/query';
 import { usePullToRefresh } from '@/lib/use-pull-to-refresh';
 import { assetUrl } from '@/lib/utils';
@@ -137,6 +138,37 @@ export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement |
 
   const sentinelRef = useRef<HTMLDivElement>(null);
 
+  // "New posts" pill: on tab/app focus, peek at the newest post for this exact filter and, if
+  // it's ahead of what we're showing, offer a one-tap jump-to-top + refresh. No polling.
+  const [hasNew, setHasNew] = useState(false);
+  const topId = posts[0]?._id;
+  useEffect(() => {
+    if (loading || isError) return;
+    const check = async () => {
+      if (document.visibilityState !== 'visible') return;
+      try {
+        const res = await api.get<{ items: Post[] } | Post[]>(`/posts?${baseQuery}&before=&limit=1`);
+        const newest = (Array.isArray(res) ? res[0] : res.items?.[0])?._id;
+        if (newest && newest !== topId) setHasNew(true);
+      } catch {
+        /* ignore -- a transient peek failure is not worth surfacing */
+      }
+    };
+    window.addEventListener('focus', check);
+    document.addEventListener('visibilitychange', check);
+    return () => {
+      window.removeEventListener('focus', check);
+      document.removeEventListener('visibilitychange', check);
+    };
+  }, [baseQuery, topId, loading, isError]);
+
+  const showNewPosts = () => {
+    setHasNew(false);
+    const scroller: { scrollTo: (o: ScrollToOptions) => void } = scrollRef?.current ?? window;
+    scroller.scrollTo({ top: 0, behavior: 'smooth' });
+    void refetch();
+  };
+
   useEffect(() => {
     if (!hasNextPage || loading) return;
     const el = sentinelRef.current;
@@ -206,6 +238,18 @@ export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement |
   return (
     <div className="space-y-4">
       <PullIndicator pull={pull} refreshing={refreshing} threshold={threshold} />
+
+      {hasNew && (
+        <div className="pointer-events-none sticky top-2 z-20 flex justify-center">
+          <button
+            onClick={showNewPosts}
+            className="pointer-events-auto flex items-center gap-1.5 rounded-full bg-gradient-accent px-4 py-2 text-xs font-bold text-white shadow-glow animate-bubble-in active:scale-95"
+          >
+            <ArrowUp className="h-3.5 w-3.5" />
+            منشورات جديدة
+          </button>
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <Avatar src={assetUrl(user?.photoUrl)} name={user?.name ?? '?'} size="md" />
         <h1 className="text-gradient-accent text-xl font-extrabold tracking-tight text-balance">
