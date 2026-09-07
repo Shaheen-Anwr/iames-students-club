@@ -7,6 +7,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import { api } from '@/lib/api';
 import { useNotifications } from '@/lib/notifications-context';
@@ -31,7 +32,7 @@ function dayLabel(dateStr: string): string {
 
 export default function NotificationsPage() {
   const router = useRouter();
-  const { notifications, loading, refresh, markRead, markAllRead } = useNotifications();
+  const { notifications, loading, error, refresh, markRead, markAllRead } = useNotifications();
   const [extra, setExtra] = useState<Notification[]>([]);
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -58,6 +59,8 @@ export default function NotificationsPage() {
       if (data.length === 0) setExhausted(true);
       setExtra((prev) => [...prev, ...data]);
       setPage(nextPage);
+    } catch {
+      /* leave the "تحميل المزيد" button in place so the user can retry */
     } finally {
       setLoadingMore(false);
     }
@@ -84,6 +87,8 @@ export default function NotificationsPage() {
           <div className="flex justify-center py-10">
             <Spinner className="h-5 w-5" />
           </div>
+        ) : error && items.length === 0 ? (
+          <LoadError title="تعذّر تحميل الإشعارات" onRetry={() => void refresh()} />
         ) : items.length === 0 ? (
           <EmptyState
             icon={Bell}

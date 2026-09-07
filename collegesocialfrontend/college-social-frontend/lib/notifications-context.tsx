@@ -11,6 +11,8 @@ interface NotificationsContextValue {
   notifications: Notification[];
   unreadCount: number;
   loading: boolean;
+  /** True when the cold load failed and there's nothing cached to show. */
+  error: boolean;
   refresh: () => Promise<void>;
   markRead: (id: string) => Promise<void>;
   markAllRead: () => Promise<void>;
@@ -48,21 +50,32 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(false);
 
   const refresh = useCallback(async () => {
     if (!user) {
       setNotifications([]);
       setUnreadCount(0);
       setLoading(false);
+      setError(false);
       return;
     }
-    const [list, count] = await Promise.all([
-      api.get<Notification[]>('/notifications?limit=20'),
-      api.get<{ count: number }>('/notifications/unread-count'),
-    ]);
-    setNotifications(list);
-    setUnreadCount(count.count);
-    setLoading(false);
+    try {
+      const [list, count] = await Promise.all([
+        api.get<Notification[]>('/notifications?limit=20'),
+        api.get<{ count: number }>('/notifications/unread-count'),
+      ]);
+      setNotifications(list);
+      setUnreadCount(count.count);
+      setError(false);
+    } catch {
+      setNotifications((prev) => {
+        if (prev.length === 0) setError(true);
+        return prev;
+      });
+    } finally {
+      setLoading(false);
+    }
   }, [user]);
 
   useEffect(() => {
@@ -109,7 +122,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   }, []);
 
   return (
-    <NotificationsContext.Provider value={{ notifications, unreadCount, loading, refresh, markRead, markAllRead }}>
+    <NotificationsContext.Provider
+      value={{ notifications, unreadCount, loading, error, refresh, markRead, markAllRead }}
+    >
       {children}
     </NotificationsContext.Provider>
   );
