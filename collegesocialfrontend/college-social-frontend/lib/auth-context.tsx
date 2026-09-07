@@ -3,6 +3,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api, clearToken, setToken } from './api';
 import { useToast } from './toast-context';
+import { AnalyticsEvent, track } from './analytics';
 import { BADGE_META, type BadgeId, type Role, type User } from './types';
 import type { Department } from './departments';
 
@@ -131,6 +132,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       const me = await api.get<User>('/users/me');
       setUser(me);
       writeUserCache(me);
+      track(AnalyticsEvent.LoggedIn, { role: me.role, department: me.department ?? 'none' });
       if ((me.streakCount ?? 0) >= 2) {
         showToast(`🔥 استمر! يومك رقم ${me.streakCount} على التوالي`);
       }
@@ -160,6 +162,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const me = await api.get<User>('/users/me');
     setUser(me);
     writeUserCache(me);
+    track(AnalyticsEvent.SignedUp, { role: me.role, has_referral: !!input.referralCode });
     return me;
   }, [showToast]);
 
@@ -172,6 +175,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     }
     clearToken();
     clearUserCache();
+    track(AnalyticsEvent.LoggedOut);
     setUser(null);
   }, []);
 

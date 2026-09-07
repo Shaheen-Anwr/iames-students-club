@@ -1,4 +1,5 @@
 import { api } from './api';
+import { AnalyticsEvent, track } from './analytics';
 
 export type PushSubscriptionState = 'unsupported' | 'default' | 'granted' | 'denied' | 'subscribed';
 
@@ -42,6 +43,8 @@ export async function subscribeToPush(): Promise<void> {
   if (!vapidPublicKey) throw new Error('الإشعارات غير مفعّلة على الخادم حاليًا.');
 
   const permission = await Notification.requestPermission();
+  // Push opt-in rate is a headline retention-channel metric.
+  track(AnalyticsEvent.PushPermissionResult, { result: permission });
   if (permission !== 'granted') throw new Error('لم يتم منح إذن الإشعارات.');
 
   const registration = await navigator.serviceWorker.ready;

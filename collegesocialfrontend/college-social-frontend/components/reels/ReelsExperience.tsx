@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import { ChevronRight, Plus, Clapperboard } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { Reel, ReelFeedPage } from '@/lib/types';
 import { ShareSheet } from '@/components/shared/ShareSheet';
 import { ReelCard } from './ReelCard';
@@ -129,10 +130,12 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
   }
 
   function handleView(reel: Reel) {
+    track(AnalyticsEvent.ReelViewed);
     api.post(`/reels/${reel.id}/view`).catch(() => {});
   }
 
   function handleCreated(reel: Reel) {
+    track(AnalyticsEvent.ReelCreated);
     setReels((prev) => [reel, ...prev.filter((r) => r.id !== reel.id)]);
     setActiveIndex(0);
     requestAnimationFrame(() => scrollRef.current?.scrollTo({ top: 0 }));

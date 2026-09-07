@@ -21,9 +21,12 @@ import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departmen
 import { ACADEMIC_YEAR_LABELS, getAcademicYearsForDepartment, type AcademicYear } from '@/lib/academic-years';
 import { SPECIALIZATIONS_BY_DEPARTMENT, SPECIALIZATION_LABELS, type Specialization } from '@/lib/specializations';
 import { cn } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { User } from '@/lib/types';
 
 const FLAG_PREFIX = 'onboarding:v1:';
+// Order must match the `steps` array below -- used only as an analytics label.
+const STEP_NAMES = ['welcome', 'department_year', 'push', 'tour'] as const;
 const SELECT_CLASS =
   'h-10 w-full rounded-lg border border-border bg-surface-2/70 px-3 text-sm text-foreground focus:border-accent focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/20 disabled:opacity-50';
 
@@ -81,12 +84,18 @@ export function OnboardingFlow() {
   const [pushBusy, setPushBusy] = useState(false);
   const [pushDone, setPushDone] = useState(false);
 
+  // Activation funnel: which step each user reaches, and where they drop.
+  const active = !!user && open && user.role !== 'admin';
+  useEffect(() => {
+    if (active) track(AnalyticsEvent.OnboardingStepViewed, { step, step_name: STEP_NAMES[step] ?? `step_${step}` });
+  }, [active, step]);
+
   if (!user || !open || user.role === 'admin') return null;
 
   const yearOptions = department ? getAcademicYearsForDepartment(department) : [];
   const specOptions = department ? SPECIALIZATIONS_BY_DEPARTMENT[department] : [];
 
-  function finish() {
+  function finish(reason: 'complete' | 'skip') {
     try {
       localStorage.setItem(FLAG_PREFIX + user!._id, '1');
     } catch {
@@ -94,6 +103,10 @@ export function OnboardingFlow() {
     }
     // Cross-device: stamp it server-side too (idempotent). Fire-and-forget.
     void api.post('/onboarding/complete').catch(() => undefined);
+    track(reason === 'complete' ? AnalyticsEvent.OnboardingCompleted : AnalyticsEvent.OnboardingSkipped, {
+      step,
+      steps_total: STEP_NAMES.length,
+    });
     setOpen(false);
   }
 
@@ -238,7 +251,7 @@ export function OnboardingFlow() {
               />
             ))}
           </div>
-          <button onClick={finish} className="text-xs font-medium text-muted-foreground hover:text-foreground">
+          <button onClick={() => finish('skip')} className="text-xs font-medium text-muted-foreground hover:text-foreground">
             تخطٍّ
           </button>
         </div>
@@ -258,7 +271,7 @@ export function OnboardingFlow() {
               {department ? 'حفظ ومتابعة' : 'تخطّي'}
             </Button>
           ) : isLast ? (
-            <Button size="sm" onClick={finish}>
+            <Button size="sm" onClick={() => finish('complete')}>
               ابدأ الآن
             </Button>
           ) : (
