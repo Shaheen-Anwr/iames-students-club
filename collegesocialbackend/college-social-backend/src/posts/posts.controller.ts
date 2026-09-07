@@ -129,8 +129,8 @@ export class PostsController {
   // GET /api/posts/lectures/folders?type=lecture|video -> folders for the lecture/video library,
   // for LectureFoldersGrid. NOTE: must stay above @Get(':id') or it gets swallowed as an id lookup.
   @Get('lectures/folders')
-  async listLectureFolders(@Query('type') type: 'lecture' | 'video') {
-    return this.postsService.listLectureFolders(type);
+  async listLectureFolders(@CurrentUser() user: AuthenticatedUser, @Query('type') type: 'lecture' | 'video') {
+    return this.postsService.listLectureFolders(type, viewerScopeDepartment(user));
   }
 
   // POST /api/posts/lectures/folders  { name, type } -- admin/professor only, see PostsService.
