@@ -1,6 +1,7 @@
 'use client';
 
 import { useState } from 'react';
+import { LogOut } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
 import { ProfileHeader } from '@/components/profile/ProfileHeader';
 import { EditProfileForm } from '@/components/profile/EditProfileForm';
@@ -11,12 +12,24 @@ import { NotificationSettings } from '@/components/profile/NotificationSettings'
 import { CustomizeHomeCard } from '@/components/profile/CustomizeHomeCard';
 import { ProfileFriendsTab } from '@/components/profile/ProfileFriendsTab';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
+import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import type { ProfileTab } from '@/components/profile/ProfileTabs';
 
+// Groups the settings stack under scannable headings instead of one undifferentiated column.
+function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="space-y-2">
+      <h2 className="px-1 text-xs font-bold uppercase tracking-wide text-muted-foreground">{title}</h2>
+      <div className="space-y-4">{children}</div>
+    </section>
+  );
+}
+
 export default function ProfilePage() {
-  const { user, updateLocalUser } = useAuth();
+  const { user, updateLocalUser, logout } = useAuth();
   const [tab, setTab] = useState<ProfileTab>('posts');
+  const [loggingOut, setLoggingOut] = useState(false);
 
   if (!user) {
     return (
@@ -39,13 +52,33 @@ export default function ProfilePage() {
         />
         {tab === 'posts' && <UserPostsFeed userId={user._id} />}
         {tab === 'about' && (
-          <div className="space-y-4">
-            <EditProfileForm user={user} />
-            <PersonalEmailForm />
-            <PushNotificationsToggle />
-            <NotificationSettings />
-            <CustomizeHomeCard />
-            <ChangePasswordForm />
+          <div className="space-y-6">
+            <SettingsSection title="الملف الشخصي">
+              <EditProfileForm user={user} />
+            </SettingsSection>
+            <SettingsSection title="الإشعارات">
+              <PushNotificationsToggle />
+              <NotificationSettings />
+            </SettingsSection>
+            <SettingsSection title="تخصيص">
+              <CustomizeHomeCard />
+            </SettingsSection>
+            <SettingsSection title="الحساب والأمان">
+              <PersonalEmailForm />
+              <ChangePasswordForm />
+            </SettingsSection>
+            <Button
+              variant="outline"
+              className="w-full text-danger hover:bg-danger/10"
+              loading={loggingOut}
+              onClick={() => {
+                setLoggingOut(true);
+                void logout();
+              }}
+            >
+              <LogOut className="h-4 w-4" />
+              تسجيل الخروج
+            </Button>
           </div>
         )}
         {tab === 'friends' && <ProfileFriendsTab profileId={user._id} isOwn />}
