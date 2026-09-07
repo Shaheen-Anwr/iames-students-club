@@ -1021,9 +1021,16 @@ export class PostsService {
   // explicitly-created LectureFolder, plus a synthetic entry for any courseCode that already has
   // lectures of this type but no folder doc yet (free-typed courseCode from before folders existed,
   // or from the courseCode field on the upload form) -- so nothing already uploaded disappears.
+  //
+  // STRICT شعبة wall (matches browseAttachments): a viewer WITH a شعبة only sees a folder when it
+  // has at least one lecture tagged with their exact شعبة -- another شعبة's folders (and empty
+  // ones) never appear. A viewer with no شعبة (staff / super admin) sees every folder.
   async listLectureFolders(
     attachmentType: 'lecture' | 'video',
+    viewerDepartment?: Department | null,
   ): Promise<{ id: string | null; name: string; lectureCount: number; latestAt: Date; createdAt: Date }[]> {
+    const postMatch: Record<string, unknown> = { attachmentType, courseCode: { $ne: null } };
+    if (viewerDepartment) postMatch.department = viewerDepartment;
     const [folders, counts] = await Promise.all([
       this.lectureFolderModel
         .find({ attachmentType })
@@ -1031,23 +1038,26 @@ export class PostsService {
         .lean<{ _id: Types.ObjectId; name: string; createdAt: Date }[]>()
         .exec(),
       this.postModel.aggregate<{ _id: string; count: number; latestAt: Date }>([
-        { $match: { attachmentType, courseCode: { $ne: null } } },
+        { $match: postMatch },
         { $group: { _id: '$courseCode', count: { $sum: 1 }, latestAt: { $max: '$createdAt' } } },
       ]),
     ]);
 
     const countByName = new Map(counts.map((c) => [c._id, c]));
-    const result: { id: string | null; name: string; lectureCount: number; latestAt: Date; createdAt: Date }[] = folders.map((f) => {
+    const result: { id: string | null; name: string; lectureCount: number; latestAt: Date; createdAt: Date }[] = [];
+    for (const f of folders) {
       const stats = countByName.get(f.name);
       countByName.delete(f.name);
-      return {
+      // Hide a folder that carries nothing in the viewer's own شعبة.
+      if (viewerDepartment && !stats) continue;
+      result.push({
         id: f._id.toString(),
         name: f.name,
         lectureCount: stats?.count ?? 0,
         latestAt: stats?.latestAt ?? f.createdAt,
         createdAt: f.createdAt,
-      };
-    });
+      });
+    }
     for (const c of countByName.values()) {
       result.push({ id: null, name: c._id, lectureCount: c.count, latestAt: c.latestAt, createdAt: c.latestAt });
     }
