@@ -93,11 +93,29 @@ export class PostsService {
     authorDepartment: Department | null,
     dto: CreatePostDto,
   ): Promise<PostDocument> {
-    if (dto.attachmentType && MATERIAL_ATTACHMENT_TYPES.includes(dto.attachmentType) && authorRole === Role.STUDENT) {
+    const isMaterialUpload =
+      !!dto.attachmentType && MATERIAL_ATTACHMENT_TYPES.includes(dto.attachmentType);
+
+    if (isMaterialUpload && authorRole === Role.STUDENT) {
       throw new ForbiddenException('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط');
     }
 
-    if (dto.department && dto.academicYear && !getAcademicYearsForDepartment(dto.department).includes(dto.academicYear)) {
+    // A lecture/video (course-material) upload by a professor is always filed under THEIR OWN شعبة
+    // -- never "كل الشعب" (null) or another شعبة, regardless of what the client sends. The browse
+    // libraries (محاضرات PDF/فيديو + the "اكاديميا"/course-hub lecture lists) wall material by
+    // شعبة, and cross-شعبة material must never enter that pool. Admins are exempt: they legitimately
+    // publish genuinely college-wide material, so their explicit choice (any شعبة, or null = كل
+    // الشعب) is honored as-is. Non-material posts are unaffected -- they snapshot as before.
+    const resolvedDepartment =
+      isMaterialUpload && authorRole !== Role.ADMIN
+        ? authorDepartment ?? null
+        : dto.department ?? authorDepartment ?? null;
+
+    if (
+      dto.academicYear &&
+      resolvedDepartment &&
+      !getAcademicYearsForDepartment(resolvedDepartment).includes(dto.academicYear)
+    ) {
       throw new BadRequestException('السنة الدراسية المختارة غير متاحة لهذه الشعبة.');
     }
 
@@ -134,7 +152,7 @@ export class PostsService {
       images: dto.images ?? [],
       courseCode: dto.courseCode ?? null,
       scope,
-      department: dto.department ?? authorDepartment ?? null,
+      department: resolvedDepartment,
       academicYear: dto.academicYear ?? author?.academicYear ?? null,
       specialization: dto.specialization ?? author?.specialization ?? null,
       hashtags: parseHashtags(caption),

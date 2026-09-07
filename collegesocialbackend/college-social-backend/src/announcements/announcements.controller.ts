@@ -24,7 +24,7 @@ export class AnnouncementsController {
   // GET /api/announcements?page=1&limit=20
   @Get()
   async list(@CurrentUser() user: AuthenticatedUser, @Query('page') page?: string, @Query('limit') limit?: string) {
-    return this.announcementsService.list(Number(page) || 1, Number(limit) || 20, user.department);
+    return this.announcementsService.list(Number(page) || 1, Number(limit) || 20, user.department, user.isSuperAdmin);
   }
 
   // POST /api/announcements/:id/like -- one-tap 👍 toggle (any signed-in user)

@@ -53,8 +53,9 @@ export function LecturesBrowser({
 
   // A viewer WITH a شعبة browses only their own شعبة's material (+ college-wide uploads), enforced
   // server-side -- so the شعبة picker is hidden and locked to it. A viewer with no department
-  // (rare: incomplete staff profile) keeps the cross-شعبة picker.
-  const lockedDepartment: Department | '' = user?.department ?? '';
+  // (rare: incomplete staff profile) keeps the cross-شعبة picker. A super admin is unrestricted
+  // server-side (see viewerScopeDepartment), so they keep the picker too.
+  const lockedDepartment: Department | '' = user?.isSuperAdmin ? '' : user?.department ?? '';
   const canPickDepartment = !lockedDepartment;
 
   const [posts, setPosts] = useState<Post[]>([]);

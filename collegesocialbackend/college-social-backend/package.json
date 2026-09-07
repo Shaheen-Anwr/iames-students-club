@@ -14,6 +14,7 @@
     "lint": "eslint \"{src,test}/**/*.ts\" --fix",
     "test": "jest",
     "compress:legacy": "node dist/scripts/compress-legacy-images.js",
+    "backfill:lecture-departments": "node dist/scripts/backfill-lecture-departments.js",
     "gen:openapi": "nest build && node dist/scripts/gen-openapi.js"
   },
   "dependencies": {

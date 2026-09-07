@@ -45,7 +45,7 @@ export class AuthService {
     const user = await this.usersService.create({ ...dto, passwordHash });
     await this.gamificationService.recordActivity(user.id);
     if (dto.referralCode) await this.applyReferral(user, dto.referralCode);
-    const tokens = await this.issueTokens(user.id, user.collegeId, user.role, user.department, meta);
+    const tokens = await this.issueTokens(user.id, user.collegeId, user.role, user.department, user.isSuperAdmin, meta);
     return { ...tokens, user: this.publicUser(user) };
   }
 
@@ -80,7 +80,7 @@ export class AuthService {
     }
 
     await this.gamificationService.recordActivity(user.id);
-    const tokens = await this.issueTokens(user.id, user.collegeId, user.role, user.department, meta);
+    const tokens = await this.issueTokens(user.id, user.collegeId, user.role, user.department, user.isSuperAdmin, meta);
     return { ...tokens, user: this.publicUser(user) };
   }
 
@@ -119,7 +119,7 @@ export class AuthService {
     await session.save();
 
     return {
-      accessToken: this.signAccessToken(user.id, user.collegeId, user.role, user.department, sessionId),
+      accessToken: this.signAccessToken(user.id, user.collegeId, user.role, user.department, user.isSuperAdmin, sessionId),
       refreshToken: `${sessionId}.${newSecret}`,
     };
   }
@@ -233,6 +233,7 @@ export class AuthService {
     collegeId: string,
     role: string,
     department: string | null,
+    isSuperAdmin: boolean,
     meta: RequestMeta,
   ): Promise<AuthTokens> {
     const secret = crypto.randomBytes(32).toString('hex');
@@ -247,13 +248,20 @@ export class AuthService {
     await session.save();
 
     return {
-      accessToken: this.signAccessToken(userId, collegeId, role, department, session.id),
+      accessToken: this.signAccessToken(userId, collegeId, role, department, isSuperAdmin, session.id),
       refreshToken: `${session.id}.${secret}`,
     };
   }
 
-  private signAccessToken(userId: string, collegeId: string, role: string, department: string | null, sessionId: string): string {
-    return this.jwtService.sign({ sub: userId, collegeId, role, department, sid: sessionId });
+  private signAccessToken(
+    userId: string,
+    collegeId: string,
+    role: string,
+    department: string | null,
+    isSuperAdmin: boolean,
+    sessionId: string,
+  ): string {
+    return this.jwtService.sign({ sub: userId, collegeId, role, department, isSuperAdmin, sid: sessionId });
   }
 
   private hashSecret(secret: string): string {

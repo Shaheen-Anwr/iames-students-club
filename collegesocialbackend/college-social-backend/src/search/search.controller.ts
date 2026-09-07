@@ -2,6 +2,7 @@ import { Controller, Get, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { SearchService } from './search.service';
 
 @UseGuards(JwtAuthGuard)
@@ -13,6 +14,6 @@ export class SearchController {
   @Get()
   async search(@CurrentUser() user: AuthenticatedUser, @Query('q') q?: string) {
     if (!q || !q.trim()) return { posts: [], questions: [], groups: [], users: [] };
-    return this.searchService.search(q.trim(), user.department);
+    return this.searchService.search(q.trim(), viewerScopeDepartment(user));
   }
 }

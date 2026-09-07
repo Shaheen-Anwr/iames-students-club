@@ -39,7 +39,13 @@ export class CalendarService {
     private readonly calendarEventsService: CalendarEventsService,
   ) {}
 
-  async getEvents(userId: string, department: Department | null, month: number, year: number): Promise<CalendarEvent[]> {
+  async getEvents(
+    userId: string,
+    department: Department | null,
+    month: number,
+    year: number,
+    includeAllDepartments = false,
+  ): Promise<CalendarEvent[]> {
     const monthStart = new Date(Date.UTC(year, month - 1, 1));
     const monthEnd = new Date(Date.UTC(year, month, 1));
 
@@ -47,7 +53,7 @@ export class CalendarService {
       this.scheduleService.findForUser(userId),
       this.assignmentsService.findDueInRange(monthStart, monthEnd, userId),
       this.plannerService.findDueInRange(userId, monthStart, monthEnd),
-      this.announcementsService.findEventsInRange(monthStart, monthEnd, department),
+      this.announcementsService.findEventsInRange(monthStart, monthEnd, department, includeAllDepartments),
       this.calendarEventsService.findInRange(userId, monthStart, monthEnd),
     ]);
 

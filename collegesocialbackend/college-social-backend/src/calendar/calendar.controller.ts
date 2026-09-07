@@ -15,6 +15,6 @@ export class CalendarController {
     const now = new Date();
     const resolvedMonth = Number(month) || now.getMonth() + 1;
     const resolvedYear = Number(year) || now.getFullYear();
-    return this.calendarService.getEvents(user.userId, user.department, resolvedMonth, resolvedYear);
+    return this.calendarService.getEvents(user.userId, user.department, resolvedMonth, resolvedYear, user.isSuperAdmin);
   }
 }
