@@ -1,5 +1,10 @@
 import { EventsBoard } from '@/components/events/EventsBoard';
+import { CommunityShell } from '@/components/community/CommunityShell';
 
 export default function EventsPage() {
-  return <EventsBoard />;
+  return (
+    <CommunityShell>
+      <EventsBoard />
+    </CommunityShell>
+  );
 }

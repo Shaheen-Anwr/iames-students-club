@@ -1,5 +1,10 @@
 import { WallFeed } from '@/components/wall/WallFeed';
+import { CommunityShell } from '@/components/community/CommunityShell';
 
 export default function WallPage() {
-  return <WallFeed />;
+  return (
+    <CommunityShell>
+      <WallFeed />
+    </CommunityShell>
+  );
 }

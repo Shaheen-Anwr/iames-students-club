@@ -1,5 +1,10 @@
 import { MarketplaceBoard } from '@/components/marketplace/MarketplaceBoard';
+import { CommunityShell } from '@/components/community/CommunityShell';
 
 export default function MarketplacePage() {
-  return <MarketplaceBoard />;
+  return (
+    <CommunityShell>
+      <MarketplaceBoard />
+    </CommunityShell>
+  );
 }
