@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/Input';
 import { Textarea } from '@/components/ui/Textarea';
 import { Button } from '@/components/ui/Button';
 import { cn } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
@@ -61,6 +62,10 @@ export function AskQuestionModal({
             courseCode: courseCode.trim() || undefined,
             scope: user?.department ? scope : 'public',
           });
+      track(AnalyticsEvent.QuestionAsked, {
+        scope: groupId ? 'group' : user?.department ? scope : 'public',
+        has_course: !!courseCode.trim(),
+      });
       handleClose();
       router.push(groupId ? `/groups/${groupId}/study/qa/${question._id}` : `/study/qa/${question._id}`);
     } catch (err) {

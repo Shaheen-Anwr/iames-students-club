@@ -10,6 +10,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { ReelComment } from '@/lib/types';
 
 interface Props {
@@ -48,6 +49,7 @@ export function ReelCommentsSheet({ reelId, onClose, onCountChange }: Props) {
       setComments((prev) => [created, ...prev]);
       onCountChange(1);
       setText('');
+      track(AnalyticsEvent.CommentAdded, { surface: 'reel' });
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إضافة التعليق.', 'error');
     } finally {

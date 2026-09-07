@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { usePathname } from 'next/navigation';
 import { useReportWebVitals } from 'next/web-vitals';
 import { useAuth } from '@/lib/auth-context';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import {
   capturePageview,
   identifyUser,
@@ -25,6 +26,9 @@ export function Observability() {
     initObservability();
     // Page load -> React app interactive. Feeds PERF-BUDGET's "cold start -> app shell" line.
     measureSince('app:ready');
+    // Attribution: did this session arrive from a push we sent? (?src=digest|release|announcement)
+    const src = new URLSearchParams(window.location.search).get('src');
+    if (src === 'digest') track(AnalyticsEvent.DigestOpened);
   }, []);
 
   useEffect(() => {

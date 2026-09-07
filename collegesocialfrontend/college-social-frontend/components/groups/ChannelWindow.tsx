@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import { useGroups } from '@/lib/groups-context';
 import { useGroupUi } from '@/lib/group-ui-context';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { Attachment, Channel, ChannelMessage } from '@/lib/types';
 import { ChannelMessageBubble } from './ChannelMessageBubble';
 import { ChannelMessageInput } from './ChannelMessageInput';
@@ -204,6 +205,7 @@ export function ChannelWindow({ groupId, channelId }: { groupId: string; channel
     if (!socket) return;
     socket.emit('sendChannelMessage', { channelId, ...payload });
     socket.emit('channelStopTyping', channelId);
+    track(AnalyticsEvent.MessageSent, { conversation_type: 'channel', has_attachment: !!payload.attachments?.length });
     armFailTimer(tempId);
   }
 

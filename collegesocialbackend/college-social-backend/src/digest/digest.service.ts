@@ -121,7 +121,7 @@ export class DigestService {
         await this.pushService.sendToUser(doc._id.toString(), {
           title: `📊 ملخص أسبوعك — ${doc.name.split(' ')[0] || doc.name}`,
           body: parts.join(' · '),
-          url: `${frontendUrl}/home`,
+          url: `${frontendUrl}/home?src=digest`,
           icon: `${frontendUrl}/icons/icon-192.png`,
           tag: 'weekly-recap',
         });
@@ -296,7 +296,7 @@ export class DigestService {
     return {
       title: `☀️ صباح الخير، ${firstName}`,
       body: parts.join(' · '),
-      url: `${frontendUrl}/home`,
+      url: `${frontendUrl}/home?src=digest`,
       icon: `${frontendUrl}/icons/icon-192.png`,
       tag: 'daily-digest',
     };

@@ -12,6 +12,7 @@ import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { Assignment } from '@/lib/types';
 
 function urgencyOf(dueDate: string, completed: boolean) {
@@ -61,6 +62,7 @@ export function AssignmentCard({ assignment, onDeleted }: { assignment: Assignme
     setBusy(true);
     const wasCompleted = completed;
     setCompletedBy((prev) => (wasCompleted ? prev.filter((id) => id !== user._id) : [...prev, user._id]));
+    if (!wasCompleted) track(AnalyticsEvent.AssignmentCompleted); // only the mark-done direction
     try {
       await api.post(`/assignments/${assignment._id}/complete`);
     } catch {
