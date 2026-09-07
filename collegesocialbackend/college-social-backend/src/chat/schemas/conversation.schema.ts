@@ -39,6 +39,13 @@ export class Conversation {
   @Prop({ default: false })
   isGroup: boolean;
 
+  // End-to-end encrypted 1:1 conversation (see docs/e2ee-design.md). Set true iff !isGroup and
+  // both participants have an `e2ee` key bundle registered. Never flips back to false -- if a
+  // participant loses their keys that's "can't decrypt", not a silent downgrade to plaintext.
+  // `lastMessagePreview` stays null while true.
+  @Prop({ default: false })
+  e2ee: boolean;
+
   // 'private' = invite-only (default; only group admins add members). 'public' = any user
   // sees it in their chat list and joins just by opening it; only admins remove members and
   // members can't leave. Meaningful for isGroup === true only.

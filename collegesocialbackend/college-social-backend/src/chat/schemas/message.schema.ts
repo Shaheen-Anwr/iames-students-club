@@ -59,6 +59,16 @@ export class Message {
   @Prop({ required: false, default: '', trim: true })
   text: string;
 
+  // End-to-end encrypted messages (see docs/e2ee-design.md). When `encrypted` is true the server
+  // never sees plaintext: `text` stays '', `attachments` stays [], and `payload` holds the opaque
+  // JSON envelope (X3DH header + Double Ratchet header + AES-GCM ciphertext) the two clients
+  // exchange. The server relays and stores it verbatim -- it does not parse `payload`.
+  @Prop({ default: false })
+  encrypted: boolean;
+
+  @Prop({ type: String, default: null })
+  payload: string | null;
+
   @Prop({ type: [AttachmentSchema], default: [] })
   attachments: Attachment[];
 
