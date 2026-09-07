@@ -4,7 +4,6 @@ import { useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/lib/auth-context';
 import { Spinner } from '@/components/ui/Spinner';
-import { VerifyEmailBanner } from '@/components/auth/VerifyEmailBanner';
 import { SetDepartmentBanner } from './SetDepartmentBanner';
 import { TopNavbar } from './TopNavbar';
 import { MobileNav } from './MobileNav';
@@ -43,7 +42,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
         تخطَّ إلى المحتوى
       </a>
       <TopNavbar />
-      <VerifyEmailBanner />
       <SetDepartmentBanner />
       <main
         id="main-content"

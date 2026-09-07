@@ -36,7 +36,6 @@ The event dictionary for the UI/UX + retention roadmap. Names live in `lib/analy
 | `onboarding_step_viewed` | each onboarding step becomes visible | `step`, `step_name` (`welcome`/`department_year`/`push`/`tour`) |
 | `onboarding_completed` | onboarding finished via "ابدأ الآن" | `step`, `steps_total` |
 | `onboarding_skipped` | onboarding dismissed via "تخطٍّ" | `step`, `steps_total` |
-| `activation_pending_shown` | the "college email pending admin review" banner renders | — |
 | `department_prompt_shown` | the "pick your شعبة" banner renders | — |
 | `push_permission_result` | `Notification.requestPermission()` resolves | `result` (`granted`/`denied`/`default`) |
 

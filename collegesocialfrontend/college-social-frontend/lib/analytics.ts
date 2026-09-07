@@ -23,7 +23,8 @@ export const AnalyticsEvent = {
   OnboardingStepViewed: 'onboarding_step_viewed', // { step, step_name }
   OnboardingCompleted: 'onboarding_completed', // { steps_total }
   OnboardingSkipped: 'onboarding_skipped', // { step }
-  ActivationPendingShown: 'activation_pending_shown', // college-email approval banner rendered
+  // NOTE: `activation_pending_shown` was retired when signup switched to auto-verify (Phase 1) --
+  // the "pending admin review" banner no longer exists.
   DepartmentPromptShown: 'department_prompt_shown', // "pick your شعبة" banner rendered
   PushPermissionResult: 'push_permission_result', // { result: 'granted'|'denied'|'default' }
 

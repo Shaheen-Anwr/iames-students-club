@@ -36,8 +36,11 @@ import { Role } from './common/enums/role.enum';
 // never a blanket rewrite of the whole collection. Same story for `academicYear`, which used to be
 // free text (e.g. "السنة الثالثة") before it became a fixed AcademicYear enum for feed filtering.
 async function runStartupMigrations(userModel: Model<UserDocument>) {
+  // Signup now auto-verifies (see UsersService.create); backfill everyone still sitting unverified
+  // -- `{ $eq: null }` matches both a missing field and an explicit null -- so the misleading
+  // "pending review" banner clears for the existing base too.
   await userModel
-    .updateMany({ collegeEmailVerifiedAt: { $exists: false } }, [{ $set: { collegeEmailVerifiedAt: '$createdAt' } }])
+    .updateMany({ collegeEmailVerifiedAt: null }, [{ $set: { collegeEmailVerifiedAt: '$createdAt' } }])
     .exec();
   await userModel
     .updateMany({ department: { $nin: [...SELECTABLE_DEPARTMENTS, null] } }, { $set: { department: null } })

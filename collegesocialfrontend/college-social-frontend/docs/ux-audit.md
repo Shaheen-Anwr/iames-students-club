@@ -14,7 +14,7 @@ that's how the reels squish shipped unnoticed).
 | # | Sev | Finding | Notes |
 |---|---|---|---|
 | X1 | **High** | **~80 routes / ~20 top-level sections.** No clear hierarchy; the "المزيد" menu is a dumping ground. | Track A2: pick 4–5 primary jobs, demote the rest. Biggest single UX lever. |
-| X2 | **High** | **Activation blocked on manual admin approval** of college email (`VerifyEmailBanner`). Likely the top D0/D1 leak. | Track B1: domain allowlist or OTP. Instrumented as `activation_pending_shown`. |
+| X2 | ~~High~~ ✅ | **Activation blocked on manual admin approval** of college email. Turned out `collegeEmailVerifiedAt` gated *nothing* and the email is already domain-enforced at signup. | **Fixed (Phase 1):** signup auto-verifies (`UsersService.create`), existing base backfilled (`main.ts`), `VerifyEmailBanner` deleted. |
 | X3 | **Med** | **RTL bidi**: Latin/digit runs (emails, codes, times) reverse inside Arabic unless wrapped in `dir=ltr`/`<bdi>`. Recurring bug class. | Audit every place Latin meets Arabic. Lint rule if possible. |
 | X4 | **Med** | **"tsc clean, not run in-app"** is the default ship state across the codebase. Regressions like the reels squish reach prod. | Track A3: a real preview/QA gate; screenshot tests on key screens. |
 | X5 | **Med** | Design system stuck mid-migration (`frontend_design_system_upgrade` Phase C). Mixed tokens vs one-off styles. | Track A1: finish tokens, enforce, delete one-offs. |
