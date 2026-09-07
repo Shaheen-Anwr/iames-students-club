@@ -15,7 +15,11 @@ import { AskQuestionModal } from './AskQuestionModal';
 
 export function QuestionsList({ groupId, canCreate = true }: { groupId?: string; canCreate?: boolean } = {}) {
   const { user } = useAuth();
-  const [scope, setScope] = useState<PostScope>(user?.department ? 'department' : 'public');
+  // A super admin sees every شعبة server-side (see viewerScopeDepartment), so the "قسمي" tab
+  // would only narrow them to platform-wide questions -- drop it and keep them on the cross-شعبة
+  // "عام" list, like a staff account with no department.
+  const viewerDepartment = user?.isSuperAdmin ? undefined : user?.department ?? undefined;
+  const [scope, setScope] = useState<PostScope>(viewerDepartment ? 'department' : 'public');
   const [modalOpen, setModalOpen] = useState(false);
 
   const path = groupId ? `/qa/group/${groupId}?limit=30` : `/qa?limit=30&scope=${scope}`;
@@ -27,7 +31,7 @@ export function QuestionsList({ groupId, canCreate = true }: { groupId?: string;
   return (
     <div className="space-y-4">
       <div className="flex items-center justify-between gap-2">
-        {!groupId && user?.department ? (
+        {!groupId && viewerDepartment ? (
           <div className="flex gap-1 rounded-full bg-surface-2/70 p-1">
             <button
               onClick={() => setScope('department')}
@@ -36,7 +40,7 @@ export function QuestionsList({ groupId, canCreate = true }: { groupId?: string;
                 scope === 'department' ? 'bg-surface text-foreground shadow-soft' : 'text-muted-foreground hover:text-foreground',
               )}
             >
-              {DEPARTMENT_LABELS[user.department]}
+              {DEPARTMENT_LABELS[viewerDepartment]}
             </button>
             <button
               onClick={() => setScope('public')}

@@ -15,6 +15,7 @@ import { LectureIndexService } from './lecture-index.service';
 import { AiNotConfiguredError, AiService } from './ai.service';
 import { Post, PostDocument, PostAttachmentType, PostScope } from '../posts/schemas/post.schema';
 import { Department } from '../common/enums/department.enum';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 
 // Upper bound on how much extracted lecture text is fed to the model -- keeps one generation to a
@@ -179,7 +180,7 @@ export class LectureStudyToolsService {
     if (post.attachmentType !== PostAttachmentType.LECTURE || !post.attachmentUrl) {
       throw new BadRequestException('هذا المنشور ليس محاضرة تحتوي ملفًا');
     }
-    if (!this.canView(post, user.department)) {
+    if (!this.canView(post, viewerScopeDepartment(user))) {
       throw new ForbiddenException('لا تملك صلاحية الوصول لهذه المحاضرة');
     }
     if (!this.ai.isConfigured) {

@@ -10,6 +10,9 @@ interface JwtPayload {
   collegeId: string;
   role: string;
   department: string | null;
+  // Optional: tokens issued before this claim existed (or by an older backend) simply omit it,
+  // and the holder is treated as a non-super-admin until their next token rotation.
+  isSuperAdmin?: boolean;
   sid: string;
 }
 
@@ -57,6 +60,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       collegeId: payload.collegeId,
       role: payload.role as AuthenticatedUser['role'],
       department: payload.department as AuthenticatedUser['department'],
+      isSuperAdmin: payload.isSuperAdmin ?? false,
       sessionId: payload.sid,
     };
   }

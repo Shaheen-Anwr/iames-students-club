@@ -107,8 +107,17 @@ export class AnnouncementsService {
 
   // Platform-wide (department: null) announcements are visible to everyone; department-scoped
   // ones only to viewers in that same department -- same split as Post/Question feeds.
-  async list(page = 1, limit = 20, viewerDepartment?: Department | null): Promise<AnnouncementDocument[]> {
-    const filter = { $or: [{ department: null }, { department: viewerDepartment ?? null }] };
+  // `includeAllDepartments` (super admins) lifts the wall entirely so every شعبة's announcements
+  // show, not just platform-wide + the viewer's own.
+  async list(
+    page = 1,
+    limit = 20,
+    viewerDepartment?: Department | null,
+    includeAllDepartments = false,
+  ): Promise<AnnouncementDocument[]> {
+    const filter = includeAllDepartments
+      ? {}
+      : { $or: [{ department: null }, { department: viewerDepartment ?? null }] };
     return this.announcementModel
       .find(filter)
       .sort({ pinned: -1, createdAt: -1 })
@@ -143,12 +152,18 @@ export class AnnouncementsService {
     return { liked: idx < 0, likeCount: doc.likes.length };
   }
 
-  // Used by CalendarService to pull the month's dated announcements.
-  async findEventsInRange(start: Date, end: Date, viewerDepartment?: Department | null): Promise<AnnouncementDocument[]> {
+  // Used by CalendarService to pull the month's dated announcements. `includeAllDepartments`
+  // (super admins) lifts the شعبة wall, same as list().
+  async findEventsInRange(
+    start: Date,
+    end: Date,
+    viewerDepartment?: Department | null,
+    includeAllDepartments = false,
+  ): Promise<AnnouncementDocument[]> {
     return this.announcementModel
       .find({
         eventDate: { $gte: start, $lt: end },
-        $or: [{ department: null }, { department: viewerDepartment ?? null }],
+        ...(includeAllDepartments ? {} : { $or: [{ department: null }, { department: viewerDepartment ?? null }] }),
       })
       .sort({ eventDate: 1 })
       .exec();

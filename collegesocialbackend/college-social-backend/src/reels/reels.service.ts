@@ -240,10 +240,20 @@ export class ReelsService {
     limit = 10,
     authorId?: string,
     hashtag?: string,
+    viewerDepartment?: Department | null,
   ): Promise<{ data: ReelView[]; page: number; limit: number; hasMore: boolean }> {
     const filter: Record<string, unknown> = {};
     if (authorId && Types.ObjectId.isValid(authorId)) filter.author = new Types.ObjectId(authorId);
     if (hashtag) filter.hashtags = hashtag.toLowerCase().replace(/^#/, '');
+
+    // شعبة (department) wall for the "اكاديميا" feed -- mirrors PostsService's main feed + lecture
+    // library: a viewer WITH a شعبة sees only their own شعبة's reels plus college-wide ones (no
+    // شعبة tag); another شعبة's reels never surface. A viewer with no شعبة (admin / super admin)
+    // is unrestricted. Skipped for a single author's profile grid, matching the posts feed, which
+    // only walls the main feed, not a profile view.
+    if (viewerDepartment && !authorId) {
+      filter.department = { $in: [viewerDepartment, null] };
+    }
 
     const capped = Math.min(Math.max(limit, 1), 20);
     const reels = await this.reelModel

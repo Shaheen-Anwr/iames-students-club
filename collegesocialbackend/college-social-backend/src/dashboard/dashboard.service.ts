@@ -118,7 +118,7 @@ export class DashboardService {
       // شعبة-scoped so the home leaderboard shows classmates the student is actually competing
       // with (falls back to college-wide for a student with no شعبة set).
       this.gamificationService.getLeaderboard(5, user.department),
-      this.announcementsService.list(1, 3, user.department),
+      this.announcementsService.list(1, 3, user.department, user.isSuperAdmin),
     ]);
 
     const todayDow = new Date().getDay();

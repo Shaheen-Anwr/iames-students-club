@@ -12,6 +12,7 @@ import { Throttle } from '@nestjs/throttler';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { ReelsService } from './reels.service';
 import { CreateReelDto } from './dto/create-reel.dto';
 import { CreateReelCommentDto } from './dto/create-reel-comment.dto';
@@ -40,7 +41,14 @@ export class ReelsController {
     @Query('author') author?: string,
     @Query('hashtag') hashtag?: string,
   ) {
-    return this.reelsService.feed(user.userId, Number(page) || 1, Number(limit) || 10, author, hashtag);
+    return this.reelsService.feed(
+      user.userId,
+      Number(page) || 1,
+      Number(limit) || 10,
+      author,
+      hashtag,
+      viewerScopeDepartment(user),
+    );
   }
 
   // --- comment routes must stay above :id so "comments" isn't read as a reel id ---

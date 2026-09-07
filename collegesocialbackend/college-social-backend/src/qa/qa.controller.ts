@@ -2,6 +2,7 @@ import { Body, Controller, Get, Param, Post, Query, UseGuards } from '@nestjs/co
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { QaService } from './qa.service';
 import { AskQuestionDto } from './dto/ask-question.dto';
 import { CreateGroupQuestionDto } from './dto/create-group-question.dto';
@@ -27,7 +28,7 @@ export class QaController {
     @Query('courseCode') courseCode?: string,
     @Query('scope') scope?: QuestionScope,
   ) {
-    return this.qaService.listQuestions(Number(page) || 1, Number(limit) || 20, courseCode, scope, user.department);
+    return this.qaService.listQuestions(Number(page) || 1, Number(limit) || 20, courseCode, scope, viewerScopeDepartment(user));
   }
 
   // POST /api/qa/group/:groupId -- group-owner only, enforced via GroupsService.assertOwner().

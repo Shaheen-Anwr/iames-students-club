@@ -4,6 +4,7 @@ import type { Response } from 'express';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { AiConversationsService } from './ai-conversations.service';
 import { LectureStudyToolsService } from './lecture-study-tools.service';
 import { SendAiMessageDto } from './dto/send-ai-message.dto';
@@ -69,7 +70,7 @@ export class AiController {
       this.aiConversationsService.sendMessageStream(
         id,
         user.userId,
-        user.department,
+        viewerScopeDepartment(user),
         dto.text,
         dto.attachment,
         dto.sharedPostId,
@@ -84,7 +85,7 @@ export class AiController {
   @Post('conversations/:id/regenerate')
   async regenerate(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser, @Res() res: Response) {
     await this.streamSse(res, (signal) =>
-      this.aiConversationsService.regenerateLastReply(id, user.userId, user.department, signal),
+      this.aiConversationsService.regenerateLastReply(id, user.userId, viewerScopeDepartment(user), signal),
     );
   }
 

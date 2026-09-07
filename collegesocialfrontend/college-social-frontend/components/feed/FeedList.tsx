@@ -28,10 +28,16 @@ export function FeedList() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // The شعبة a super admin's feed is scoped to: none. The backend treats them as deptless for
+  // feed/search scoping (see viewerScopeDepartment), so the UI matches -- they get the cross-شعبة
+  // "عام" feed + the "كل الشعب" filter, exactly like a staff/admin account with no department.
+  // Everything else (posting, profile) still uses their real user.department.
+  const viewerDepartment = user?.isSuperAdmin ? undefined : user?.department ?? undefined;
+
   // "قسمي" only makes sense for a user who has a department -- otherwise there's nothing to
   // scope it to, so the feed is silently public-only for them (no tabs shown).
   const requestedScope = searchParams.get('scope') === 'department' ? 'department' : 'public';
-  const scope: PostScope = user?.department ? requestedScope : 'public';
+  const scope: PostScope = viewerDepartment ? requestedScope : 'public';
   const isNewUser = searchParams.get('new') === '1';
 
   const qc = useQueryClient();
@@ -44,7 +50,7 @@ export function FeedList() {
   // The year/specialization option lists follow the viewer's own شعبة when they have one -- both
   // feed tabs are now locked to it server-side. The "عام" شعبة dropdown only exists for a viewer
   // with no department (staff/admin), in which case fall back to whatever they picked there.
-  const effectiveDepartment = user?.department ?? (scope === 'public' ? department : '');
+  const effectiveDepartment = viewerDepartment ?? (scope === 'public' ? department : '');
 
   // If the effective department changes (switching tabs, or narrowing the "عام" filter) and the
   // currently selected year/specialization no longer belongs to it, drop them rather than send a
@@ -171,9 +177,9 @@ export function FeedList() {
       <FeedToolbar
         scope={scope}
         onScopeChange={(next) => router.replace(`/feed?scope=${next}`)}
-        showScopeTabs={!!user?.department}
-        departmentLabel={user?.department ? DEPARTMENT_LABELS[user.department] : undefined}
-        viewerDepartment={user?.department ?? undefined}
+        showScopeTabs={!!viewerDepartment}
+        departmentLabel={viewerDepartment ? DEPARTMENT_LABELS[viewerDepartment] : undefined}
+        viewerDepartment={viewerDepartment}
         courseCode={courseCode}
         onCourseChange={setCourseCode}
         department={department}

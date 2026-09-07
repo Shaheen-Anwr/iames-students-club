@@ -27,6 +27,7 @@ import { PostScope } from './schemas/post.schema';
 import { Department } from '../common/enums/department.enum';
 import { AcademicYear } from '../common/enums/academic-year.enum';
 import { Specialization } from '../common/enums/specialization.enum';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 
 @UseGuards(JwtAuthGuard)
 @Controller('posts')
@@ -69,7 +70,7 @@ export class PostsController {
       author,
       hasAttachment === 'true',
       scope,
-      user.department,
+      viewerScopeDepartment(user),
       { department, academicYear, specialization },
       user.userId,
     ] as const;
@@ -121,7 +122,7 @@ export class PostsController {
       { department, academicYear, specialization, courseCode, q },
       Number(page) || 1,
       Number(limit) || 20,
-      user.department,
+      viewerScopeDepartment(user),
     );
   }
 

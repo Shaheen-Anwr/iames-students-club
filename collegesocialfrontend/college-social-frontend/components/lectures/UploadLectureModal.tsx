@@ -41,6 +41,13 @@ export function UploadLectureModal({
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // A professor's course-material upload is always filed under their own شعبة -- the lecture
+  // libraries (محاضرات PDF/فيديو) and the "اكاديميا" feed wall content by شعبة, so "كل الشعب" and
+  // other شعب aren't offered and the field is shown locked. Admins keep the full picker (they
+  // publish genuinely college-wide material). The backend enforces this regardless (PostsService).
+  const isAdmin = user?.role === 'admin';
+  const departmentLocked = !isAdmin && !!user?.department;
+
   const [caption, setCaption] = useState('');
   const [courseCode, setCourseCode] = useState(lockedCourseCode ?? '');
   const [department, setDepartment] = useState<Department | ''>(user?.department ?? '');
@@ -87,6 +94,10 @@ export function UploadLectureModal({
     e.preventDefault();
     if (!file) {
       showToast('اختر ملفًا أولًا.', 'error');
+      return;
+    }
+    if (!isAdmin && !department) {
+      showToast('اختر الشعبة.', 'error');
       return;
     }
     setSubmitting(true);
@@ -169,19 +180,25 @@ export function UploadLectureModal({
         )}
 
         <div className="grid grid-cols-2 gap-3">
-          <select
-            value={department}
-            onChange={(e) => handleDepartmentChange(e.target.value as Department | '')}
-            disabled={submitting}
-            className={SELECT_CLASS}
-          >
-            <option value="">كل الشعب</option>
-            {DEPARTMENTS.map((d) => (
-              <option key={d} value={d}>
-                {DEPARTMENT_LABELS[d]}
-              </option>
-            ))}
-          </select>
+          {departmentLocked ? (
+            <div className={`${SELECT_CLASS} flex items-center text-muted-foreground`}>
+              {department ? DEPARTMENT_LABELS[department as Department] : 'شعبتك'}
+            </div>
+          ) : (
+            <select
+              value={department}
+              onChange={(e) => handleDepartmentChange(e.target.value as Department | '')}
+              disabled={submitting}
+              className={SELECT_CLASS}
+            >
+              <option value="">كل الشعب</option>
+              {DEPARTMENTS.map((d) => (
+                <option key={d} value={d}>
+                  {DEPARTMENT_LABELS[d]}
+                </option>
+              ))}
+            </select>
+          )}
           <select
             value={academicYear}
             onChange={(e) => setAcademicYear(e.target.value as AcademicYear | '')}
