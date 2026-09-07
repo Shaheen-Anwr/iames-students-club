@@ -16,9 +16,9 @@ export class SearchService {
     private readonly usersService: UsersService,
   ) {}
 
-  // Fans out across every searchable content type in parallel, each scoped the same way its own
-  // module already scopes it (department split for posts/questions, public-only for groups,
-  // no scoping for people search -- matching each feature's existing visibility rules).
+  // Fans out across every searchable content type in parallel, each شعبة-scoped the same way its
+  // own module scopes it (posts own+college-wide; questions + groups STRICT own-شعبة). People
+  // search stays cross-شعبة on purpose -- only content is walled.
   async search(query: string, viewerDepartment?: Department | null) {
     // A leading '#' is a hashtag lookup against Post.hashtags rather than a free-text search --
     // questions/groups/users have no hashtag concept, so those legs stay empty for this query shape.
@@ -32,7 +32,7 @@ export class SearchService {
     const [posts, questions, groups, users] = await Promise.all([
       this.postsService.search(query, RESULTS_PER_CATEGORY, viewerDepartment),
       this.qaService.search(query, RESULTS_PER_CATEGORY, viewerDepartment),
-      this.groupsService.discover(query, 1, RESULTS_PER_CATEGORY),
+      this.groupsService.discover(query, 1, RESULTS_PER_CATEGORY, viewerDepartment),
       this.usersService.search(query),
     ]);
     return { posts, questions, groups, users };

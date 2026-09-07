@@ -14,6 +14,7 @@ import {
   TrendSeries,
 } from '../common/utils/daily-counts.util';
 import { GroupsService } from '../groups/groups.service';
+import { Department } from '../common/enums/department.enum';
 
 export interface QuizStats {
   totalQuizzes: number;
@@ -30,7 +31,7 @@ export class QuizzesService {
     private readonly groupsService: GroupsService,
   ) {}
 
-  async create(creatorId: string, dto: CreateQuizDto): Promise<QuizDocument> {
+  async create(creatorId: string, creatorDepartment: Department | null, dto: CreateQuizDto): Promise<QuizDocument> {
     dto.questions.forEach((q, i) => {
       if (q.correctIndex >= q.options.length) {
         throw new BadRequestException(`الإجابة الصحيحة للسؤال ${i + 1} غير صالحة`);
@@ -43,16 +44,27 @@ export class QuizzesService {
       description: dto.description ?? '',
       courseCode: dto.courseCode ?? null,
       questions: dto.questions,
+      // Walled to the creator's شعبة -- see findAll(). null only for a deptless creator.
+      department: creatorDepartment ?? null,
     });
     await quiz.save();
     return quiz.populate('createdBy', 'name role photoUrl');
   }
 
-  // GET /api/quizzes -- global feed, not owner/department-scoped, matching AssignmentsService.findAll.
-  // group-scoped quizzes are excluded unconditionally, same as AssignmentsService.visibilityFilter.
-  async findAll(page = 1, limit = 20, courseCode: string | undefined, viewerId: string) {
+  // GET /api/quizzes -- global اختبارات list. STRICT شعبة wall: a viewer with a شعبة sees only
+  // their own شعبة's quizzes, never another's. Deptless staff / super admins
+  // (viewerDepartment null/undefined) unrestricted. group-scoped quizzes are excluded
+  // unconditionally, same as AssignmentsService.visibilityFilter.
+  async findAll(
+    page = 1,
+    limit = 20,
+    courseCode: string | undefined,
+    viewerId: string,
+    viewerDepartment?: Department | null,
+  ) {
     const filter: Record<string, unknown> = { group: null };
     if (courseCode) filter.courseCode = courseCode;
+    if (viewerDepartment) filter.department = viewerDepartment;
     const quizzes = await this.quizModel
       .find(filter)
       .sort({ createdAt: -1 })

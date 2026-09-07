@@ -51,7 +51,12 @@ export class CalendarService {
 
     const [scheduleEntries, assignments, tasks, announcements, calendarEvents] = await Promise.all([
       this.scheduleService.findForUser(userId),
-      this.assignmentsService.findDueInRange(monthStart, monthEnd, userId),
+      this.assignmentsService.findDueInRange(
+        monthStart,
+        monthEnd,
+        userId,
+        includeAllDepartments ? undefined : department,
+      ),
       this.plannerService.findDueInRange(userId, monthStart, monthEnd),
       this.announcementsService.findEventsInRange(monthStart, monthEnd, department, includeAllDepartments),
       this.calendarEventsService.findInRange(userId, monthStart, monthEnd),

@@ -41,10 +41,10 @@ export function UploadLectureModal({
   const { showToast } = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // A professor's course-material upload is always filed under their own شعبة -- the lecture
-  // libraries (محاضرات PDF/فيديو) and the "اكاديميا" feed wall content by شعبة, so "كل الشعب" and
-  // other شعب aren't offered and the field is shown locked. Admins keep the full picker (they
-  // publish genuinely college-wide material). The backend enforces this regardless (PostsService).
+  // Every lecture/video is filed under exactly ONE شعبة -- the libraries (محاضرات PDF/فيديو) and
+  // اكاديميا wall material strictly by شعبة, so a "كل الشعب" upload would just be invisible to every
+  // student. A professor's is locked to their own شعبة; an admin must still pick one of the three
+  // (no "كل الشعب" option). The backend enforces this regardless (PostsService.create).
   const isAdmin = user?.role === 'admin';
   const departmentLocked = !isAdmin && !!user?.department;
 
@@ -96,7 +96,7 @@ export function UploadLectureModal({
       showToast('اختر ملفًا أولًا.', 'error');
       return;
     }
-    if (!isAdmin && !department) {
+    if (!department) {
       showToast('اختر الشعبة.', 'error');
       return;
     }
@@ -191,7 +191,7 @@ export function UploadLectureModal({
               disabled={submitting}
               className={SELECT_CLASS}
             >
-              <option value="">كل الشعب</option>
+              <option value="">اختر الشعبة</option>
               {DEPARTMENTS.map((d) => (
                 <option key={d} value={d}>
                   {DEPARTMENT_LABELS[d]}

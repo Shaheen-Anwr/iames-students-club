@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Query, UseGuards } from '@n
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { QuizzesService } from './quizzes.service';
 import { CreateQuizDto } from './dto/create-quiz.dto';
 import { SubmitQuizAttemptDto } from './dto/submit-quiz-attempt.dto';
@@ -15,7 +16,7 @@ export class QuizzesController {
   // is professor-only: quizzes are meant to be made by students, for students.
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateQuizDto) {
-    return this.quizzesService.create(user.userId, dto);
+    return this.quizzesService.create(user.userId, user.department, dto);
   }
 
   // GET /api/quizzes?page=1&limit=20&courseCode=CS101
@@ -26,7 +27,13 @@ export class QuizzesController {
     @Query('limit') limit?: string,
     @Query('courseCode') courseCode?: string,
   ) {
-    return this.quizzesService.findAll(Number(page) || 1, Number(limit) || 20, courseCode, user.userId);
+    return this.quizzesService.findAll(
+      Number(page) || 1,
+      Number(limit) || 20,
+      courseCode,
+      user.userId,
+      viewerScopeDepartment(user),
+    );
   }
 
   // POST /api/quizzes/group/:groupId -- group-owner only, enforced via GroupsService.assertOwner().

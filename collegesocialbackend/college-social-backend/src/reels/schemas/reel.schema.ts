@@ -56,10 +56,11 @@ export class Reel {
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
   mentions: Types.ObjectId[];
 
-  // Snapshotted from the author's profile at creation. This is the شعبة (department) wall for the
-  // "اكاديميا" feed: a viewer WITH a شعبة only sees reels tagged with their own شعبة, plus reels
-  // with no شعبة at all (college-wide -- e.g. an admin's). Another شعبة's reels never surface.
-  // A viewer with no شعبة (admin / super admin) is unrestricted. See ReelsService.feed().
+  // Snapshotted from the author's profile at creation. This is the STRICT شعبة (department) wall for
+  // "اكاديميا": a viewer WITH a شعبة sees ONLY reels tagged with their exact شعبة -- never another
+  // شعبة's, and never an untagged / college-wide (null) reel either -- across the feed, hashtag
+  // browse, profile grids, permalinks and comments. A viewer with no شعبة (admin / super admin) is
+  // unrestricted. See ReelsService.feed() / assertViewerCanSee().
   // (academicYear/specialization below stay pure browse/relevance tags, not access control.)
   @Prop({ type: String, enum: Department, default: null })
   department: Department | null;
@@ -96,5 +97,5 @@ ReelSchema.index({ createdAt: -1 });
 ReelSchema.index({ author: 1, createdAt: -1 });
 ReelSchema.index({ hashtags: 1, createdAt: -1 });
 ReelSchema.index({ savedBy: 1, createdAt: -1 });
-// The شعبة-scoped "اكاديميا" feed: { department: { $in: [own, null] } } sorted by createdAt desc.
+// The شعبة-scoped "اكاديميا" feed: { department: <own> } sorted by createdAt desc.
 ReelSchema.index({ department: 1, createdAt: -1 });

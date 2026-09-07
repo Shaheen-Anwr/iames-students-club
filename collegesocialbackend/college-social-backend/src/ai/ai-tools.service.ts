@@ -212,7 +212,15 @@ export class AiToolsService {
     args: { upcoming?: boolean; courseCode?: string },
     ctx: ToolExecutionContext,
   ): Promise<ToolExecutionResult> {
-    const assignments = await this.assignmentsService.findAll(1, 20, args.courseCode, args.upcoming, ctx.ownerId);
+    const assignments = await this.assignmentsService.findAll(
+      1,
+      20,
+      args.courseCode,
+      args.upcoming,
+      ctx.ownerId,
+      false,
+      ctx.ownerDepartment,
+    );
     return {
       content: JSON.stringify(
         assignments.map((a) => ({
@@ -255,8 +263,8 @@ export class AiToolsService {
     return { content: JSON.stringify(results.map((q) => ({ id: q.id, title: q.title, body: q.body, answerCount: q.answerCount }))) };
   }
 
-  private async searchGroups(args: { query?: string }): Promise<ToolExecutionResult> {
-    const groups = await this.groupsService.discover(args.query, 1, 10);
+  private async searchGroups(args: { query?: string }, ctx: ToolExecutionContext): Promise<ToolExecutionResult> {
+    const groups = await this.groupsService.discover(args.query, 1, 10, ctx.ownerDepartment);
     return { content: JSON.stringify(groups.map((g) => ({ id: g.id, name: g.name, description: g.description, visibility: g.visibility }))) };
   }
 

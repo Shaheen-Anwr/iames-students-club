@@ -100,16 +100,20 @@ export class PostsService {
       throw new ForbiddenException('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط');
     }
 
-    // A lecture/video (course-material) upload by a professor is always filed under THEIR OWN شعبة
-    // -- never "كل الشعب" (null) or another شعبة, regardless of what the client sends. The browse
-    // libraries (محاضرات PDF/فيديو + the "اكاديميا"/course-hub lecture lists) wall material by
-    // شعبة, and cross-شعبة material must never enter that pool. Admins are exempt: they legitimately
-    // publish genuinely college-wide material, so their explicit choice (any شعبة, or null = كل
-    // الشعب) is honored as-is. Non-material posts are unaffected -- they snapshot as before.
+    // A lecture/video (course-material) upload is filed under EXACTLY ONE شعبة. The browse libraries
+    // (محاضرات PDF/فيديو + the course-hub lecture lists) and اكاديميا wall material strictly by
+    // شعبة with no college-wide (null) allowance, so cross-شعبة -- or untagged -- material must never
+    // enter the pool. A professor's upload is forced under their OWN شعبة regardless of what the
+    // client sends; an admin (who has no شعبة of their own) must pick one explicitly. Non-material
+    // posts are unaffected -- they snapshot as before.
     const resolvedDepartment =
       isMaterialUpload && authorRole !== Role.ADMIN
         ? authorDepartment ?? null
         : dto.department ?? authorDepartment ?? null;
+
+    if (isMaterialUpload && !resolvedDepartment) {
+      throw new BadRequestException('اختر الشعبة التي تتبع لها هذه المادة.');
+    }
 
     if (
       dto.academicYear &&
@@ -276,8 +280,15 @@ export class PostsService {
       // at all (admin announcements, posts by staff with no department). Another شعبة's public
       // posts never surface. A viewer with no department (staff/admin) is unrestricted; there's no
       // شعبة to scope them to.
+      //
+      // EXCEPTION -- material browsing (`hasAttachment`, i.e. a course hub's محاضرات list): held to
+      // the same STRICT شعبة isolation as the /lectures libraries and اكاديميا, with NO college-wide
+      // (null) allowance. A viewer with a شعبة sees only their own شعبة's lectures/videos, full stop.
+      const strictMaterial = !!hasAttachment && !!viewerDepartment;
       const publicPosts: Record<string, unknown> = { scope: PostScope.PUBLIC };
-      if (viewerDepartment) publicPosts.department = { $in: [viewerDepartment, null] };
+      if (viewerDepartment) {
+        publicPosts.department = strictMaterial ? viewerDepartment : { $in: [viewerDepartment, null] };
+      }
       const or: Record<string, unknown>[] = [publicPosts];
       if (viewerId) {
         const friendIds = preloadedFriendIds ?? (await this.usersService.getFriendIds(viewerId));
@@ -290,6 +301,8 @@ export class PostsService {
       }
       filter.$or = or;
       if (filters?.department) filter.department = filters.department;
+      // Also pins the friends / own-post $or arms to the viewer's شعبة for material browsing.
+      if (strictMaterial) filter.department = viewerDepartment;
     }
     if (filters?.academicYear) filter.academicYear = filters.academicYear;
     if (filters?.specialization) filter.specialization = filters.specialization;
@@ -463,7 +476,8 @@ export class PostsService {
   }
 
   // "Since you were away": how many new lecture/video/file uploads landed in the given courses
-  // after `since`, scoped to what this viewer can see (same public + own-شعبة rule as the feed).
+  // after `since`. Material, so held to the same STRICT شعبة isolation as the lecture libraries --
+  // a viewer with a شعبة counts only their own شعبة's uploads, no college-wide (null) allowance.
   async countLecturesSince(courseCodes: string[], since: Date, viewerDepartment?: Department | null): Promise<number> {
     if (!courseCodes.length) return 0;
     const filter: Record<string, unknown> = {
@@ -472,16 +486,17 @@ export class PostsService {
       scope: PostScope.PUBLIC,
       createdAt: { $gt: since },
     };
-    if (viewerDepartment) filter.department = { $in: [viewerDepartment, null] };
+    if (viewerDepartment) filter.department = viewerDepartment;
     return this.postModel.countDocuments(filter).exec();
   }
 
   // The PDF/video lecture library (components/lectures/): always scope='public' by design (see
-  // Post.department's comment). academicYear/specialization/courseCode are pure filter tags here,
-  // but department is scoped the same way feed()/search() are: a viewer WITH a شعبة only browses
-  // their own شعبة's material (plus untagged/college-wide uploads), never another شعبة's -- an
-  // explicit filters.department is honored only while it matches. A viewer with no department
-  // (staff/admin) keeps the old cross-شعبة browse and can filter by any department.
+  // Post.department's comment). academicYear/specialization/courseCode are pure filter tags here.
+  //
+  // STRICT شعبة isolation: a viewer WITH a شعبة browses ONLY their own شعبة's material -- never
+  // another شعبة's, and never untagged / "كل الشعب" (null) material either. No college-wide
+  // exception here (unlike the main feed). A viewer with no شعبة (staff/admin) keeps the
+  // cross-شعبة browse and can filter by any department.
   async browseAttachments(
     attachmentType: 'lecture' | 'video',
     filters: { department?: Department; academicYear?: AcademicYear; specialization?: Specialization; courseCode?: string; q?: string },
@@ -491,7 +506,7 @@ export class PostsService {
   ): Promise<PostDocument[]> {
     const filter: Record<string, unknown> = { attachmentType, scope: PostScope.PUBLIC };
     if (viewerDepartment) {
-      filter.department = { $in: [viewerDepartment, null] };
+      filter.department = viewerDepartment;
     } else if (filters.department) {
       filter.department = filters.department;
     }
@@ -986,9 +1001,16 @@ export class PostsService {
   }
 
   // Distinct course codes that have at least one attachment, most recently active first.
-  async coursesWithAttachments(): Promise<{ courseCode: string; attachmentCount: number; latestAt: Date }[]> {
+  // STRICT شعبة wall (matches browseAttachments / the lecture library): a viewer with a شعبة
+  // only sees course codes that have material tagged with their exact شعبة. Deptless staff /
+  // super admins (viewerDepartment null/undefined) see every course.
+  async coursesWithAttachments(
+    viewerDepartment?: Department | null,
+  ): Promise<{ courseCode: string; attachmentCount: number; latestAt: Date }[]> {
+    const match: Record<string, unknown> = { attachmentType: { $ne: 'none' }, courseCode: { $ne: null } };
+    if (viewerDepartment) match.department = viewerDepartment;
     return this.postModel.aggregate([
-      { $match: { attachmentType: { $ne: 'none' }, courseCode: { $ne: null } } },
+      { $match: match },
       { $group: { _id: '$courseCode', attachmentCount: { $sum: 1 }, latestAt: { $max: '$createdAt' } } },
       { $project: { _id: 0, courseCode: '$_id', attachmentCount: 1, latestAt: 1 } },
       { $sort: { latestAt: -1 } },

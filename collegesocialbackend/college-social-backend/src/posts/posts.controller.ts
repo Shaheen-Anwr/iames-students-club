@@ -84,8 +84,8 @@ export class PostsController {
   // GET /api/posts/courses -> distinct course codes that have attachments, for the course/lecture hub
   // NOTE: must stay above @Get(':id') or it gets swallowed as an id lookup.
   @Get('courses')
-  async coursesWithAttachments() {
-    return this.postsService.coursesWithAttachments();
+  async coursesWithAttachments(@CurrentUser() user: AuthenticatedUser) {
+    return this.postsService.coursesWithAttachments(viewerScopeDepartment(user));
   }
 
   // GET /api/posts/saved?page=1&limit=20 -> the current user's saved posts

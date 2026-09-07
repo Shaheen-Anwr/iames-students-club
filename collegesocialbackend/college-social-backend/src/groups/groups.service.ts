@@ -17,6 +17,7 @@ import { CreateChannelDto } from './dto/create-channel.dto';
 import { AttachmentDto } from '../chat/dto/create-message.dto';
 import { NotificationsService } from '../notifications/notifications.service';
 import { StorageService } from '../upload/storage.service';
+import { Department } from '../common/enums/department.enum';
 import {
   ATLAS_SEARCH_ENABLED,
   ATLAS_INDEX,
@@ -89,9 +90,12 @@ export class GroupsService {
     private readonly storageService: StorageService,
   ) {}
 
-  async create(ownerId: string, dto: CreateGroupDto): Promise<StudyGroupDocument> {
+  async create(ownerId: string, ownerDepartment: Department | null, dto: CreateGroupDto): Promise<StudyGroupDocument> {
     const owner = new Types.ObjectId(ownerId);
     const visibility = dto.visibility ?? 'private';
+    // Walled to the owner's شعبة in every listing (discover / GET /groups/all). null only for a
+    // deptless owner. Opening by invite code / direct link stays cross-شعبة.
+    const department = ownerDepartment ?? null;
     let group: StudyGroupDocument | null = null;
 
     if (visibility === 'public') {
@@ -102,6 +106,7 @@ export class GroupsService {
         members: [owner],
         visibility,
         inviteCode: null,
+        department,
       }).save();
     } else {
       for (let attempt = 0; attempt < INVITE_CODE_ATTEMPTS && !group; attempt += 1) {
@@ -114,6 +119,7 @@ export class GroupsService {
             members: [owner],
             visibility,
             inviteCode,
+            department,
           }).save();
         } catch (err) {
           // E11000 duplicate key on inviteCode -- vanishingly rare, just retry with a fresh code.
@@ -128,14 +134,23 @@ export class GroupsService {
   }
 
   // Publicly listed groups, newest first, optionally filtered by a case-insensitive name search.
-  async discover(search: string | undefined, page = 1, limit = 20): Promise<StudyGroupDocument[]> {
+  // STRICT شعبة wall: a viewer with a شعبة only sees groups owned by someone in their شعبة.
+  // Deptless staff / super admins (viewerDepartment null/undefined) unrestricted.
+  async discover(
+    search: string | undefined,
+    page = 1,
+    limit = 20,
+    viewerDepartment?: Department | null,
+  ): Promise<StudyGroupDocument[]> {
     const term = search?.trim();
     if (term && ATLAS_SEARCH_ENABLED) {
       try {
+        const match: Record<string, unknown> = { visibility: 'public' };
+        if (viewerDepartment) match.department = viewerDepartment;
         return (await this.groupModel
           .aggregate([
             atlasTextStage(ATLAS_INDEX.groups, term, ['name', 'description']),
-            { $match: { visibility: 'public' } },
+            { $match: match },
             { $skip: (page - 1) * limit },
             { $limit: limit },
           ])
@@ -146,6 +161,7 @@ export class GroupsService {
     }
     const filter: Record<string, unknown> = { visibility: 'public' };
     if (term) filter.name = { $regex: term, $options: 'i' };
+    if (viewerDepartment) filter.department = viewerDepartment;
     return this.groupModel
       .find(filter)
       .sort({ createdAt: -1 })
@@ -156,9 +172,11 @@ export class GroupsService {
 
   // Every group in the app, newest first, for the unified explorer list. Private groups the
   // caller hasn't joined are still returned (name + size only) -- joining them still needs a code.
-  async listAll(userId: string, search?: string): Promise<GroupListItem[]> {
+  // STRICT شعبة wall, same as discover().
+  async listAll(userId: string, search?: string, viewerDepartment?: Department | null): Promise<GroupListItem[]> {
     const filter: Record<string, unknown> = {};
     if (search?.trim()) filter.name = { $regex: search.trim(), $options: 'i' };
+    if (viewerDepartment) filter.department = viewerDepartment;
     const groups = await this.groupModel.find(filter).lean().exec();
     const items: GroupListItem[] = [];
     for (const g of groups) {

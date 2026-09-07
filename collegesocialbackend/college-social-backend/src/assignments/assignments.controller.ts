@@ -6,6 +6,7 @@ import { Roles } from '../common/decorators/roles.decorator';
 import { Role } from '../common/enums/role.enum';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
+import { viewerScopeDepartment } from '../common/utils/viewer-scope.util';
 import { AssignmentsService } from './assignments.service';
 import { CreateAssignmentDto } from './dto/create-assignment.dto';
 import { CreateGroupAssignmentDto } from './dto/create-group-assignment.dto';
@@ -20,7 +21,7 @@ export class AssignmentsController {
   @Roles(Role.ADMIN, Role.PROFESSOR)
   @Post()
   async create(@CurrentUser() user: AuthenticatedUser, @Body() dto: CreateAssignmentDto) {
-    return this.assignmentsService.create(user.userId, user.role, dto);
+    return this.assignmentsService.create(user.userId, user.role, user.department, dto);
   }
 
   // GET /api/assignments?page=1&limit=20&courseCode=CS101&upcoming=true&military=true
@@ -40,6 +41,7 @@ export class AssignmentsController {
       upcoming === 'true',
       user.userId,
       military === 'true',
+      viewerScopeDepartment(user),
     );
   }
 

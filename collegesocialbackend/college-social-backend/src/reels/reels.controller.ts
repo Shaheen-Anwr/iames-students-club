@@ -69,7 +69,7 @@ export class ReelsController {
   // GET /api/reels/:id
   @Get(':id')
   findOne(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
-    return this.reelsService.findOne(id, user.userId);
+    return this.reelsService.findOne(id, user.userId, viewerScopeDepartment(user));
   }
 
   // POST /api/reels/:id/like -> toggle like
@@ -107,7 +107,14 @@ export class ReelsController {
     @Query('limit') limit?: string,
     @Query('parent') parent?: string,
   ) {
-    return this.reelsService.listComments(id, user.userId, Number(page) || 1, Number(limit) || 20, parent);
+    return this.reelsService.listComments(
+      id,
+      user.userId,
+      Number(page) || 1,
+      Number(limit) || 20,
+      parent,
+      viewerScopeDepartment(user),
+    );
   }
 
   // POST /api/reels/:id/comments  { text, parent? }
@@ -117,6 +124,6 @@ export class ReelsController {
     @CurrentUser() user: AuthenticatedUser,
     @Body() dto: CreateReelCommentDto,
   ) {
-    return this.reelsService.addComment(id, user.userId, dto.text, dto.parent);
+    return this.reelsService.addComment(id, user.userId, dto.text, dto.parent, viewerScopeDepartment(user));
   }
 }
