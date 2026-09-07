@@ -8,6 +8,7 @@ import { CalendarClock, Circle, CheckCircle2, ListTodo, Plus, Trash2 } from 'luc
 import { Card } from '@/components/ui/Card';
 import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { Input } from '@/components/ui/Input';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
@@ -31,7 +32,13 @@ export function PlannerList() {
   const [courseCode, setCourseCode] = useState('');
   const [submitting, setSubmitting] = useState(false);
 
-  const { data: tasks = [], isPending: loading } = useApiQuery<'/planner', PlannerTask[]>('/planner');
+  const {
+    data: tasks = [],
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+  } = useApiQuery<'/planner', PlannerTask[]>('/planner');
   const patchTasks = (fn: (prev: PlannerTask[]) => PlannerTask[]) =>
     qc.setQueryData<PlannerTask[]>(['/planner'], (prev) => fn(prev ?? []));
 
@@ -96,6 +103,10 @@ export function PlannerList() {
       {loading ? (
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
+        </div>
+      ) : isError && tasks.length === 0 ? (
+        <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
+          <LoadError onRetry={() => void refetch()} retrying={isRefetching} />
         </div>
       ) : tasks.length === 0 ? (
         <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">

@@ -5,6 +5,7 @@ import { Crown, Flame, Trophy } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { Segmented } from '@/components/ui/Segmented';
 import { Spinner } from '@/components/ui/Spinner';
 import { useApiQuery } from '@/lib/query';
@@ -32,7 +33,13 @@ export function Leaderboard() {
   // which is far more motivating than a lifetime total nobody new can dent.
   const [period, setPeriod] = useState<Period>('week');
 
-  const { data: entries = [], isPending: loading } = useApiQuery<'/users/leaderboard', LeaderboardEntry[]>(
+  const {
+    data: entries = [],
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+  } = useApiQuery<'/users/leaderboard', LeaderboardEntry[]>(
     `/users/leaderboard?limit=20${scope === 'dept' ? '&scope=dept' : ''}${period === 'week' ? '&period=week' : ''}`,
     { key: ['/users/leaderboard', scope, period] },
   );
@@ -86,6 +93,8 @@ export function Leaderboard() {
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : isError && entries.length === 0 ? (
+        <LoadError onRetry={() => void refetch()} retrying={isRefetching} />
       ) : entries.length === 0 ? (
         <div className="rounded-xl2 border border-dashed border-border bg-surface-2/40">
           <EmptyState icon={Trophy} title="لا يوجد نشاط بعد" description="سيظهر المتصدرون هنا بمجرد بدء النشاط." />
