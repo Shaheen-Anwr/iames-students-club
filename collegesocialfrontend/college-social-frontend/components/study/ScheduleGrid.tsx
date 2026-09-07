@@ -1,11 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { CalendarDays, Clock, MapPin, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
+import { LoadError } from '@/components/ui/LoadError';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { AnalyticsEvent, track } from '@/lib/analytics';
@@ -38,11 +39,73 @@ function formatHour(hour: number) {
   return `${displayHour} ${period}`;
 }
 
+// "الآن" / "التالية" banner at the top of the timetable -- the single thing a student opens the
+// schedule to find out. Recomputed every 30s from `now`.
+function NextClassBanner({ entries, now }: { entries: ScheduleEntry[]; now: Date }) {
+  const info = useMemo(() => {
+    const day = now.getDay();
+    const mins = now.getHours() * 60 + now.getMinutes();
+    const todays = entries
+      .filter((e) => e.dayOfWeek === day)
+      .sort((a, b) => toMinutes(a.startTime) - toMinutes(b.startTime));
+    if (todays.length === 0) return { kind: 'none' as const };
+    const current = todays.find((e) => toMinutes(e.startTime) <= mins && mins < toMinutes(e.endTime));
+    if (current) return { kind: 'now' as const, entry: current };
+    const next = todays.find((e) => toMinutes(e.startTime) > mins);
+    if (next) return { kind: 'next' as const, entry: next, inMins: toMinutes(next.startTime) - mins };
+    return { kind: 'done' as const };
+  }, [entries, now]);
+
+  if (info.kind === 'none') return null;
+
+  if (info.kind === 'done') {
+    return (
+      <Card className="flex items-center gap-3 bg-success-surface p-4 text-success">
+        <span className="text-lg">🎉</span>
+        <p className="text-sm font-medium">انتهت محاضرات اليوم.</p>
+      </Card>
+    );
+  }
+
+  const { entry } = info;
+  const isNow = info.kind === 'now';
+  return (
+    <Card className={cn('p-4', isNow ? 'bg-gradient-accent text-white shadow-glow' : 'ring-1 ring-accent/20')}>
+      <div className="flex items-center gap-3">
+        <span className={cn('relative flex h-2.5 w-2.5 shrink-0', !isNow && 'opacity-0')}>
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/80" />
+          <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-white" />
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={cn('text-[11px] font-bold uppercase tracking-wide', isNow ? 'text-white/80' : 'text-accent')}>
+            {isNow ? 'الآن' : info.inMins <= 60 ? `بعد ${info.inMins} دقيقة` : 'محاضرتك القادمة'}
+          </p>
+          <p className={cn('truncate text-sm font-bold', isNow ? 'text-white' : 'text-foreground')}>{entry.courseName}</p>
+          <p className={cn('mt-0.5 flex items-center gap-2 text-xs', isNow ? 'text-white/85' : 'text-muted-foreground')}>
+            <span>
+              {entry.startTime} - {entry.endTime}
+              {isNow ? ' · ينتهي قريبًا' : ''}
+            </span>
+            {entry.location && (
+              <span className="inline-flex items-center gap-1">
+                <MapPin className="h-3 w-3" />
+                {entry.location}
+              </span>
+            )}
+          </p>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
 export function ScheduleGrid() {
   const { user } = useAuth();
   const isAdmin = user?.role === 'admin';
   const [entries, setEntries] = useState<ScheduleEntry[]>([]);
   const [loading, setLoading] = useState(true);
+  const [errored, setErrored] = useState(false);
+  const [now, setNow] = useState(() => new Date());
   const [modalOpen, setModalOpen] = useState(false);
   const [editingEntry, setEditingEntry] = useState<ScheduleEntry | undefined>(undefined);
   // Whether the group has any whole-timetable photo(s) published (ScheduleBoardPhoto, above) --
@@ -73,21 +136,42 @@ export function ScheduleGrid() {
     }
   }
 
-  useEffect(() => {
+  const reload = useCallback(() => {
     if (isAdmin && !groupChosen) {
       setEntries([]);
+      setErrored(false);
       setLoading(false);
       return;
     }
     setLoading(true);
+    setErrored(false);
     const query = isAdmin ? `?department=${department}&academicYear=${academicYear}&specialization=${specialization}` : '';
     api
       .get<ScheduleEntry[]>(`/schedule${query}`)
-      .then(setEntries)
+      .then((data) => {
+        setEntries(data);
+        setErrored(false);
+      })
+      .catch(() => setErrored(true))
       .finally(() => setLoading(false));
   }, [isAdmin, groupChosen, department, academicYear, specialization]);
 
-  const today = new Date().getDay();
+  useEffect(() => {
+    reload();
+  }, [reload]);
+
+  // Keep the "الآن / التالية" banner + the grid's now-line live without a re-fetch.
+  useEffect(() => {
+    const id = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(id);
+  }, []);
+
+  const today = now.getDay();
+  const nowMinutes = now.getHours() * 60 + now.getMinutes();
+  const showNowLine = today !== 5 && nowMinutes >= GRID_START_HOUR * 60 && nowMinutes < GRID_END_HOUR * 60;
+  // Mobile list starts from today, then wraps -- "today, then the rest of the week".
+  const todayIdx = Math.max(0, WEEK_DAYS.findIndex((d) => d.value === today));
+  const orderedDays = [...WEEK_DAYS.slice(todayIdx), ...WEEK_DAYS.slice(0, todayIdx)];
 
   const entriesByDay = useMemo(() => {
     const map = new Map<number, ScheduleEntry[]>();
@@ -183,10 +267,16 @@ export function ScheduleGrid() {
         />
       )}
 
+      {!loading && !errored && entries.length > 0 && (!isAdmin || groupChosen) && (
+        <NextClassBanner entries={entries} now={now} />
+      )}
+
       {loading ? (
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : errored ? (
+        <LoadError title="تعذّر تحميل الجدول" onRetry={reload} retrying={loading} />
       ) : isAdmin && !groupChosen ? (
         <div className="flex flex-col items-center gap-3 rounded-xl2 border border-dashed border-border bg-surface-2/40 py-16 text-center">
           <div className="flex h-14 w-14 items-center justify-center rounded-full bg-accent/10 text-accent">
@@ -249,6 +339,15 @@ export function ScheduleGrid() {
                       <div key={hour} className="border-t border-border" style={{ height: HOUR_HEIGHT }} />
                     ))}
                     {day.value === today && <div className="absolute inset-0 bg-accent/5" />}
+                    {day.value === today && showNowLine && (
+                      <div
+                        className="pointer-events-none absolute inset-x-0 z-20 flex items-center"
+                        style={{ top: (nowMinutes - GRID_START_HOUR * 60) * (HOUR_HEIGHT / 60) }}
+                      >
+                        <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-danger" />
+                        <span className="h-px flex-1 bg-danger" />
+                      </div>
+                    )}
                     {(entriesByDay.get(day.value) ?? []).map((entry) => {
                       const top = (toMinutes(entry.startTime) - GRID_START_HOUR * 60) * (HOUR_HEIGHT / 60);
                       const height = Math.max((toMinutes(entry.endTime) - toMinutes(entry.startTime)) * (HOUR_HEIGHT / 60), 28);
@@ -276,15 +375,18 @@ export function ScheduleGrid() {
             </div>
           </Card>
 
-          {/* Mobile fallback */}
+          {/* Mobile fallback -- today first, then the rest of the week */}
           <div className="space-y-4 sm:hidden">
-            {WEEK_DAYS.map((day) => {
+            {orderedDays.map((day) => {
               const dayEntries = entriesByDay.get(day.value) ?? [];
               if (dayEntries.length === 0) return null;
               return (
                 <div key={day.value}>
-                  <h2 className={cn('mb-2 text-sm font-semibold', day.value === today ? 'text-accent' : 'text-muted-foreground')}>
+                  <h2 className={cn('mb-2 flex items-center gap-2 text-sm font-semibold', day.value === today ? 'text-accent' : 'text-muted-foreground')}>
                     {day.label}
+                    {day.value === today && (
+                      <span className="rounded-full bg-accent/15 px-1.5 py-0.5 text-[10px] font-bold text-accent">اليوم</span>
+                    )}
                   </h2>
                   <div className="space-y-2">
                     {dayEntries.map((entry) => (
