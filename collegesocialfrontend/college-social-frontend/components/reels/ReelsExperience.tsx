@@ -1,7 +1,8 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Plus } from 'lucide-react';
+import { useRouter } from 'next/navigation';
+import { ChevronRight, Plus, Clapperboard } from 'lucide-react';
 import { api } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
 import type { Reel, ReelFeedPage } from '@/lib/types';
@@ -18,6 +19,7 @@ interface Props {
 
 export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 }: Props) {
   const { showToast } = useToast();
+  const router = useRouter();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [reels, setReels] = useState<Reel[]>(initialReels);
   const [page, setPage] = useState(initialPage);
@@ -71,6 +73,20 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
     };
   }, [reels.length, loadMore]);
 
+  // Immersive view: lock the page behind it from scrolling while reels is mounted.
+  useEffect(() => {
+    const prev = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+    return () => {
+      document.body.style.overflow = prev;
+    };
+  }, []);
+
+  function goBack() {
+    if (window.history.length > 1) router.back();
+    else router.push('/home');
+  }
+
   async function handleLike(reel: Reel) {
     patchReel(reel.id, {
       likedByMe: !reel.likedByMe,
@@ -123,11 +139,45 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
   }
 
   return (
-    <div className="relative h-full w-full bg-black">
+    <div className="fixed inset-0 z-50 bg-black text-white">
+      {/* Top overlay bar — back / brand / create. Sits above the slides, never pushes them. The
+          wrapper is click-through; only the buttons catch taps so the video stays tappable. */}
+      <header className="pointer-events-none absolute inset-x-0 top-0 z-40 flex items-center justify-between gap-2 bg-gradient-to-b from-black/55 to-transparent px-2 pb-6 pt-[max(0.5rem,env(safe-area-inset-top))]">
+        <button
+          onClick={goBack}
+          aria-label="رجوع"
+          className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full text-white/95 transition active:scale-90 hover:bg-white/10"
+        >
+          <ChevronRight className="h-6 w-6" />
+        </button>
+
+        <span className="select-none text-base font-extrabold tracking-tight drop-shadow">اكاديميا</span>
+
+        <button
+          onClick={() => setUploadOpen(true)}
+          aria-label="ريل جديد"
+          className="pointer-events-auto grid h-10 w-10 place-items-center rounded-full text-white/95 transition active:scale-90 hover:bg-white/10"
+        >
+          <Plus className="h-6 w-6" />
+        </button>
+      </header>
+
       {reels.length === 0 ? (
-        <div className="flex h-full flex-col items-center justify-center gap-3 px-8 text-center text-white/80">
-          <p className="text-lg font-semibold">لا توجد ريلز بعد</p>
-          <p className="text-sm">كن أول من ينشر ريل في اكاديميا.</p>
+        <div className="flex h-full flex-col items-center justify-center gap-4 px-10 text-center">
+          <div className="grid h-16 w-16 place-items-center rounded-2xl bg-white/10">
+            <Clapperboard className="h-8 w-8 text-white/80" />
+          </div>
+          <div className="space-y-1">
+            <p className="text-lg font-bold">لا توجد ريلز بعد</p>
+            <p className="text-sm text-white/60">كن أول من ينشر ريل في اكاديميا.</p>
+          </div>
+          <button
+            onClick={() => setUploadOpen(true)}
+            className="mt-1 flex items-center gap-2 rounded-full bg-white px-5 py-2.5 text-sm font-bold text-black transition active:scale-95"
+          >
+            <Plus className="h-4 w-4" />
+            أضِف ريل
+          </button>
         </div>
       ) : (
         <div
@@ -153,14 +203,6 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
           ))}
         </div>
       )}
-
-      <button
-        onClick={() => setUploadOpen(true)}
-        aria-label="ريل جديد"
-        className="absolute bottom-24 start-4 z-40 grid h-14 w-14 place-items-center rounded-full bg-accent text-white shadow-elev-4 active:scale-90 md:bottom-6"
-      >
-        <Plus className="h-7 w-7" />
-      </button>
 
       <ReelCommentsSheet
         reelId={commentsFor}

@@ -113,6 +113,8 @@ export function AiFab() {
   // The feed page embeds the assistant as a full chat box already at `lg:` and up, so the
   // floating bubble would just be a redundant shortcut to the same thing there.
   if (pathname === '/feed' && feedCardVisible) return null;
+  // Reels is a full-screen immersive takeover (see ReelsExperience) -- no floating chrome over it.
+  if (pathname === '/reels' || pathname.startsWith('/reels/')) return null;
 
   function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     const rect = btnRef.current!.getBoundingClientRect();

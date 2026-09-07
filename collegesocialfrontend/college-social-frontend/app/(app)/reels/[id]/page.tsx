@@ -29,18 +29,16 @@ export default function ReelDeepLinkPage() {
       .catch(() => setFailed(true));
   }, [id]);
 
+  if (reels) {
+    return <ReelsExperience initialReels={reels} initialHasMore={hasMore} initialPage={1} />;
+  }
+
   return (
-    <div className="relative min-h-0 flex-1 bg-black">
-      {reels ? (
-        <ReelsExperience initialReels={reels} initialHasMore={hasMore} initialPage={1} />
-      ) : failed ? (
-        <div className="flex h-full items-center justify-center px-8 text-center text-sm text-white/70">
-          هذا الريل غير متاح.
-        </div>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black px-8 text-center">
+      {failed ? (
+        <p className="text-sm text-white/70">هذا الريل غير متاح.</p>
       ) : (
-        <div className="flex h-full items-center justify-center">
-          <Spinner className="h-7 w-7 text-white" />
-        </div>
+        <Spinner className="h-7 w-7 text-white" />
       )}
     </div>
   );
