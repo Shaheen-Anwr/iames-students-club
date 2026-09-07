@@ -40,8 +40,9 @@ export class AuthService {
 
   async register(dto: RegisterDto, meta: RequestMeta) {
     const passwordHash = await bcrypt.hash(dto.password, SALT_ROUNDS);
-    // Email verification is admin-driven (see AdminController#verifyEmail), not a self-serve
-    // code -- new accounts just sit unverified until an admin reviews them from the dashboard.
+    // New accounts are auto-verified (UsersService.create) -- collegeEmail is already forced to the
+    // college domain and verification gates nothing. AdminController#verifyEmail stays only for the
+    // rare re-verify-after-email-change path.
     const user = await this.usersService.create({ ...dto, passwordHash });
     await this.gamificationService.recordActivity(user.id);
     if (dto.referralCode) await this.applyReferral(user, dto.referralCode);

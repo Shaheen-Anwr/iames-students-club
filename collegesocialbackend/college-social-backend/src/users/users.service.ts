@@ -290,6 +290,12 @@ export class UsersService {
       // grants the flag to another admin (see AdminService.updateSuperAdmin).
       isSuperAdmin: isFirstUser,
       department: data.department ?? null,
+      // Auto-verified on signup: collegeEmail is already forced to
+      // `${collegeId}${COLLEGE_EMAIL_DOMAIN}` by assertValidCollegeEmail() above, and
+      // `collegeEmailVerifiedAt` gates no feature -- the old "pending admin review" state was pure
+      // D0 friction with no security value. An admin can still re-verify from the users panel if a
+      // profile email change ever nulls this.
+      collegeEmailVerifiedAt: new Date(),
     });
     try {
       await user.save();
