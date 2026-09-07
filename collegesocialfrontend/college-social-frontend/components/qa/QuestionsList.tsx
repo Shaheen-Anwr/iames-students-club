@@ -6,6 +6,7 @@ import { HelpCircle, MessageCircle, Plus } from 'lucide-react';
 import { Spinner } from '@/components/ui/Spinner';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
+import { LoadError } from '@/components/ui/LoadError';
 import { useRawQuery } from '@/lib/query';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENT_LABELS } from '@/lib/departments';
@@ -23,10 +24,13 @@ export function QuestionsList({ groupId, canCreate = true }: { groupId?: string;
   const [modalOpen, setModalOpen] = useState(false);
 
   const path = groupId ? `/qa/group/${groupId}?limit=30` : `/qa?limit=30&scope=${scope}`;
-  const { data: questions = [], isPending: loading } = useRawQuery<Question[]>(
-    ['qa', groupId ?? 'feed', scope],
-    path,
-  );
+  const {
+    data: questions = [],
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+  } = useRawQuery<Question[]>(['qa', groupId ?? 'feed', scope], path);
 
   return (
     <div className="space-y-4">
@@ -67,6 +71,8 @@ export function QuestionsList({ groupId, canCreate = true }: { groupId?: string;
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : isError && questions.length === 0 ? (
+        <LoadError title="تعذّر تحميل الأسئلة" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : questions.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
           <HelpCircle className="h-8 w-8" />

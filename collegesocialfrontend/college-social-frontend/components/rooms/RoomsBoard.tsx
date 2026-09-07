@@ -8,6 +8,7 @@ import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { Input } from '@/components/ui/Input';
 import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
@@ -32,7 +33,13 @@ export function RoomsBoard() {
   const qc = useQueryClient();
   const [createOpen, setCreateOpen] = useState(false);
 
-  const { data: rooms = [], isPending: loading } = useApiQuery<'/rooms', StudyRoomListItem[]>('/rooms', {
+  const {
+    data: rooms = [],
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+  } = useApiQuery<'/rooms', StudyRoomListItem[]>('/rooms', {
     refetchInterval: 10_000,
   });
   const { data: mine } = useApiQuery<'/rooms/me', { roomStreak: number }>('/rooms/me', {
@@ -74,6 +81,8 @@ export function RoomsBoard() {
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : isError && rooms.length === 0 ? (
+        <LoadError title="تعذّر تحميل الغرف" onRetry={() => void refetch()} retrying={isRefetching} />
       ) : rooms.length === 0 ? (
         <EmptyState icon={Timer} title="لا غرف مفتوحة الآن" description="أنشئ غرفة أو جدول جلسة وادعُ زملاءك." />
       ) : (

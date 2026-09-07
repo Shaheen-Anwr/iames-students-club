@@ -5,7 +5,9 @@ import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Inbox } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { Button } from '@/components/ui/Button';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { SkeletonCard } from '@/components/ui/Skeleton';
 import { Spinner } from '@/components/ui/Spinner';
 import { useCursorInfiniteList } from '@/lib/query';
@@ -87,6 +89,9 @@ export function FeedList() {
   const {
     items: posts,
     isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
     hasNextPage,
     isFetchingNextPage,
     fetchNextPage,
@@ -210,6 +215,14 @@ export function FeedList() {
             <SkeletonCard key={i} />
           ))}
         </div>
+      ) : isError && posts.length === 0 ? (
+        <div className="rounded-2xl border border-dashed border-border bg-surface-2/40">
+          <LoadError
+            title="تعذّر تحميل المنشورات"
+            onRetry={() => void refetch()}
+            retrying={isRefetching}
+          />
+        </div>
       ) : posts.length === 0 ? (
         <div className="rounded-2xl border border-dashed border-border bg-surface-2/40">
           <EmptyState
@@ -227,7 +240,13 @@ export function FeedList() {
           ))}
           {hasNextPage && (
             <div ref={sentinelRef} className="flex justify-center py-4">
-              {isFetchingNextPage && <Spinner className="h-5 w-5" />}
+              {isFetchingNextPage ? (
+                <Spinner className="h-5 w-5" />
+              ) : isError ? (
+                <Button variant="ghost" size="sm" onClick={() => void fetchNextPage()}>
+                  تعذّر تحميل المزيد · إعادة المحاولة
+                </Button>
+              ) : null}
             </div>
           )}
         </>
