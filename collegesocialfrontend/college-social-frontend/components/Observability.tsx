@@ -26,9 +26,12 @@ export function Observability() {
     initObservability();
     // Page load -> React app interactive. Feeds PERF-BUDGET's "cold start -> app shell" line.
     measureSince('app:ready');
-    // Attribution: did this session arrive from a push we sent? (?src=digest|release|announcement)
+    // Attribution: did this session arrive from a push we sent? (?src=digest|classreminder|...)
     const src = new URLSearchParams(window.location.search).get('src');
-    if (src === 'digest') track(AnalyticsEvent.DigestOpened);
+    if (src) {
+      track(AnalyticsEvent.PushOpened, { src });
+      if (src === 'digest') track(AnalyticsEvent.DigestOpened);
+    }
   }, []);
 
   useEffect(() => {

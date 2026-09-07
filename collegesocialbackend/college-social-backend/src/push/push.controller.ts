@@ -25,9 +25,8 @@ export class PushController {
     return { success: true };
   }
 
-  // Notification preferences (currently just the morning digest opt-in). Kept here rather than
-  // on /users so it sits next to the subscribe/unsubscribe endpoints the settings card already
-  // talks to.
+  // Notification preferences (morning digest + class reminders). Kept here rather than on /users
+  // so it sits next to the subscribe/unsubscribe endpoints the settings card already talks to.
   @Get('preferences')
   getPreferences(@CurrentUser() user: AuthenticatedUser) {
     return this.pushService.getDigestPreference(user.userId);
@@ -35,6 +34,9 @@ export class PushController {
 
   @Patch('preferences')
   setPreferences(@Body() dto: UpdatePushPreferencesDto, @CurrentUser() user: AuthenticatedUser) {
-    return this.pushService.setDigestPreference(user.userId, dto.dailyDigest);
+    return this.pushService.setDigestPreference(user.userId, {
+      dailyDigest: dto.dailyDigest,
+      classReminders: dto.classReminders,
+    });
   }
 }
