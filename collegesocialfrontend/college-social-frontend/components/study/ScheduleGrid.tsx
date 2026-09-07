@@ -8,6 +8,7 @@ import { Modal } from '@/components/ui/Modal';
 import { Spinner } from '@/components/ui/Spinner';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import { cn } from '@/lib/utils';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departments';
 import { ACADEMIC_YEAR_LABELS, getAcademicYearsForDepartment, type AcademicYear } from '@/lib/academic-years';
@@ -57,6 +58,12 @@ export function ScheduleGrid() {
   const academicYearOptions = department ? getAcademicYearsForDepartment(department) : [];
   const specializationOptions = department ? SPECIALIZATIONS_BY_DEPARTMENT[department] : [];
   const groupChosen = department && academicYear && specialization;
+
+  // Leading "aha moment" hypothesis for a student app: seeing your real timetable in the first
+  // session predicts D7 retention. Fires once per view.
+  useEffect(() => {
+    track(AnalyticsEvent.ScheduleViewed, { role: user?.role ?? 'unknown' });
+  }, [user?.role]);
 
   function handleDepartmentChange(value: Department | '') {
     setDepartment(value);

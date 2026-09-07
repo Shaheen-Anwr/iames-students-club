@@ -11,6 +11,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { useCursorInfiniteList } from '@/lib/query';
 import { assetUrl } from '@/lib/utils';
 import { useAuth } from '@/lib/auth-context';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departments';
 import { ACADEMIC_YEARS, getAcademicYearsForDepartment, type AcademicYear } from '@/lib/academic-years';
 import { SPECIALIZATIONS, SPECIALIZATIONS_BY_DEPARTMENT, type Specialization } from '@/lib/specializations';
@@ -51,6 +52,11 @@ export function FeedList() {
   // feed tabs are now locked to it server-side. The "عام" شعبة dropdown only exists for a viewer
   // with no department (staff/admin), in which case fall back to whatever they picked there.
   const effectiveDepartment = viewerDepartment ?? (scope === 'public' ? department : '');
+
+  // Engagement signal: feed opened, and which tab. Re-fires when the scope tab changes.
+  useEffect(() => {
+    track(AnalyticsEvent.FeedViewed, { scope });
+  }, [scope]);
 
   // If the effective department changes (switching tabs, or narrowing the "عام" filter) and the
   // currently selected year/specialization no longer belongs to it, drop them rather than send a

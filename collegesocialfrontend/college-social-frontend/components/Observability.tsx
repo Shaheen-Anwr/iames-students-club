@@ -32,7 +32,17 @@ export function Observability() {
   }, [pathname]);
 
   useEffect(() => {
-    identifyUser(user ? { _id: user._id, role: user.role, department: user.department } : null);
+    identifyUser(
+      user
+        ? {
+            _id: user._id,
+            role: user.role,
+            department: user.department,
+            academicYear: user.academicYear,
+            verified: !!user.collegeEmailVerifiedAt,
+          }
+        : null,
+    );
   }, [user]);
 
   return null;

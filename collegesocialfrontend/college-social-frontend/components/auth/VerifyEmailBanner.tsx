@@ -1,14 +1,22 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { MailWarning, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 
 // Verification is admin-driven (see AdminPanel's users table) -- this just informs the student
 // their account is queued for review, with nothing for them to enter themselves.
 export function VerifyEmailBanner() {
   const { user } = useAuth();
   const [dismissed, setDismissed] = useState(false);
+
+  const pending = !!user && !user.collegeEmailVerifiedAt;
+  // Activation-blocker signal for the funnel: how many users sit in "account pending admin
+  // review", and does it correlate with D1 drop-off. Fires once per mount when the banner is live.
+  useEffect(() => {
+    if (pending) track(AnalyticsEvent.ActivationPendingShown);
+  }, [pending]);
 
   if (!user || user.collegeEmailVerifiedAt || dismissed) return null;
 

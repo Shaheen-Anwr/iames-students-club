@@ -7,6 +7,7 @@ import { Bell, MessageCircle, Users, MessageSquareText, Heart, HelpCircle, Share
 import { Avatar } from '@/components/ui/Avatar';
 import { useNotifications } from '@/lib/notifications-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { Notification } from '@/lib/types';
 
 export const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
@@ -104,6 +105,7 @@ export function NotificationBell() {
   function handleClick(notification: Notification) {
     setOpen(false);
     if (!notification.read) markRead(notification._id);
+    track(AnalyticsEvent.NotificationOpened, { type: notification.type, was_unread: !notification.read });
     router.push(notificationHref(notification));
   }
 

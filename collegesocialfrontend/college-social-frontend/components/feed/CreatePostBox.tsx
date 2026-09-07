@@ -29,6 +29,7 @@ import { DEPARTMENT_LABELS } from '@/lib/departments';
 import { ACADEMIC_YEAR_LABELS, getAcademicYearsForDepartment, type AcademicYear } from '@/lib/academic-years';
 import { SPECIALIZATIONS_BY_DEPARTMENT, SPECIALIZATION_LABELS, type Specialization } from '@/lib/specializations';
 import { assetUrl, cn, formatBytes } from '@/lib/utils';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 import type { Post, PostAttachmentType, PostScope, UploadResult } from '@/lib/types';
 
 // Confirmation copy per audience, shown once the post lands.
@@ -297,6 +298,11 @@ export function CreatePostBox({
         specialization: specialization || undefined,
       });
 
+      track(AnalyticsEvent.PostCreated, {
+        scope,
+        has_attachment: attachmentType !== 'none',
+        has_course: !!courseCode.trim(),
+      });
       onCreated(post);
       setCaption('');
       setCourseCode('');

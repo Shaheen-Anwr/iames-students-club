@@ -1,13 +1,19 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { Building2, X } from 'lucide-react';
 import { useAuth } from '@/lib/auth-context';
+import { AnalyticsEvent, track } from '@/lib/analytics';
 
 export function SetDepartmentBanner() {
   const { user } = useAuth();
   const [dismissed, setDismissed] = useState(false);
+
+  const needsDepartment = !!user && !user.department && user.role !== 'admin';
+  useEffect(() => {
+    if (needsDepartment) track(AnalyticsEvent.DepartmentPromptShown);
+  }, [needsDepartment]);
 
   if (!user || user.department || user.role === 'admin' || dismissed) return null;
 

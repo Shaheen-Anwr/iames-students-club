@@ -78,6 +78,16 @@ function loadPostHog() {
     person_profiles: 'identified_only',
     capture_pageview: false, // done manually on route change -- App Router has no full reloads
     autocapture: true,
+    // Session replay. Actual recording is still gated by the PostHog project setting, but this
+    // app carries private DMs + college emails, so lock masking down BEFORE it's ever turned on:
+    //  - every <input>/<textarea> value is masked
+    //  - anything tagged data-ph-mask (chat bubbles, email rows, ...) renders as blocks
+    //  - cross-origin iframes are never recorded
+    session_recording: {
+      maskAllInputs: true,
+      maskTextSelector: '[data-ph-mask]',
+      recordCrossOriginIframes: false,
+    },
   });
 }
 
@@ -158,14 +168,22 @@ export function measureSince(name: string, startMark?: string): number | undefin
 }
 
 export function identifyUser(
-  user: { _id: string; role?: string; department?: string | null } | null,
+  user:
+    | { _id: string; role?: string; department?: string | null; academicYear?: string | null; verified?: boolean }
+    | null,
 ) {
   if (!user) {
     window.posthog?.reset();
     window.Sentry?.setUser(null);
     return;
   }
-  window.posthog?.identify(user._id, { role: user.role, department: user.department });
+  // Person properties = the cohort dimensions for the retention curves (Phase 0). No PII.
+  window.posthog?.identify(user._id, {
+    role: user.role,
+    department: user.department ?? 'none',
+    academic_year: user.academicYear ?? 'none',
+    verified: !!user.verified,
+  });
   window.Sentry?.setUser({ id: user._id });
 }
 
