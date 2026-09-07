@@ -37,7 +37,7 @@ labels, contrast)?** Score `ok` / `minor` / `broken`, link issues below.
 | `/feed` | شعبة social feed | TBD | |
 | `/reels` | اكاديميا vertical video | ✅ redesigned (`afd0036`) — verify on device | |
 | `/chat`, `/chat/[id]` | DMs + group chat + calls | TBD | |
-| `/study/schedule` | Weekly timetable (aha candidate) | TBD | |
+| `/study/schedule` | Weekly timetable (aha candidate) | polish pass done | +"الآن / التالية" banner, live now-line on the grid, error state (`LoadError`), mobile list = today-first + "اليوم" chip. Remaining: skeleton (vs spinner), board-photo lightbox polish. |
 | `/notifications` | Activity feed | TBD | |
 | `/profile`, `/profile/[id]` | Own + others' profile | TBD | |
 
