@@ -22,6 +22,8 @@ import {
 import { Avatar } from '@/components/ui/Avatar';
 import { TaggedText } from '@/components/shared/TaggedText';
 import { assetUrl, cn, formatBytes, timeAgo } from '@/lib/utils';
+import { haptic } from '@/lib/haptics';
+import { useSwipeToReply } from '@/lib/use-swipe-to-reply';
 import { cldOptimize } from '@/lib/images';
 import { extractFirstUrl, tickStatus } from '@/lib/chat-helpers';
 import { fetchAttachmentBlob, ApiError } from '@/lib/api';
@@ -102,6 +104,10 @@ export function MessageBubble({
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const longPressTimer = useRef<NodeJS.Timeout | null>(null);
   const isLongPress = useRef(false);
+  const tapTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const swipeEnabled = !message.pending && !message.failed && !message.deletedForEveryone;
+  const { dx, swipeHandlers, progress } = useSwipeToReply(() => onReply(message), swipeEnabled);
 
   const attachments = message.attachments ?? [];
   const isStarred = message.starredBy?.includes(currentUserId);
@@ -173,6 +179,10 @@ export function MessageBubble({
       document.removeEventListener('keydown', onKeyDown);
     };
   }, [mobileActionsOpen]);
+
+  useEffect(() => () => {
+    if (tapTimer.current) clearTimeout(tapTimer.current);
+  }, []);
 
   if (message.deletedForEveryone) {
     return (
@@ -346,11 +356,29 @@ export function MessageBubble({
     setMobileActionsOpen(false);
   }
 
+  // Single tap opens the action sheet; a quick second tap reacts with a heart instead
+  // (the sheet-open is deferred just long enough to catch the double).
   function handleMessageClick() {
-    setReactionBarOpen(false);
-    setFullPickerOpen(false);
-    setMenuOpen(false);
-    setMobileActionsOpen(true);
+    if (isLongPress.current) {
+      isLongPress.current = false;
+      return;
+    }
+    if (tapTimer.current) {
+      clearTimeout(tapTimer.current);
+      tapTimer.current = null;
+      if (!message._id.startsWith('tmp_') && !message.deletedForEveryone) {
+        haptic('tap');
+        onReact(message, '❤️');
+      }
+      return;
+    }
+    tapTimer.current = setTimeout(() => {
+      tapTimer.current = null;
+      setReactionBarOpen(false);
+      setFullPickerOpen(false);
+      setMenuOpen(false);
+      setMobileActionsOpen(true);
+    }, 240);
   }
 
   // ---------- Long‑press handlers for images ----------
@@ -443,9 +471,28 @@ export function MessageBubble({
             </div>
           </div>
 
+          {/* Swipe-to-reply cue -- fades/scales in as the bubble is dragged */}
+          {dx !== 0 && (
+            <div
+              className="pointer-events-none absolute top-1/2 z-0 flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-full bg-accent/15 text-accent"
+              style={{
+                ...(isOwn ? { insetInlineEnd: -34 } : { insetInlineStart: -34 }),
+                opacity: progress,
+                transform: `translateY(-50%) scale(${0.6 + progress * 0.4})`,
+              }}
+            >
+              <Reply className="h-3.5 w-3.5" />
+            </div>
+          )}
+
           {/* Message content */}
           <div
             className="w-full min-w-0 cursor-pointer"
+            style={{
+              transform: dx ? `translateX(${dx}px)` : undefined,
+              transition: dx ? 'none' : 'transform 0.18s ease-out',
+            }}
+            {...swipeHandlers}
             onClick={handleMessageClick}
             role="button"
             tabIndex={0}
