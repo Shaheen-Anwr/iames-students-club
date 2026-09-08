@@ -7,7 +7,12 @@ import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
-import { CHAT_BACKGROUND_PRESETS, chatBackgroundStyle, type ChatBackground } from '@/lib/chat-background';
+import {
+  CHAT_ACCENTS,
+  CHAT_BACKGROUND_PRESETS,
+  chatBackgroundStyle,
+  type ChatBackground,
+} from '@/lib/chat-background';
 import type { UploadResult } from '@/lib/types';
 
 interface ChatBackgroundModalProps {
@@ -15,9 +20,18 @@ interface ChatBackgroundModalProps {
   onClose: () => void;
   background: ChatBackground | null;
   onChange: (bg: ChatBackground | null) => void;
+  accent: string | null;
+  onAccentChange: (id: string | null) => void;
 }
 
-export function ChatBackgroundModal({ open, onClose, background, onChange }: ChatBackgroundModalProps) {
+export function ChatBackgroundModal({
+  open,
+  onClose,
+  background,
+  onChange,
+  accent,
+  onAccentChange,
+}: ChatBackgroundModalProps) {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { showToast } = useToast();
   const [uploading, setUploading] = useState(false);
@@ -40,9 +54,37 @@ export function ChatBackgroundModal({ open, onClose, background, onChange }: Cha
   }
 
   return (
-    <Modal open={open} onClose={onClose} title="خلفية المحادثة">
+    <Modal open={open} onClose={onClose} title="مظهر المحادثة">
       <div className="space-y-4">
         <div>
+          <p className="mb-2 text-xs font-medium text-muted-foreground">اللون المميّز</p>
+          <div className="flex flex-wrap gap-2.5">
+            <button
+              onClick={() => onAccentChange(null)}
+              className="flex h-9 w-9 items-center justify-center rounded-full border-2 border-border bg-surface-2 text-muted-foreground"
+              title="اللون الافتراضي"
+            >
+              {accent ? <RotateCcw className="h-4 w-4" /> : <Check className="h-4 w-4 text-accent" />}
+            </button>
+            {CHAT_ACCENTS.map((a) => (
+              <button
+                key={a.id}
+                onClick={() => onAccentChange(a.id)}
+                title={a.label}
+                className="flex h-9 w-9 items-center justify-center rounded-full border-2 transition-transform hover:scale-110"
+                style={{
+                  background: `rgb(${a.accent})`,
+                  borderColor: accent === a.id ? `rgb(${a.accent})` : 'transparent',
+                  boxShadow: accent === a.id ? '0 0 0 2px rgb(var(--surface))' : undefined,
+                }}
+              >
+                {accent === a.id && <Check className="h-4 w-4 text-white" />}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        <div className="border-t border-border pt-4">
           <p className="mb-2 text-xs font-medium text-muted-foreground">خلفيات جاهزة للمذاكرة</p>
           <div className="grid grid-cols-3 gap-3">
             <button

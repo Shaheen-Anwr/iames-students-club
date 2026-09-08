@@ -48,6 +48,70 @@ export const CHAT_BACKGROUND_PRESETS: ChatBackgroundPreset[] = [
   },
 ];
 
+// --- per-chat accent -------------------------------------------------------------------------
+// A conversation can override the app accent (own bubbles, send button, pills, links). Values are
+// "r g b" triples so they slot straight into the --accent* CSS custom properties Tailwind reads.
+export interface ChatAccent {
+  id: string;
+  label: string;
+  accent: string; // --accent
+  from: string; // --accent-grad-from
+  to: string; // --accent-grad-to
+}
+
+export const CHAT_ACCENTS: ChatAccent[] = [
+  { id: 'teal', label: 'فيروزي', accent: '13 148 136', from: '20 184 166', to: '13 148 136' },
+  { id: 'rose', label: 'وردي', accent: '225 29 72', from: '244 63 94', to: '190 18 60' },
+  { id: 'amber', label: 'عنبري', accent: '217 119 6', from: '245 158 11', to: '180 83 9' },
+  { id: 'violet', label: 'بنفسجي', accent: '124 58 237', from: '139 92 246', to: '109 40 217' },
+  { id: 'emerald', label: 'أخضر', accent: '5 150 105', from: '16 185 129', to: '4 120 87' },
+  { id: 'graphite', label: 'رمادي', accent: '71 85 105', from: '100 116 139', to: '51 65 85' },
+];
+
+export function chatAccentVars(id: string | null): React.CSSProperties {
+  const a = id ? CHAT_ACCENTS.find((x) => x.id === id) : null;
+  if (!a) return {};
+  return {
+    '--accent': a.accent,
+    '--accent-grad-from': a.from,
+    '--accent-grad-to': a.to,
+  } as React.CSSProperties;
+}
+
+const ACCENT_KEY = 'chatAccents';
+
+export function useChatAccent(conversationId: string) {
+  const [accent, setAccentState] = useState<string | null>(null);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(ACCENT_KEY);
+      const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+      setAccentState(map[conversationId] ?? null);
+    } catch {
+      setAccentState(null);
+    }
+  }, [conversationId]);
+
+  const setAccent = useCallback(
+    (id: string | null) => {
+      try {
+        const raw = localStorage.getItem(ACCENT_KEY);
+        const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+        if (id) map[conversationId] = id;
+        else delete map[conversationId];
+        localStorage.setItem(ACCENT_KEY, JSON.stringify(map));
+      } catch {
+        /* private mode */
+      }
+      setAccentState(id);
+    },
+    [conversationId],
+  );
+
+  return { accent, setAccent };
+}
+
 const STORAGE_KEY = 'chatBackgrounds';
 
 function readAll(): Record<string, ChatBackground> {

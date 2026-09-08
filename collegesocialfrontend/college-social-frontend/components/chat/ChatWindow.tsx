@@ -30,7 +30,7 @@ import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/
 import { assetUrl, cn } from '@/lib/utils';
 import { buildChatRows } from '@/lib/chat-grouping';
 import { AnalyticsEvent, track } from '@/lib/analytics';
-import { chatBackgroundStyle, useChatBackground } from '@/lib/chat-background';
+import { chatAccentVars, chatBackgroundStyle, useChatAccent, useChatBackground } from '@/lib/chat-background';
 import {
   adoptServerId,
   decryptToInner,
@@ -99,6 +99,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // Optimistic sends: temp id -> "mark as failed" timer, cleared when the server echoes back.
   const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
   const { background, setBackground } = useChatBackground(conversationId);
+  const { accent, setAccent } = useChatAccent(conversationId);
 
   // ========== ULTRA BRUTE‑FORCE PHOTO CORRECTION ==========
   const correctSenderPhoto = (msg: Message, conv: Conversation): Message => {
@@ -815,7 +816,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   // ========== RENDER ==========
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface">
+    <div className="flex h-full min-h-0 flex-col bg-surface" style={chatAccentVars(accent)}>
       {/* Header */}
       <div className="border-b border-border bg-surface">
       <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-2 py-3.5 sm:gap-3 sm:px-4">
@@ -1095,6 +1096,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         onClose={() => setBackgroundModalOpen(false)}
         background={background}
         onChange={setBackground}
+        accent={accent}
+        onAccentChange={setAccent}
       />
       {conversation && (
         <GroupInfoPanel
