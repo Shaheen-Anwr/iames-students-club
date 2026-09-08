@@ -11,9 +11,10 @@
 //   msgcache  -- messageId -> { conversationId, text, k, ts }    decrypted-plaintext cache
 //                (the ratchet deletes message keys after first use, so a reload can't re-derive
 //                 them -- we keep the cleartext locally so history still renders on this device)
+//   verify    -- peerId -> { identityKey, verified, seenAt }      safety-number verification state
 
 const DB_NAME = 'iaems-e2ee';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let dbp: Promise<IDBDatabase> | null = null;
 function db(): Promise<IDBDatabase> {
@@ -26,6 +27,7 @@ function db(): Promise<IDBDatabase> {
       if (!d.objectStoreNames.contains('prekeys')) d.createObjectStore('prekeys', { keyPath: 'keyId' });
       if (!d.objectStoreNames.contains('sessions')) d.createObjectStore('sessions', { keyPath: 'conversationId' });
       if (!d.objectStoreNames.contains('msgcache')) d.createObjectStore('msgcache', { keyPath: 'messageId' });
+      if (!d.objectStoreNames.contains('verify')) d.createObjectStore('verify', { keyPath: 'peerId' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -133,15 +135,30 @@ export async function renamePlaintext(fromId: string, toId: string): Promise<voi
   await tx('msgcache', 'readwrite', (s) => s.delete(fromId)).catch(() => undefined);
 }
 
+// --- safety-number verification ---------------------------------------------------------------
+export interface VerifyRecord {
+  peerId: string;
+  identityKey: string; // the peer identity key (b64 SPKI) this verdict is bound to
+  verified: boolean;
+  seenAt: number;
+}
+export function getVerification(peerId: string): Promise<VerifyRecord | undefined> {
+  return tx<VerifyRecord | undefined>('verify', 'readonly', (s) => s.get(peerId)).catch(() => undefined);
+}
+export function putVerification(rec: Omit<VerifyRecord, 'seenAt'>): Promise<unknown> {
+  return tx('verify', 'readwrite', (s) => s.put({ ...rec, seenAt: Date.now() })).catch(() => undefined);
+}
+
 /** Nuke everything -- used on logout / "reset encryption on this device". */
 export async function wipeE2ee(): Promise<void> {
   const d = await db();
   await new Promise<void>((resolve, reject) => {
-    const t = d.transaction(['meta', 'prekeys', 'sessions', 'msgcache'], 'readwrite');
+    const t = d.transaction(['meta', 'prekeys', 'sessions', 'msgcache', 'verify'], 'readwrite');
     t.objectStore('meta').clear();
     t.objectStore('prekeys').clear();
     t.objectStore('sessions').clear();
     t.objectStore('msgcache').clear();
+    t.objectStore('verify').clear();
     t.oncomplete = () => resolve();
     t.onerror = () => reject(t.error);
   });
