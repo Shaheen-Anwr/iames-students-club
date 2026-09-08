@@ -8,9 +8,12 @@
 //                { key: 'spk',      id, priv (CryptoKey), pub (b64), createdAt }
 //   prekeys   -- keyId -> { priv (CryptoKey), pub (b64) }        one-time prekey privates
 //   sessions  -- conversationId -> serialized Double Ratchet state (see ratchet.ts)
+//   msgcache  -- messageId -> { conversationId, text, k, ts }    decrypted-plaintext cache
+//                (the ratchet deletes message keys after first use, so a reload can't re-derive
+//                 them -- we keep the cleartext locally so history still renders on this device)
 
 const DB_NAME = 'iaems-e2ee';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 let dbp: Promise<IDBDatabase> | null = null;
 function db(): Promise<IDBDatabase> {
@@ -22,6 +25,7 @@ function db(): Promise<IDBDatabase> {
       if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta', { keyPath: 'key' });
       if (!d.objectStoreNames.contains('prekeys')) d.createObjectStore('prekeys', { keyPath: 'keyId' });
       if (!d.objectStoreNames.contains('sessions')) d.createObjectStore('sessions', { keyPath: 'conversationId' });
+      if (!d.objectStoreNames.contains('msgcache')) d.createObjectStore('msgcache', { keyPath: 'messageId' });
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -105,14 +109,39 @@ export function deleteSession(conversationId: string): Promise<unknown> {
   return tx('sessions', 'readwrite', (s) => s.delete(conversationId));
 }
 
+// --- decrypted-plaintext cache -------------------------------------------------------------------
+export interface PlaintextRecord {
+  messageId: string;
+  conversationId: string;
+  text: string;
+  k: string; // inner envelope kind ('text' | 'media' | ...) -- future-proofs the cache
+  ts: number;
+}
+export function putPlaintext(rec: Omit<PlaintextRecord, 'ts'>): Promise<unknown> {
+  return tx('msgcache', 'readwrite', (s) => s.put({ ...rec, ts: Date.now() })).catch(() => undefined);
+}
+export function getPlaintext(messageId: string): Promise<PlaintextRecord | undefined> {
+  return tx<PlaintextRecord | undefined>('msgcache', 'readonly', (s) => s.get(messageId)).catch(
+    () => undefined,
+  );
+}
+/** Re-key a cache entry once the server hands us the permanent message id (optimistic send). */
+export async function renamePlaintext(fromId: string, toId: string): Promise<void> {
+  const rec = await getPlaintext(fromId);
+  if (!rec) return;
+  await putPlaintext({ messageId: toId, conversationId: rec.conversationId, text: rec.text, k: rec.k });
+  await tx('msgcache', 'readwrite', (s) => s.delete(fromId)).catch(() => undefined);
+}
+
 /** Nuke everything -- used on logout / "reset encryption on this device". */
 export async function wipeE2ee(): Promise<void> {
   const d = await db();
   await new Promise<void>((resolve, reject) => {
-    const t = d.transaction(['meta', 'prekeys', 'sessions'], 'readwrite');
+    const t = d.transaction(['meta', 'prekeys', 'sessions', 'msgcache'], 'readwrite');
     t.objectStore('meta').clear();
     t.objectStore('prekeys').clear();
     t.objectStore('sessions').clear();
+    t.objectStore('msgcache').clear();
     t.oncomplete = () => resolve();
     t.onerror = () => reject(t.error);
   });

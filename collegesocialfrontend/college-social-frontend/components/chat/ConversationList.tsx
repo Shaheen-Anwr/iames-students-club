@@ -3,7 +3,7 @@
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
-import { Archive, BellOff, MessageSquarePlus, Pin, Search, Star, Users, UsersRound } from 'lucide-react';
+import { Archive, BellOff, Lock, MessageSquarePlus, Pin, Search, Star, Users, UsersRound } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadError } from '@/components/ui/LoadError';
@@ -246,6 +246,9 @@ export function ConversationList() {
                       <p className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold text-foreground">
                         {pinnedFlag && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
                         <span className="truncate">{title}</span>
+                        {conversation.e2ee && (
+                          <Lock className="h-3 w-3 shrink-0 text-emerald-500" aria-label="مشفّرة" />
+                        )}
                         {conversation.visibility === 'public' && (
                           <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">
                             عامة

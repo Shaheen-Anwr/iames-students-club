@@ -9,6 +9,7 @@ import {
   FileText,
   Forward,
   Loader2,
+  Lock,
   Pencil,
   Reply,
   RotateCw,
@@ -96,7 +97,11 @@ export function MessageBubble({
   const attachments = message.attachments ?? [];
   const isStarred = message.starredBy?.includes(currentUserId);
   const status = tickStatus(message, conversation, currentUserId);
-  const previewUrl = extractFirstUrl(message.text);
+  // No server round-trip for link previews on an encrypted message -- it would hand the server a
+  // URL from content it otherwise can't see.
+  const previewUrl = message.encrypted ? null : extractFirstUrl(message.text);
+  // Still-decrypting vs. gave-up. `decrypted === undefined` = the worker hasn't reached it yet.
+  const decrypting = !!message.encrypted && !message.decryptFailed && message.decrypted === undefined && !message.text;
 
   // A document attachment that was too large for a single Cloudinary asset (chunkCount > 1, see
   // StorageService.upload()'s chunked path) only has its FIRST piece at `attachment.url` -- opening
@@ -228,7 +233,7 @@ export function MessageBubble({
     },
   ];
 
-  if (isOwn && message.text) {
+  if (isOwn && message.text && !message.encrypted) {
     desktopMenuItems.push({
       key: 'edit',
       label: 'تعديل',
@@ -285,7 +290,7 @@ export function MessageBubble({
     },
   ];
 
-  if (isOwn && message.text) {
+  if (isOwn && message.text && !message.encrypted) {
     mobileMenuItems.push({
       key: 'edit',
       label: 'تعديل',
@@ -320,6 +325,10 @@ export function MessageBubble({
       onDelete(message, false);
     },
   });
+
+  // Forwarding an encrypted message would re-send its (server-blank) body -- drop that action.
+  const visibleMenu = (items: MessageMenuItem[]) =>
+    message.encrypted ? items.filter((i) => i.key !== 'forward') : items;
 
   function closeMobileActions() {
     setMobileActionsOpen(false);
@@ -415,7 +424,7 @@ export function MessageBubble({
               <MessageMenu
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
-                items={desktopMenuItems}
+                items={visibleMenu(desktopMenuItems)}
                 align={isOwn ? 'end' : 'start'}
                 anchorRef={menuButtonRef}
               />
@@ -458,7 +467,11 @@ export function MessageBubble({
                   {message.replyTo.deletedForEveryone
                     ? 'تم حذف هذه الرسالة'
                     : message.replyTo.text ||
-                      (message.replyTo.attachments?.length ? 'مرفق' : '')}
+                      (message.replyTo.encrypted
+                        ? '🔒 رسالة مشفّرة'
+                        : message.replyTo.attachments?.length
+                          ? 'مرفق'
+                          : '')}
                 </p>
               </button>
             )}
@@ -564,17 +577,29 @@ export function MessageBubble({
               );
             })}
 
-            {message.text && (
-              <div
-                className={cn(
-                  'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
-                  isOwn
-                    ? 'rounded-bl-md bg-gradient-accent text-white shadow-soft'
-                    : 'rounded-br-md bg-surface-2/70 text-foreground',
-                )}
-              >
-                <TaggedText text={message.text} />
+            {message.decryptFailed ? (
+              <div className="flex items-center gap-2 rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
+                <Lock className="h-3.5 w-3.5 shrink-0" />
+                تعذّر فك تشفير هذه الرسالة على هذا الجهاز
               </div>
+            ) : decrypting ? (
+              <div className="flex items-center gap-2 rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
+                <Lock className="h-3.5 w-3.5 shrink-0 animate-pulse" />
+                جارٍ فك التشفير…
+              </div>
+            ) : (
+              message.text && (
+                <div
+                  className={cn(
+                    'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
+                    isOwn
+                      ? 'rounded-bl-md bg-gradient-accent text-white shadow-soft'
+                      : 'rounded-br-md bg-surface-2/70 text-foreground',
+                  )}
+                >
+                  <TaggedText text={message.text} />
+                </div>
+              )
             )}
 
             {previewUrl && !attachments.length && (
@@ -608,6 +633,7 @@ export function MessageBubble({
             )}
 
             <span className="mt-1 flex items-center gap-1 px-1 text-xs text-muted-foreground">
+              {message.encrypted && <Lock className="h-3 w-3 shrink-0 opacity-70" />}
               {message.edited && <span className="italic">مُعدَّلة ·</span>}
               {timeAgo(message.createdAt)}
               {isOwn && message.failed ? (
@@ -725,7 +751,7 @@ export function MessageBubble({
               </button>
             </div>
             <div className="space-y-1">
-              {mobileMenuItems.map((item) => (
+              {visibleMenu(mobileMenuItems).map((item) => (
                 <button
                   key={item.key}
                   type="button"
