@@ -46,7 +46,6 @@ import { EventsModule } from './events/events.module';
 import { MarketplaceModule } from './marketplace/marketplace.module';
 import { RoomsModule } from './rooms/rooms.module';
 import { StreamModule } from './stream/stream.module';
-import { E2eeModule } from './e2ee/e2ee.module';
 import { AppController } from './app.controller';
 
 @Module({
@@ -116,7 +115,6 @@ import { AppController } from './app.controller';
     MarketplaceModule,
     RoomsModule,
     StreamModule,
-    E2eeModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
 })

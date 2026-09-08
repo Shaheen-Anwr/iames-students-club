@@ -702,10 +702,6 @@ export interface Conversation {
   mutedBy?: MutedEntry[];
   disappearingSeconds?: number;
   unreadCount?: number;
-  // End-to-end encrypted 1:1 conversation (docs/e2ee-design.md). Sticky once set. When true the
-  // client encrypts every outbound message and decrypts inbound ones locally; the server only
-  // ever sees `Message.payload` (opaque ciphertext).
-  e2ee?: boolean;
 }
 
 export type AttachmentType = 'image' | 'video' | 'audio' | 'voice' | 'document';
@@ -734,7 +730,6 @@ export interface ReplyPreview {
   attachments?: Attachment[];
   attachmentUrl?: string | null;
   deletedForEveryone?: boolean;
-  encrypted?: boolean;
 }
 
 export interface Message {
@@ -743,29 +738,6 @@ export interface Message {
   // null when the sender's account has since been deleted.
   sender: User | null;
   text: string;
-  // End-to-end encrypted message (docs/e2ee-design.md). When `encrypted` is true, `text` is ''
-  // server-side and `payload` holds the opaque WireEnvelope JSON; the client decrypts it locally.
-  encrypted?: boolean;
-  payload?: string | null;
-  /** Encrypted control carrier (reaction/edit/delete) -- applied client-side, never rendered. */
-  control?: boolean;
-  /** Client-only: plaintext recovered by decrypting `payload` (or a marker when that failed). */
-  decrypted?: string | null;
-  /** Client-only: set when `payload` could not be decrypted on this device. */
-  decryptFailed?: boolean;
-  /** Client-only: the decrypted `{ k: 'media' }` descriptor for an encrypted attachment. */
-  media?: {
-    kind: 'image' | 'voice' | 'file';
-    url: string;
-    mk: string;
-    iv: string;
-    name?: string;
-    mime?: string;
-    size?: number;
-    dur?: number;
-  } | null;
-  /** Client-only: object URL for an encrypted attachment whose bytes were sent from this device. */
-  localMediaUrl?: string | null;
   /** @deprecated use `attachments` */
   attachmentUrl?: string | null;
   attachments?: Attachment[];

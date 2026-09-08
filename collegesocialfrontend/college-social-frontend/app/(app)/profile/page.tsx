@@ -9,7 +9,6 @@ import { ChangePasswordForm } from '@/components/profile/ChangePasswordForm';
 import { PersonalEmailForm } from '@/components/profile/PersonalEmailForm';
 import { PushNotificationsToggle } from '@/components/profile/PushNotificationsToggle';
 import { NotificationSettings } from '@/components/profile/NotificationSettings';
-import { EncryptionSettings } from '@/components/profile/EncryptionSettings';
 import { CustomizeHomeCard } from '@/components/profile/CustomizeHomeCard';
 import { ProfileFriendsTab } from '@/components/profile/ProfileFriendsTab';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
@@ -67,7 +66,6 @@ export default function ProfilePage() {
             <SettingsSection title="الحساب والأمان">
               <PersonalEmailForm />
               <ChangePasswordForm />
-              <EncryptionSettings />
             </SettingsSection>
             <Button
               variant="outline"

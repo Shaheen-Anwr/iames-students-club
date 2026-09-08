@@ -9,7 +9,6 @@ import {
   FileText,
   Forward,
   Loader2,
-  Lock,
   Pencil,
   Reply,
   RotateCw,
@@ -32,7 +31,6 @@ import { useToast } from '@/lib/toast-context';
 import type { Conversation, Message } from '@/lib/types';
 
 import { EmojiPicker, QuickReactionBar } from './EmojiPicker';
-import { EncryptedMedia } from './EncryptedMedia';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { MessageMenu, type MessageMenuItem } from './MessageMenu';
 import { VoiceMessagePlayer } from './VoiceMessagePlayer';
@@ -112,11 +110,7 @@ export function MessageBubble({
   const attachments = message.attachments ?? [];
   const isStarred = message.starredBy?.includes(currentUserId);
   const status = tickStatus(message, conversation, currentUserId);
-  // No server round-trip for link previews on an encrypted message -- it would hand the server a
-  // URL from content it otherwise can't see.
-  const previewUrl = message.encrypted ? null : extractFirstUrl(message.text);
-  // Still-decrypting vs. gave-up. `decrypted === undefined` = the worker hasn't reached it yet.
-  const decrypting = !!message.encrypted && !message.decryptFailed && message.decrypted === undefined && !message.text;
+  const previewUrl = extractFirstUrl(message.text);
 
   // A document attachment that was too large for a single Cloudinary asset (chunkCount > 1, see
   // StorageService.upload()'s chunked path) only has its FIRST piece at `attachment.url` -- opening
@@ -345,13 +339,6 @@ export function MessageBubble({
     },
   });
 
-  // An encrypted attachment can't be forwarded in v1 (no re-upload path); encrypted text is
-  // re-encrypted into each destination by ChatWindow.
-  const visibleMenu = (items: MessageMenuItem[]) =>
-    message.encrypted && (message.media || message.localMediaUrl)
-      ? items.filter((i) => i.key !== 'forward')
-      : items;
-
   function closeMobileActions() {
     setMobileActionsOpen(false);
   }
@@ -464,7 +451,7 @@ export function MessageBubble({
               <MessageMenu
                 open={menuOpen}
                 onClose={() => setMenuOpen(false)}
-                items={visibleMenu(desktopMenuItems)}
+                items={desktopMenuItems}
                 align={isOwn ? 'end' : 'start'}
                 anchorRef={menuButtonRef}
               />
@@ -532,11 +519,7 @@ export function MessageBubble({
                   {message.replyTo.deletedForEveryone
                     ? 'تم حذف هذه الرسالة'
                     : message.replyTo.text ||
-                      (message.replyTo.encrypted
-                        ? '🔒 رسالة مشفّرة'
-                        : message.replyTo.attachments?.length
-                          ? 'مرفق'
-                          : '')}
+                      (message.replyTo.attachments?.length ? 'مرفق' : '')}
                 </p>
               </button>
             )}
@@ -642,37 +625,21 @@ export function MessageBubble({
               );
             })}
 
-            {(message.media || message.localMediaUrl) && !message.decryptFailed && (
-              <EncryptedMedia message={message} isOwn={isOwn} onImageClick={onImageClick} />
-            )}
-
-            {message.decryptFailed ? (
-              <div className="flex items-center gap-2 rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
-                <Lock className="h-3.5 w-3.5 shrink-0" />
-                تعذّر فك تشفير هذه الرسالة على هذا الجهاز
+            {message.text && (
+              <div
+                className={cn(
+                  'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
+                  isOwn
+                    ? 'bg-gradient-accent text-white shadow-soft'
+                    : 'bg-surface-2/70 text-foreground',
+                  // Tail notch only on the last bubble of a cluster; tighten the inner corner
+                  // on continuation bubbles so a cluster reads as one shape.
+                  lastInGroup && (isOwn ? 'rounded-bl-md' : 'rounded-br-md'),
+                  !firstInGroup && (isOwn ? 'rounded-tl-md' : 'rounded-tr-md'),
+                )}
+              >
+                <TaggedText text={message.text} />
               </div>
-            ) : message.media || message.localMediaUrl ? null : decrypting ? (
-              <div className="flex items-center gap-2 rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
-                <Lock className="h-3.5 w-3.5 shrink-0 animate-pulse" />
-                جارٍ فك التشفير…
-              </div>
-            ) : (
-              message.text && (
-                <div
-                  className={cn(
-                    'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
-                    isOwn
-                      ? 'bg-gradient-accent text-white shadow-soft'
-                      : 'bg-surface-2/70 text-foreground',
-                    // Tail notch only on the last bubble of a cluster; tighten the inner corner
-                    // on continuation bubbles so a cluster reads as one shape.
-                    lastInGroup && (isOwn ? 'rounded-bl-md' : 'rounded-br-md'),
-                    !firstInGroup && (isOwn ? 'rounded-tl-md' : 'rounded-tr-md'),
-                  )}
-                >
-                  <TaggedText text={message.text} />
-                </div>
-              )
             )}
 
             {previewUrl && !attachments.length && (
@@ -707,7 +674,6 @@ export function MessageBubble({
 
             {(lastInGroup || message.edited || (isOwn && (message.pending || message.failed))) && (
               <span className="mt-1 flex items-center gap-1 px-1 text-xs text-muted-foreground">
-                {message.encrypted && <Lock className="h-3 w-3 shrink-0 opacity-70" />}
                 {message.edited && <span className="italic">مُعدَّلة ·</span>}
                 {timeAgo(message.createdAt)}
                 {isOwn && message.failed ? (
@@ -826,7 +792,7 @@ export function MessageBubble({
               </button>
             </div>
             <div className="space-y-1">
-              {visibleMenu(mobileMenuItems).map((item) => (
+              {mobileMenuItems.map((item) => (
                 <button
                   key={item.key}
                   type="button"

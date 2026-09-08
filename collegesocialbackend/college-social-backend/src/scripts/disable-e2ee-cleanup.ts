@@ -1,16 +1,15 @@
 /**
- * One-off cleanup after shelving chat end-to-end encryption (2026-09-08).
+ * One-off cleanup after removing chat end-to-end encryption (2026-09-08).
  *
  * While E2EE was briefly live in production, some messages were stored as opaque ciphertext
  * (`encrypted: true`, blank `text`, undecryptable `payload`) and their conversations were flipped
- * to the sticky `e2ee: true`. With the feature turned off those messages can never be read by
- * anyone (the keys only ever lived in the two browsers), and the sticky flag keeps the client
- * trying to encrypt. This script:
+ * to the sticky `e2ee: true`. Those fields are gone from the schema now, so this script talks to
+ * the raw collections. It:
  *
- *   1. deletes every `encrypted: true` message (ciphertext + control carriers)
- *   2. clears `Conversation.e2ee` everywhere, and repairs `lastMessage*` on any conversation
- *      whose last message was one of the deleted ones
- *   3. clears the published key material (`User.e2ee`, `User.e2eeBackup`, the E2eePreKey pool)
+ *   1. deletes every `{ encrypted: true }` message (ciphertext + control carriers)
+ *   2. repairs `lastMessage*` on any conversation whose last message was one of the deleted ones,
+ *      and `$unset`s `e2ee` from every conversation
+ *   3. `$unset`s `e2ee` / `e2eeBackup` from every user and drops the `e2eeprekeys` collection
  *
  * Build first (`npm run build`), then:
  *   node dist/scripts/disable-e2ee-cleanup.js --dry-run
@@ -19,35 +18,32 @@
  * Needs the same env as the server: MONGODB_URI.
  */
 import { NestFactory } from '@nestjs/core';
-import { getModelToken } from '@nestjs/mongoose';
-import type { Model, Types } from 'mongoose';
+import { getConnectionToken } from '@nestjs/mongoose';
+import type { Connection } from 'mongoose';
 import { AppModule } from '../app.module';
-import { Conversation } from '../chat/schemas/conversation.schema';
-import { Message } from '../chat/schemas/message.schema';
-import { User } from '../users/schemas/user.schema';
-import { E2eePreKey } from '../e2ee/schemas/e2ee-prekey.schema';
 
 async function main() {
   const dryRun = process.argv.includes('--dry-run');
   const app = await NestFactory.createApplicationContext(AppModule, { logger: ['error', 'warn'] });
+  const db = app.get<Connection>(getConnectionToken()).db;
+  if (!db) throw new Error('no db handle');
 
-  const conversationModel = app.get<Model<Conversation>>(getModelToken(Conversation.name));
-  const messageModel = app.get<Model<Message>>(getModelToken(Message.name));
-  const userModel = app.get<Model<User>>(getModelToken(User.name));
-  const preKeyModel = app.get<Model<E2eePreKey>>(getModelToken(E2eePreKey.name));
+  const messages = db.collection('messages');
+  const conversations = db.collection('conversations');
+  const users = db.collection('users');
 
-  const encryptedCount = await messageModel.countDocuments({ encrypted: true }).exec();
-  const e2eeConvCount = await conversationModel.countDocuments({ e2ee: true }).exec();
-  const keyedUsers = await userModel.countDocuments({ e2ee: { $ne: null } }).exec();
-  const backupUsers = await userModel.countDocuments({ e2eeBackup: { $ne: null } }).exec();
-  const preKeys = await preKeyModel.countDocuments({}).exec();
+  const encryptedCount = await messages.countDocuments({ encrypted: true });
+  const e2eeConvCount = await conversations.countDocuments({ e2ee: { $exists: true } });
+  const keyedUsers = await users.countDocuments({ $or: [{ e2ee: { $ne: null } }, { e2eeBackup: { $ne: null } }] });
+  const preKeys = (await db.listCollections({ name: 'e2eeprekeys' }).toArray()).length
+    ? await db.collection('e2eeprekeys').countDocuments({})
+    : 0;
 
   console.log('--- to clean up ---');
-  console.log(`  encrypted messages:      ${encryptedCount}`);
-  console.log(`  e2ee conversations:      ${e2eeConvCount}`);
-  console.log(`  users with a key bundle: ${keyedUsers}`);
-  console.log(`  users with a backup:     ${backupUsers}`);
-  console.log(`  one-time prekeys:        ${preKeys}`);
+  console.log(`  encrypted messages:            ${encryptedCount}`);
+  console.log(`  conversations with e2ee field: ${e2eeConvCount}`);
+  console.log(`  users with key material:       ${keyedUsers}`);
+  console.log(`  one-time prekeys:              ${preKeys}`);
 
   if (dryRun) {
     console.log('\n(dry run -- nothing written)');
@@ -55,59 +51,49 @@ async function main() {
     return;
   }
 
-  // 1. which conversations held an encrypted message, and their newest surviving message
-  const affected = (await messageModel.distinct('conversation', { encrypted: true }).exec()) as Types.ObjectId[];
-
-  const del = await messageModel.deleteMany({ encrypted: true }).exec();
+  const affected = (await messages.distinct('conversation', { encrypted: true })) as unknown[];
+  const del = await messages.deleteMany({ encrypted: true });
   console.log(`\ndeleted ${del.deletedCount} encrypted messages`);
 
   let repaired = 0;
   for (const convId of affected) {
-    const last = (await messageModel
-      .findOne({ conversation: convId, deletedForEveryone: { $ne: true } })
+    const last = await messages
+      .find({ conversation: convId, deletedForEveryone: { $ne: true } })
       .sort({ createdAt: -1 })
-      .select('_id text attachments createdAt')
-      .lean()
-      .exec()) as
-      | { _id: Types.ObjectId; text?: string; attachments?: unknown[]; createdAt?: Date }
-      | null;
-    if (last) {
-      const preview = last.text?.slice(0, 120) || (last.attachments?.length ? 'مرفق' : '');
-      await conversationModel
-        .updateOne(
-          { _id: convId },
-          {
-            $set: {
-              e2ee: false,
-              lastMessageId: last._id,
-              lastMessageAt: last.createdAt ?? new Date(),
-              lastMessagePreview: preview,
-            },
-          },
-        )
-        .exec();
+      .limit(1)
+      .toArray();
+    const m = last[0];
+    if (m) {
+      const preview: string =
+        (typeof m.text === 'string' && m.text.slice(0, 120)) ||
+        (Array.isArray(m.attachments) && m.attachments.length ? 'مرفق' : '');
+      await conversations.updateOne(
+        { _id: convId as never },
+        { $set: { lastMessageId: m._id, lastMessageAt: m.createdAt ?? new Date(), lastMessagePreview: preview }, $unset: { e2ee: '' } },
+      );
     } else {
-      await conversationModel
-        .updateOne(
-          { _id: convId },
-          { $set: { e2ee: false, lastMessageId: null, lastMessageAt: null, lastMessagePreview: null } },
-        )
-        .exec();
+      await conversations.updateOne(
+        { _id: convId as never },
+        { $set: { lastMessageId: null, lastMessageAt: null, lastMessagePreview: null }, $unset: { e2ee: '' } },
+      );
     }
     repaired++;
   }
-  console.log(`repaired lastMessage* on ${repaired} conversations`);
+  console.log(`repaired + unset e2ee on ${repaired} conversations`);
 
-  const convRes = await conversationModel.updateMany({ e2ee: true }, { $set: { e2ee: false } }).exec();
-  console.log(`cleared e2ee flag on ${convRes.modifiedCount} more conversations`);
+  const convRes = await conversations.updateMany({ e2ee: { $exists: true } }, { $unset: { e2ee: '' } });
+  console.log(`unset e2ee on ${convRes.modifiedCount} more conversations`);
 
-  const userRes = await userModel
-    .updateMany({ $or: [{ e2ee: { $ne: null } }, { e2eeBackup: { $ne: null } }] }, { $set: { e2ee: null, e2eeBackup: null } })
-    .exec();
-  console.log(`cleared key material on ${userRes.modifiedCount} users`);
+  const userRes = await users.updateMany(
+    { $or: [{ e2ee: { $exists: true } }, { e2eeBackup: { $exists: true } }] },
+    { $unset: { e2ee: '', e2eeBackup: '' } },
+  );
+  console.log(`unset key material on ${userRes.modifiedCount} users`);
 
-  const pkRes = await preKeyModel.deleteMany({}).exec();
-  console.log(`deleted ${pkRes.deletedCount} one-time prekeys`);
+  if ((await db.listCollections({ name: 'e2eeprekeys' }).toArray()).length) {
+    await db.collection('e2eeprekeys').drop();
+    console.log('dropped e2eeprekeys collection');
+  }
 
   console.log('\ndone.');
   await app.close();

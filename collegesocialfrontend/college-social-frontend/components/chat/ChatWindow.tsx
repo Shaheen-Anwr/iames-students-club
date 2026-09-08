@@ -5,14 +5,11 @@ import Link from 'next/link';
 import {
   ArrowDown,
   ArrowRight,
-  AlertTriangle,
   Image as ImageIcon,
-  Lock,
   MessageCircle,
   MoreVertical,
   Phone,
   Search,
-  ShieldCheck,
   ShieldOff,
   Video,
   X,
@@ -31,25 +28,11 @@ import { assetUrl, cn } from '@/lib/utils';
 import { buildChatRows } from '@/lib/chat-grouping';
 import { AnalyticsEvent, track } from '@/lib/analytics';
 import { chatAccentVars, chatBackgroundStyle, useChatAccent, useChatBackground } from '@/lib/chat-background';
-import {
-  adoptServerId,
-  decryptToInner,
-  encryptInner,
-  encryptText,
-  isE2eeAvailable,
-  isE2eeEnabledOnThisDevice,
-  reconcilePeerIdentity,
-  rememberInner,
-  rememberOutgoing,
-  type MediaInner,
-} from '@/lib/e2ee';
-import { applyEncryptedInner, toggleReactionLocal } from './apply-encrypted-inner';
 import type { Attachment, Message, User, Conversation } from '@/lib/types';
 import { useChat } from './ChatProvider';
 import { useCall } from './CallProvider';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
-import { EncryptionNote } from './EncryptionNote';
 import { DayDivider, UnreadDivider } from './DayDivider';
 import { ForwardModal } from './ForwardModal';
 import { GroupInfoPanel } from './GroupInfoPanel';
@@ -69,11 +52,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  // Server's verdict on whether this 1:1 is end-to-end encrypted (flag on + both sides have keys).
-  // OR'd with the sticky conversation.e2ee flag below.
-  const [e2eeRemote, setE2eeRemote] = useState(false);
-  // Peer identity-key state for verification: has it changed since we last saw it, is it verified.
-  const [peerIdentity, setPeerIdentity] = useState<{ changed: boolean; verified: boolean } | null>(null);
   const [typing, setTyping] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
@@ -124,102 +102,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     conversationRef.current = conversation;
   }, [conversation]);
-
-  // ========== E2EE ==========
-  // The other participant of this 1:1 (null for groups / not-yet-loaded).
-  const peerId =
-    conversation && !conversation.isGroup
-      ? conversation.participants.find((p) => p && p._id !== user?._id)?._id ?? null
-      : null;
-  const deviceE2eeEnabled = isE2eeEnabledOnThisDevice();
-  // This conversation should be encrypted: sticky flag from the server, or both sides currently
-  // have key bundles. Groups are never encrypted (v1). Gated on `deviceE2eeEnabled` (which is
-  // false whenever the feature flag is off) so a stale sticky `conversation.e2ee` in the DB can't
-  // re-activate the encrypted UI after the flag has been switched off -- the thread just behaves
-  // as a normal plaintext chat again.
-  const e2eeActive = deviceE2eeEnabled && (!!conversation?.e2ee || e2eeRemote) && !!peerId;
-  // Only meaningful while the feature is live but the user opted out on THIS device.
-  const e2eeLockedOut =
-    isE2eeAvailable() && !deviceE2eeEnabled && (!!conversation?.e2ee || e2eeRemote) && !!peerId;
-  const peerIdRef = useRef<string | null>(null);
-  useEffect(() => {
-    peerIdRef.current = peerId;
-  }, [peerId]);
-
-  // Ask the server whether this conversation is (or can be) encrypted. 404 / disabled -> stays false.
-  useEffect(() => {
-    let cancelled = false;
-    setE2eeRemote(false);
-    api
-      .get<{ enabled: boolean }>(`/chat/conversations/${conversationId}/e2ee`)
-      .then((r) => {
-        if (!cancelled) setE2eeRemote(!!r?.enabled);
-      })
-      .catch(() => {
-        /* flag off, not a DM, or no access -- leave it unencrypted */
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId]);
-
-  // Track the peer's published identity key -> surface a warning if it changed (new device, or a
-  // man in the middle) and remember whether the user has verified the safety number.
-  useEffect(() => {
-    setPeerIdentity(null);
-    if (!e2eeActive || !peerId || !deviceE2eeEnabled) return;
-    let cancelled = false;
-    void reconcilePeerIdentity(peerId)
-      .then((s) => {
-        if (!cancelled) setPeerIdentity({ changed: s.changed, verified: s.verified });
-      })
-      .catch(() => undefined);
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, e2eeActive, peerId, deviceE2eeEnabled]);
-
-  // Decrypt encrypted messages as they show up (cache-first). Runs oldest -> newest so the very
-  // first message, which carries the X3DH handshake header, bootstraps the session before the
-  // rest. A generation counter abandons in-flight work when the user switches conversations;
-  // `decryptSeen` makes re-runs (triggered by our own setMessages) cheap no-ops.
-  const decryptSeen = useRef<Set<string>>(new Set());
-  const decryptGen = useRef(0);
-  useEffect(() => {
-    decryptSeen.current = new Set();
-    decryptGen.current += 1;
-  }, [conversationId]);
-  useEffect(() => {
-    if (!deviceE2eeEnabled) return;
-    const gen = decryptGen.current;
-    const todo = messages.filter(
-      (m) => m.encrypted && m.payload && !m.decrypted && !m.decryptFailed && !decryptSeen.current.has(m._id),
-    );
-    if (!todo.length) return;
-    todo.forEach((m) => decryptSeen.current.add(m._id));
-    void (async () => {
-      for (const m of todo) {
-        // Our own outbound messages can't be ratchet-decrypted -- read them from cache only.
-        const mine = m.sender?._id === user?._id;
-        const { inner, failed } = await decryptToInner(m, mine);
-        if (decryptGen.current !== gen) return;
-        const senderId = m.sender?._id ?? '';
-        const senderName = m.sender?.name ?? '';
-        setMessages((prev) => applyEncryptedInner(prev, m._id, senderId, senderName, inner, failed));
-      }
-    })();
-  }, [messages, deviceE2eeEnabled, user?._id]);
-
-  // E2EE off on this device (feature flag off, or opted out): don't leave old encrypted messages
-  // spinning on "decrypting…" forever -- flag them so the bubble shows a static placeholder.
-  useEffect(() => {
-    if (deviceE2eeEnabled) return;
-    setMessages((prev) =>
-      prev.some((m) => m.encrypted && !m.decrypted && !m.decryptFailed)
-        ? prev.map((m) => (m.encrypted && !m.decrypted && !m.decryptFailed ? { ...m, decryptFailed: true } : m))
-        : prev,
-    );
-  }, [messages, deviceE2eeEnabled]);
 
   // ========== LOAD MESSAGES ==========
   // Depends on conversationId ONLY. It used to also depend on `conversation`, so every presence
@@ -289,29 +171,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           next = prev.filter((m) => {
             if (dropped || !m.pending) return true;
             const match =
-              // An encrypted echo carries no plaintext -- pair it with the first pending
-              // encrypted placeholder instead of matching on text. Control carriers
-              // (reaction/edit/delete) are never optimistic bubbles, so exclude them.
-              (corrected.encrypted && !corrected.control && m.encrypted) ||
-              (!!corrected.text && m.text === corrected.text) ||
-              (!corrected.text && !corrected.encrypted && (m.attachments?.length ?? 0) > 0);
+              m.text === corrected.text ||
+              (!corrected.text && (m.attachments?.length ?? 0) > 0);
             if (!match) return true;
             dropped = true;
             const t = pendingTimers.current.get(m._id);
             if (t) clearTimeout(t);
             pendingTimers.current.delete(m._id);
-            // Carry the cleartext / media descriptor (and its local cache entry) onto the
-            // permanent id so the bubble keeps its content and a reload can still read it.
-            if (corrected.encrypted) {
-              corrected.text = m.text;
-              corrected.decrypted = m.decrypted ?? m.text;
-              if (m.media) {
-                corrected.media = m.media;
-                corrected.localMediaUrl = m.localMediaUrl;
-              }
-              decryptSeen.current.add(corrected._id);
-              adoptServerId(m._id, corrected._id);
-            }
             return false;
           });
         }
@@ -439,10 +305,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     if (loading || searchOpen) return;
 
-    // Count only visible messages -- an encrypted control carrier must not trigger a scroll/pill.
-    const visible = messages.filter((m) => !m.control);
     const prev = prevCountRef.current;
-    prevCountRef.current = visible.length;
+    prevCountRef.current = messages.length;
 
     // First paint of a thread -> jump straight to the newest message, no animation.
     if (!didInitialScroll.current) {
@@ -451,10 +315,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       return;
     }
 
-    const added = visible.length - prev;
+    const added = messages.length - prev;
     if (added <= 0) return; // edit / reaction / delete / read-receipt -- not a new message
 
-    const lastFromMe = visible[visible.length - 1]?.sender?._id === user?._id;
+    const lastFromMe = messages[messages.length - 1]?.sender?._id === user?._id;
     if (lastFromMe || atBottom) {
       scrollToBottom('smooth');
     } else {
@@ -523,45 +387,21 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     );
   }
 
-  // Encrypt `text` for the peer and emit it as an opaque payload. The optimistic bubble keeps the
-  // real cleartext locally; only ciphertext ever leaves the browser.
-  async function emitEncrypted(text: string, replyTo: string | undefined, tempId: string) {
-    const peer = peerIdRef.current;
-    if (!socket || !peer) {
-      markFailed(tempId);
-      return;
-    }
-    try {
-      const payload = await encryptText(conversationId, peer, text);
-      rememberOutgoing(tempId, conversationId, text);
-      socket.emit('sendMessage', { conversationId, encrypted: true, payload, replyTo });
-      socket.emit('stopTyping', conversationId);
-      trackSend(false);
-      armFailTimer(tempId);
-    } catch {
-      markFailed(tempId);
-    }
-  }
-
   function handleSend(text: string, attachments?: Attachment[], replyTo?: string) {
     if (!socket || !user) return;
     const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-    const encrypting = e2eeActive && !attachments?.length;
     const optimistic: Message = {
       _id: tempId,
       conversation: conversationId,
       sender: user,
       text,
       attachments,
-      encrypted: encrypting,
-      decrypted: encrypting ? text : undefined,
       readBy: [],
       createdAt: new Date().toISOString(),
       pending: true,
     };
     setMessages((prev) => [...prev, optimistic]);
-    if (encrypting) void emitEncrypted(text, replyTo, tempId);
-    else emitSend({ text, attachments, replyTo }, tempId);
+    emitSend({ text, attachments, replyTo }, tempId);
   }
 
   function handleRetry(message: Message) {
@@ -569,86 +409,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     setMessages((prev) =>
       prev.map((m) => (m._id === message._id ? { ...m, failed: false, pending: true } : m)),
     );
-    if (message.encrypted && message.media) void emitEncryptedMedia(message.media, undefined, message._id);
-    else if (message.encrypted) void emitEncrypted(message.text, undefined, message._id);
-    else emitSend({ text: message.text, attachments: message.attachments }, message._id);
-  }
-
-  // An encrypted reaction/edit/delete: a normal encrypted message flagged `control` so the server
-  // stores + relays it (offline delivery, reload replay) but doesn't preview or notify for it.
-  // We can't decrypt our own outbound ratchet message on reload, so cache the cleartext against
-  // the server id (from the emit ack) -- that's what lets the reaction/edit replay after refresh.
-  async function emitControl(inner: Parameters<typeof encryptInner>[2]): Promise<boolean> {
-    const peer = peerIdRef.current;
-    if (!socket || !peer) return false;
-    try {
-      const payload = await encryptInner(conversationId, peer, inner);
-      socket.emit(
-        'sendMessage',
-        { conversationId, encrypted: true, payload, control: inner.k !== 'media' },
-        (ack?: { messageId?: string }) => {
-          if (ack?.messageId) {
-            decryptSeen.current.add(ack.messageId);
-            rememberInner(ack.messageId, conversationId, inner);
-          }
-        },
-      );
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  // Encrypt an already-uploaded ciphertext attachment's descriptor and send it as a media message.
-  async function emitEncryptedMedia(
-    media: NonNullable<Message['media']>,
-    replyTo: string | undefined,
-    tempId: string,
-  ) {
-    const peer = peerIdRef.current;
-    if (!socket || !peer) {
-      markFailed(tempId);
-      return;
-    }
-    const inner: MediaInner = { k: 'media', ...media };
-    try {
-      const payload = await encryptInner(conversationId, peer, inner);
-      rememberInner(tempId, conversationId, inner);
-      socket.emit('sendMessage', { conversationId, encrypted: true, payload, replyTo });
-      socket.emit('stopTyping', conversationId);
-      trackSend(true);
-      armFailTimer(tempId);
-    } catch {
-      markFailed(tempId);
-    }
-  }
-
-  // Called by MessageInput after it has encrypted + uploaded the ciphertext blob(s).
-  function handleSendEncryptedMedia(
-    drafts: (MediaInner & { localUrl: string })[],
-    replyTo?: string,
-  ) {
-    if (!socket || !user) return;
-    for (const draft of drafts) {
-      const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
-      const { localUrl, ...media } = draft;
-      const optimistic: Message = {
-        _id: tempId,
-        conversation: conversationId,
-        sender: user,
-        text: '',
-        encrypted: true,
-        media,
-        localMediaUrl: localUrl,
-        decrypted: '​',
-        readBy: [],
-        createdAt: new Date().toISOString(),
-        pending: true,
-      };
-      setMessages((prev) => [...prev, optimistic]);
-      decryptSeen.current.add(tempId);
-      void emitEncryptedMedia(media, replyTo, tempId);
-    }
+    emitSend({ text: message.text, attachments: message.attachments }, message._id);
   }
 
   function handleTyping() {
@@ -664,55 +425,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   function handleReact(message: Message, emoji: string) {
     if (isPlaceholder(message._id)) return;
-    if (e2eeActive && user) {
-      const mine = (message.reactions ?? []).some(
-        (r) => (typeof r.user === 'string' ? r.user : r.user._id) === user._id && r.emoji === emoji,
-      );
-      const op: 'add' | 'remove' = mine ? 'remove' : 'add';
-      setMessages((prev) =>
-        prev.map((m) =>
-          m._id === message._id
-            ? { ...m, reactions: toggleReactionLocal(m.reactions, user._id, user.name, emoji, op) }
-            : m,
-        ),
-      );
-      void emitControl({ k: 'reaction', target: message._id, emoji, op }).then((ok) => {
-        if (ok) return;
-        // revert
-        setMessages((prev) =>
-          prev.map((m) =>
-            m._id === message._id
-              ? {
-                  ...m,
-                  reactions: toggleReactionLocal(
-                    m.reactions,
-                    user._id,
-                    user.name,
-                    emoji,
-                    op === 'add' ? 'remove' : 'add',
-                  ),
-                }
-              : m,
-          ),
-        );
-      });
-      return;
-    }
     socket?.emit('reactToMessage', { messageId: message._id, emoji });
   }
 
   function handleSubmitEdit(messageId: string, text: string) {
     if (isPlaceholder(messageId)) return;
-    const target = messages.find((m) => m._id === messageId);
-    if (e2eeActive && target?.encrypted) {
-      setMessages((prev) =>
-        prev.map((m) => (m._id === messageId ? { ...m, text, decrypted: text, edited: true } : m)),
-      );
-      rememberInner(messageId, conversationId, { k: 'text', body: text });
-      void emitControl({ k: 'edit', target: messageId, body: text });
-      setEditingMessage(null);
-      return;
-    }
     socket?.emit('editMessage', { messageId, text });
     setEditingMessage(null);
   }
@@ -726,49 +443,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       setMessages((prev) => prev.filter((m) => m._id !== message._id));
       return;
     }
-    // "Delete for everyone" on an encrypted message goes out as a control message; "delete for me"
-    // stays on the plain path (server-side it only touches `deletedFor`, no content leak).
-    if (e2eeActive && message.encrypted && forEveryone) {
-      setMessages((prev) =>
-        prev.map((m) => (m._id === message._id ? { ...m, deletedForEveryone: true } : m)),
-      );
-      void emitControl({ k: 'delete', target: message._id });
-      return;
-    }
     socket?.emit('deleteMessage', { messageId: message._id, forEveryone });
   }
 
   async function handleForwardConfirm(conversationIds: string[]) {
-    if (!forwardTarget || !user) return;
-    const src = forwardTarget;
+    if (!forwardTarget) return;
+    socket?.emit('forwardMessage', { messageId: forwardTarget._id, conversationIds });
     setForwardTarget(null);
-
-    // Into an encrypted destination (or from an encrypted source) we can't use the server-side
-    // forward -- re-encrypt the local cleartext for each destination's peer instead.
-    const plainForwardIds: string[] = [];
-    for (const cid of conversationIds) {
-      const dest = findConversation(cid);
-      const destEncrypted = !!dest?.e2ee || src.encrypted;
-      if (!destEncrypted) {
-        plainForwardIds.push(cid);
-        continue;
-      }
-      const body = src.encrypted ? src.decrypted || src.text : src.text;
-      const peer =
-        dest && !dest.isGroup
-          ? dest.participants.find((p) => p && p._id !== user._id)?._id
-          : null;
-      if (!body || !peer) continue; // media / group dest / peer without keys -- skip
-      try {
-        const payload = await encryptText(cid, peer, body);
-        socket?.emit('sendMessage', { conversationId: cid, encrypted: true, payload });
-      } catch {
-        /* destination peer hasn't enabled E2EE -- silently skip that one */
-      }
-    }
-    if (plainForwardIds.length) {
-      socket?.emit('forwardMessage', { messageId: src._id, conversationIds: plainForwardIds });
-    }
   }
 
   async function handleToggleStar(message: Message) {
@@ -804,10 +485,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   if (!user) return null;
 
-  // Encrypted control carriers (reaction/edit/delete) live in `messages` for replay + dedup but
-  // are never drawn as bubbles.
-  const visibleMessages = messages.filter((m) => !m.control);
-
   // Capture the unread count once per conversation (first render where `conversation` is known).
   if (conversation && unreadAtOpenRef.current.id !== conversationId) {
     unreadAtOpenRef.current = { id: conversationId, count: conversation.unreadCount ?? 0 };
@@ -816,13 +493,13 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     const cnt = unreadAtOpenRef.current.id === conversationId ? unreadAtOpenRef.current.count : 0;
     if (!cnt) return null;
     let seen = 0;
-    for (let i = visibleMessages.length - 1; i >= 0; i--) {
-      if (visibleMessages[i].sender?._id === user._id) continue;
-      if (++seen === cnt) return visibleMessages[i]._id;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].sender?._id === user._id) continue;
+      if (++seen === cnt) return messages[i]._id;
     }
     return null;
   })();
-  const chatRows = buildChatRows(visibleMessages, user._id, !!conversation?.isGroup, firstUnreadId);
+  const chatRows = buildChatRows(messages, user._id, !!conversation?.isGroup, firstUnreadId);
 
   const title = conversation ? conversationTitle(conversation, user._id) : 'جارٍ التحميل…';
   const avatarUser = conversation ? conversationAvatarUser(conversation, user._id) : undefined;
@@ -845,15 +522,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         <button onClick={() => setInfoOpen(true)} className="flex min-w-0 flex-1 items-center gap-2 text-start sm:gap-3">
           <Avatar src={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)} name={title} size="sm" />
           <div className="min-w-0 flex-1">
-            <p dir="auto" className="flex items-center gap-1 truncate text-sm font-semibold text-foreground">
-              <span className="truncate">{title}</span>
-              {e2eeActive && (
-                <Lock className="h-3 w-3 shrink-0 text-emerald-500" aria-label="محادثة مشفّرة من طرف إلى طرف" />
-              )}
-              {e2eeActive && peerIdentity?.verified && (
-                <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-500" aria-label="موثّق" />
-              )}
-            </p>
+            <p dir="auto" className="truncate text-sm font-semibold text-foreground">{title}</p>
             <p className="truncate text-xs text-muted-foreground">
               {typing ? (
                 <span className="animate-fade-in text-accent">يكتب الآن…</span>
@@ -983,25 +652,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         {/* Cap the thread to a comfortable reading width and centre it, so bubbles don't stretch
             edge-to-edge (and own-messages don't hug the far side) on a wide conversation pane. */}
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
-        {!loading && conversation && e2eeActive && !e2eeLockedOut && <EncryptionNote />}
-        {!loading && conversation && e2eeActive && !e2eeLockedOut && peerIdentity?.changed && (
-          <button
-            onClick={() => setInfoOpen(true)}
-            className="mx-auto my-2 flex max-w-sm items-start gap-2 rounded-xl bg-amber-500/10 px-3.5 py-2.5 text-start text-[12.5px] leading-relaxed text-amber-900 hover:bg-amber-500/15 dark:text-amber-200"
-          >
-            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <span>تغيّر رمز الأمان في هذه المحادثة. اضغط للتحقق قبل إرسال معلومات حسّاسة.</span>
-          </button>
-        )}
-        {!loading && conversation && e2eeLockedOut && (
-          <div className="mx-auto my-3 flex max-w-sm items-start gap-2 rounded-xl bg-danger/10 px-3.5 py-2.5 text-center text-[12.5px] leading-relaxed text-danger">
-            <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />
-            <p>
-              التشفير معطّل على هذا الجهاز، فلا يمكن عرض هذه المحادثة المشفّرة أو الرد عليها. فعّله من
-              الإعدادات ثم أعد فتح المحادثة.
-            </p>
-          </div>
-        )}
         {loadError && messages.length === 0 ? (
           <div className="flex flex-1 items-center justify-center">
             <LoadError title="تعذّر تحميل الرسائل" onRetry={() => setReloadKey((k) => k + 1)} />
@@ -1010,7 +660,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           <div className="flex flex-1 items-center justify-center">
             <Spinner className="h-6 w-6" />
           </div>
-        ) : visibleMessages.length === 0 ? (
+        ) : messages.length === 0 ? (
           <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2/70">
               <MessageCircle className="h-6 w-6 text-muted-foreground" />
@@ -1083,20 +733,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </button>
           </div>
         </div>
-      ) : e2eeLockedOut ? (
-        <div className="border-t border-border bg-surface">
-          <div className="mx-auto flex w-full max-w-3xl items-center justify-center gap-2 px-4 py-3.5 text-center text-sm text-muted-foreground">
-            <Lock className="h-4 w-4 shrink-0" />
-            التشفير معطّل على هذا الجهاز.
-          </div>
-        </div>
       ) : (
         <MessageInput
           onSend={handleSend}
-          onEncryptedMedia={handleSendEncryptedMedia}
           onTyping={handleTyping}
           onStopTyping={handleStopTyping}
-          encrypted={e2eeActive}
           replyingTo={replyingTo}
           onCancelReply={() => setReplyingTo(null)}
           editingMessage={editingMessage}
