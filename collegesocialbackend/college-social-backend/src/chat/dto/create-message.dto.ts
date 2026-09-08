@@ -1,4 +1,14 @@
-import { IsArray, IsIn, IsMongoId, IsNumber, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  IsArray,
+  IsBoolean,
+  IsIn,
+  IsMongoId,
+  IsNumber,
+  IsOptional,
+  IsString,
+  MaxLength,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 
 export class AttachmentDto {
@@ -48,4 +58,16 @@ export class CreateMessageDto {
   @IsOptional()
   @IsMongoId()
   replyTo?: string;
+
+  // End-to-end encrypted message (see docs/e2ee-design.md). When `encrypted` is true, `payload`
+  // is the opaque WireEnvelope JSON and `text`/`attachments` are ignored -- the server stores and
+  // relays `payload` verbatim without parsing it.
+  @IsOptional()
+  @IsBoolean()
+  encrypted?: boolean;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(20000)
+  payload?: string;
 }

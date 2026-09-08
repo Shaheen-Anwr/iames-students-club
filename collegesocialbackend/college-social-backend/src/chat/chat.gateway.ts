@@ -255,12 +255,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (this.rateLimited(client, 'sendMessage', 25, 10_000)) {
       throw new WsException('أنت ترسل الرسائل بسرعة كبيرة. تمهّل قليلاً.');
     }
+    if (dto.encrypted && !dto.payload) {
+      throw new WsException('رسالة مشفّرة بلا محتوى.');
+    }
     const message = await this.chatService.saveMessage(
       dto.conversationId,
       client.data.userId,
       dto.text ?? '',
       dto.attachments,
       dto.replyTo,
+      dto.encrypted && dto.payload ? { payload: dto.payload } : undefined,
     );
 
     // Broadcast to everyone in the room, including the sender (so all their tabs update)

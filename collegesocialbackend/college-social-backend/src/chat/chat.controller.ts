@@ -81,6 +81,13 @@ export class ChatController {
     return this.chatService.getSharedMedia(id, user.userId);
   }
 
+  // Whether this 1:1 conversation is (or can be) end-to-end encrypted -- the client checks this
+  // before it starts encrypting outbound messages. See docs/e2ee-design.md.
+  @Get('conversations/:id/e2ee')
+  async getE2eeStatus(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.chatService.e2eeStatusForConversation(id, user.userId);
+  }
+
   @Patch('conversations/:id')
   async updateConversation(
     @Param('id') id: string,

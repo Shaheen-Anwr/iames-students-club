@@ -7,6 +7,7 @@ import { Message, MessageDocument } from './schemas/message.schema';
 import { CreateConversationDto } from './dto/create-conversation.dto';
 import { AttachmentDto } from './dto/create-message.dto';
 import { UpdateConversationDto } from './dto/update-conversation.dto';
+import { ConfigService } from '@nestjs/config';
 import { NotificationsService } from '../notifications/notifications.service';
 import {
   DailyCount,
@@ -53,7 +54,24 @@ export class ChatService {
     private readonly usersService: UsersService,
     private readonly realtimeEmitter: RealtimeEmitterService,
     private readonly storageService: StorageService,
+    private readonly config: ConfigService,
   ) {}
+
+  // Whether this DM should use end-to-end encryption: the feature flag is on, it's a 1:1, and both
+  // participants have published a key bundle (or it's already been marked e2ee, which is sticky).
+  async e2eeStatusForConversation(conversationId: string, userId: string): Promise<{ enabled: boolean }> {
+    if (!this.config.get<boolean>('e2eeEnabled')) return { enabled: false };
+    const conv = await this.assertParticipant(conversationId, userId);
+    if (conv.isGroup) return { enabled: false };
+    if (conv.e2ee) return { enabled: true };
+    const otherId = conv.participants.find((p) => p.toString() !== userId)?.toString();
+    if (!otherId) return { enabled: false };
+    const [mine, theirs] = await Promise.all([
+      this.usersService.hasE2eeKeys(userId),
+      this.usersService.hasE2eeKeys(otherId),
+    ]);
+    return { enabled: mine && theirs };
+  }
 
   async createConversation(creatorId: string, dto: CreateConversationDto): Promise<ConversationDocument> {
     const participantIds = Array.from(new Set([creatorId, ...dto.participantIds]));
@@ -254,10 +272,14 @@ export class ChatService {
     text: string,
     attachments: AttachmentDto[] | undefined,
     replyTo: string | undefined,
+    e2ee?: { payload: string },
   ): Promise<MessageDocument> {
     const conversation = await this.assertCanAccessConversation(conversationId, senderId);
-    if (!text?.trim() && !attachments?.length) {
+    if (!e2ee && !text?.trim() && !attachments?.length) {
       throw new BadRequestException('لا يمكن إرسال رسالة فارغة');
+    }
+    if (e2ee && conversation.isGroup) {
+      throw new BadRequestException('التشفير من طرف إلى طرف متاح للمحادثات الفردية فقط.');
     }
 
     if (!conversation.isGroup) {
@@ -267,25 +289,35 @@ export class ChatService {
       }
     }
 
+    // Encrypted messages carry nothing the server can index: no text, no attachments, no mentions.
     // A mention only counts if that user is actually a participant of this conversation --
     // otherwise it's a stale/tampered token and gets silently dropped, same as an invalid user id.
     const participantIds = new Set(conversation.participants.map((p) => p.toString()));
-    const candidateMentionIds = extractMentionIds(text ?? '').filter((id) => id !== senderId && participantIds.has(id));
+    const candidateMentionIds = e2ee
+      ? []
+      : extractMentionIds(text ?? '').filter((id) => id !== senderId && participantIds.has(id));
     const validMentionIds = await this.usersService.findExistingIds(candidateMentionIds);
     const mentions = validMentionIds.map((id) => new Types.ObjectId(id));
 
     const message = await new this.messageModel({
       conversation: new Types.ObjectId(conversationId),
       sender: new Types.ObjectId(senderId),
-      text: text ?? '',
-      attachments: attachments ?? [],
+      text: e2ee ? '' : (text ?? ''),
+      encrypted: !!e2ee,
+      payload: e2ee ? e2ee.payload : null,
+      attachments: e2ee ? [] : (attachments ?? []),
       replyTo: replyTo ? new Types.ObjectId(replyTo) : null,
       readBy: [new Types.ObjectId(senderId)],
       deliveredTo: [new Types.ObjectId(senderId)],
       mentions,
     }).save();
 
-    const previewText = text?.slice(0, 120) || this.attachmentPreview(attachments);
+    // First encrypted message sticks the conversation to E2EE -- never downgrades.
+    if (e2ee && !conversation.e2ee) {
+      await this.conversationModel.updateOne({ _id: conversation._id }, { $set: { e2ee: true } }).exec();
+    }
+
+    const previewText = e2ee ? '🔒 رسالة' : text?.slice(0, 120) || this.attachmentPreview(attachments);
     // A new message "revives" the conversation for anyone who had deleted it -- same behavior
     // as most chat apps, where deleting only hides it until the next incoming message.
     await this.conversationModel
