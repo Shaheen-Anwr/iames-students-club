@@ -40,7 +40,7 @@ const MESSAGE_POPULATE = [
   { path: 'reactions.user', select: 'name' },
   {
     path: 'replyTo',
-    select: 'text sender attachments deletedForEveryone',
+    select: 'text sender attachments deletedForEveryone encrypted',
     populate: { path: 'sender', select: 'name' },
   },
 ];

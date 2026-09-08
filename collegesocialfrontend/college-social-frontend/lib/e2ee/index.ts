@@ -4,12 +4,15 @@
 //   P0  backend key registry (src/e2ee/)                    -- done
 //   P1  device keygen + IndexedDB store + bundle publish    -- done
 //   P2  X3DH + Double Ratchet (x3dh.ts / ratchet.ts)        -- done (verified via selftest.ts)
-//   P3  wire into ChatWindow / MessageInput / MessageBubble -- pending
+//   P3a session bridge (session-core.ts / session.ts)       -- done (verified via selftest.ts)
+//   P3b wire into ChatWindow / MessageBubble / list         -- done (chat.ts seam + plaintext cache)
 //   P4  safety-number verification + key-change warnings    -- pending
 
 export { e2eeSupported, b64, unb64 } from './crypto';
 export {
   isE2eeAvailable,
+  isE2eeEnabledOnThisDevice,
+  setE2eeEnabledOnThisDevice,
   ensureDeviceRegistered,
   replenishPreKeysIfLow,
   fetchStatus,
@@ -35,4 +38,11 @@ export {
   type DRHeader,
 } from './envelope';
 export { e2eeSession, createSessionManager, type SessionManager } from './session';
+export {
+  encryptText,
+  decryptMessage,
+  rememberOutgoing,
+  adoptServerId,
+  type DecryptResult,
+} from './chat';
 export { e2eeSelfTest, e2eeSessionSelfTest } from './selftest';

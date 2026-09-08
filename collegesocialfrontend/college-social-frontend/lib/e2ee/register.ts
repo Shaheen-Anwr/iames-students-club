@@ -33,6 +33,29 @@ export function isE2eeAvailable(): boolean {
   return process.env.NEXT_PUBLIC_E2EE_ENABLED === '1' && e2eeSupported();
 }
 
+// Per-device opt-out. E2EE is on by default wherever it's available; a user can disable it on a
+// given device (e.g. a shared computer) from profile settings. Existing encrypted conversations
+// then can't be read on this device until it's re-enabled -- the toggle spells that out.
+const DEVICE_PREF_KEY = 'e2ee:device-disabled';
+
+export function isE2eeEnabledOnThisDevice(): boolean {
+  if (!isE2eeAvailable()) return false;
+  try {
+    return localStorage.getItem(DEVICE_PREF_KEY) !== '1';
+  } catch {
+    return true;
+  }
+}
+
+export function setE2eeEnabledOnThisDevice(enabled: boolean): void {
+  try {
+    if (enabled) localStorage.removeItem(DEVICE_PREF_KEY);
+    else localStorage.setItem(DEVICE_PREF_KEY, '1');
+  } catch {
+    /* private mode -- nothing we can do, treat as enabled */
+  }
+}
+
 export function fetchStatus(): Promise<E2eeStatus> {
   return api.get<E2eeStatus>('/e2ee/status');
 }

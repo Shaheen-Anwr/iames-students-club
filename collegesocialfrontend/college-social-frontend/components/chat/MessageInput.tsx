@@ -15,6 +15,8 @@ interface MessageInputProps {
   onSend: (text: string, attachments?: Attachment[], replyTo?: string) => void;
   onTyping: () => void;
   onStopTyping: () => void;
+  /** End-to-end encrypted thread: text only in v1 -- hide attachments + voice. */
+  encrypted?: boolean;
   replyingTo?: Message | null;
   onCancelReply: () => void;
   editingMessage?: Message | null;
@@ -33,6 +35,7 @@ export function MessageInput({
   onSend,
   onTyping,
   onStopTyping,
+  encrypted = false,
   replyingTo,
   onCancelReply,
   editingMessage,
@@ -214,7 +217,9 @@ export function MessageInput({
           <Reply className="h-4 w-4 shrink-0 text-accent" />
           <div className="min-w-0 flex-1">
             <p className="truncate font-medium text-foreground">{replyingTo.sender?.name ?? 'مستخدم محذوف'}</p>
-            <p className="truncate text-xs text-muted-foreground">{replyingTo.text || 'مرفق'}</p>
+            <p className="truncate text-xs text-muted-foreground">
+              {replyingTo.text || (replyingTo.encrypted ? '🔒 رسالة مشفّرة' : 'مرفق')}
+            </p>
           </div>
           <button onClick={onCancelReply} className="rounded-full p-1 text-muted-foreground hover:bg-surface-2">
             <X className="h-4 w-4" />
@@ -287,22 +292,26 @@ export function MessageInput({
               anchorClassName="absolute bottom-full start-0 z-30 mb-2 w-72 rounded-2xl border border-border bg-surface p-3 shadow-card animate-slide-up"
             />
           </div>
-          <button
-            onClick={() => fileInputRef.current?.click()}
-            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-accent active:scale-95"
-          >
-            <Paperclip className="h-5 w-5" />
-          </button>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            className="hidden"
-            onChange={(e) => {
-              addFiles(e.target.files);
-              e.target.value = '';
-            }}
-          />
+          {!encrypted && (
+            <>
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-accent active:scale-95"
+              >
+                <Paperclip className="h-5 w-5" />
+              </button>
+              <input
+                ref={fileInputRef}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(e) => {
+                  addFiles(e.target.files);
+                  e.target.value = '';
+                }}
+              />
+            </>
+          )}
           <MentionTextarea
             rows={1}
             value={text}
@@ -318,10 +327,10 @@ export function MessageInput({
               }
               if (e.key === 'Escape' && editingMessage) onCancelEdit();
             }}
-            placeholder="اكتب رسالة"
+            placeholder={encrypted ? '🔒 رسالة مشفّرة' : 'اكتب رسالة'}
             className="max-h-32 flex-1 resize-none rounded-2xl border border-transparent bg-surface-2/70 px-4 py-2.5 text-base leading-relaxed placeholder:text-muted-foreground transition-colors focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/30 md:text-[15px]"
           />
-          {!editingMessage && !text.trim() && files.length === 0 ? (
+          {!encrypted && !editingMessage && !text.trim() && files.length === 0 ? (
             <button
               onClick={startRecording}
               disabled={uploading}
