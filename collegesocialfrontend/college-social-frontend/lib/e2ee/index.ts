@@ -8,6 +8,7 @@
 //   P3b wire into ChatWindow / MessageBubble / list         -- done (chat.ts seam + plaintext cache)
 //   P4  safety-number verification + key-change warnings    -- done (verification.ts / verify.ts)
 //   P5  control messages (reaction/edit/delete) + media enc -- done (chat.ts encryptInner, media.ts)
+//   P6  passphrase key backup / restore                     -- done (backup.ts + /e2ee/backup)
 
 export { e2eeSupported, b64, unb64 } from './crypto';
 export {
@@ -15,11 +16,19 @@ export {
   isE2eeEnabledOnThisDevice,
   setE2eeEnabledOnThisDevice,
   ensureDeviceRegistered,
+  forceCreateIdentity,
+  republishAfterRestore,
   replenishPreKeysIfLow,
   fetchStatus,
+  fetchServerBackup,
+  putServerBackup,
+  deleteServerBackup,
   hasLocalKeys,
   type E2eeStatus,
+  type BackupInfo,
+  type DeviceRegState,
 } from './register';
+export { createBackup, restoreBackup } from './backup';
 export { wipeE2ee } from './store';
 export { initiateX3DH, respondX3DH, type PeerBundle, type X3DHHeader } from './x3dh';
 export {
