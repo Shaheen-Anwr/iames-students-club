@@ -5,12 +5,14 @@ import Link from 'next/link';
 import {
   ArrowDown,
   ArrowRight,
+  AlertTriangle,
   Image as ImageIcon,
   Lock,
   MessageCircle,
   MoreVertical,
   Phone,
   Search,
+  ShieldCheck,
   ShieldOff,
   Video,
   X,
@@ -33,6 +35,7 @@ import {
   decryptMessage,
   encryptText,
   isE2eeEnabledOnThisDevice,
+  reconcilePeerIdentity,
   rememberOutgoing,
 } from '@/lib/e2ee';
 import type { Attachment, Message, User, Conversation } from '@/lib/types';
@@ -62,6 +65,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // Server's verdict on whether this 1:1 is end-to-end encrypted (flag on + both sides have keys).
   // OR'd with the sticky conversation.e2ee flag below.
   const [e2eeRemote, setE2eeRemote] = useState(false);
+  // Peer identity-key state for verification: has it changed since we last saw it, is it verified.
+  const [peerIdentity, setPeerIdentity] = useState<{ changed: boolean; verified: boolean } | null>(null);
   const [typing, setTyping] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
@@ -142,6 +147,22 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       cancelled = true;
     };
   }, [conversationId]);
+
+  // Track the peer's published identity key -> surface a warning if it changed (new device, or a
+  // man in the middle) and remember whether the user has verified the safety number.
+  useEffect(() => {
+    setPeerIdentity(null);
+    if (!e2eeActive || !peerId || !deviceE2eeEnabled) return;
+    let cancelled = false;
+    void reconcilePeerIdentity(peerId)
+      .then((s) => {
+        if (!cancelled) setPeerIdentity({ changed: s.changed, verified: s.verified });
+      })
+      .catch(() => undefined);
+    return () => {
+      cancelled = true;
+    };
+  }, [conversationId, e2eeActive, peerId, deviceE2eeEnabled]);
 
   // Decrypt encrypted messages as they show up (cache-first). Runs oldest -> newest so the very
   // first message, which carries the X3DH handshake header, bootstraps the session before the
@@ -625,6 +646,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               {e2eeActive && (
                 <Lock className="h-3 w-3 shrink-0 text-emerald-500" aria-label="محادثة مشفّرة من طرف إلى طرف" />
               )}
+              {e2eeActive && peerIdentity?.verified && (
+                <ShieldCheck className="h-3 w-3 shrink-0 text-emerald-500" aria-label="موثّق" />
+              )}
             </p>
             <p className="truncate text-xs text-muted-foreground">
               {typing ? (
@@ -756,6 +780,15 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             edge-to-edge (and own-messages don't hug the far side) on a wide conversation pane. */}
         <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
         {!loading && conversation && e2eeActive && !e2eeLockedOut && <EncryptionNote />}
+        {!loading && conversation && e2eeActive && !e2eeLockedOut && peerIdentity?.changed && (
+          <button
+            onClick={() => setInfoOpen(true)}
+            className="mx-auto my-2 flex max-w-sm items-start gap-2 rounded-xl bg-amber-500/10 px-3.5 py-2.5 text-start text-[12.5px] leading-relaxed text-amber-900 hover:bg-amber-500/15 dark:text-amber-200"
+          >
+            <AlertTriangle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+            <span>تغيّر رمز الأمان في هذه المحادثة. اضغط للتحقق قبل إرسال معلومات حسّاسة.</span>
+          </button>
+        )}
         {!loading && conversation && e2eeLockedOut && (
           <div className="mx-auto my-3 flex max-w-sm items-start gap-2 rounded-xl bg-danger/10 px-3.5 py-2.5 text-center text-[12.5px] leading-relaxed text-danger">
             <Lock className="mt-0.5 h-3.5 w-3.5 shrink-0" />

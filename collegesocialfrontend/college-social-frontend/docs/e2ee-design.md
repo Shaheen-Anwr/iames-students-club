@@ -201,8 +201,9 @@ Message send: the gateway/REST accepts `payload` + `encrypted:true` and stores a
 - **P0** — backend `src/e2ee/` module: `User.e2ee`, `E2eePreKey`, the 5 endpoints, `Conversation.e2ee`, `Message.encrypted/payload`, generic push body for encrypted messages. Flag‑gated, no behaviour change. *(this session)*
 - **P1** — `lib/e2ee/`: keygen + IndexedDB store (`keys.ts`, `store.ts`), bundle upload/replenish, `GET /e2ee/status` polling, profile opt‑in toggle. No message crypto yet.
 - **P2** — X3DH (`x3dh.ts`) + Double Ratchet (`ratchet.ts`) + envelope (`envelope.ts`), pure functions with unit tests.
-- **P3** — wire into `ChatWindow` / `MessageInput` / `MessageBubble` / `ChatProvider`: encrypt on send, decrypt on receive, session bootstrap, the system chip, list/preview/push handling.
-- **P4** — verification screen (safety number + QR), key‑change warnings, per‑message lock UI.
+- **P3a** — session bridge (`session-core.ts` pure + `session.ts` IndexedDB/API bindings): bootstrap-on-first-message either direction, prekey header until acked, per-conversation promise chain. Verified in `selftest.ts`. *(done)*
+- **P3b** — wire into `ChatWindow` / `MessageInput` / `MessageBubble` / `ConversationList` / `ChatProvider`: `chat.ts` seam (`encryptText`/`decryptMessage`), IndexedDB plaintext cache so history survives a reload, `GET /chat/conversations/:id/e2ee`, boot key registration, per-device opt-out, encrypt-on-send / decrypt-on-receive, decrypt-fail + locked-out states, system chip, list lock glyph, `EncryptionSettings` profile card. *(done)*
+- **P4** — verification: safety number (`verification.ts`, 60 digits from the sorted identity-key pair), `SafetyNumberModal` opened from the DM info panel, key-change tracking (`verify.ts` + `verify` store) with an inline warning chip in `ChatWindow` and a verified tick in the header. QR scan deferred (no lib) — manual number comparison is the path. *(done)*
 - **P5** — media E2EE, reactions/edit/delete as control messages, forward re‑encryption.
 - **P6** — passphrase key backup/restore.
 
