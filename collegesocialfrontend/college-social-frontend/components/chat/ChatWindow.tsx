@@ -27,7 +27,8 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/chat-helpers';
-import { assetUrl } from '@/lib/utils';
+import { assetUrl, cn } from '@/lib/utils';
+import { buildChatRows } from '@/lib/chat-grouping';
 import { AnalyticsEvent, track } from '@/lib/analytics';
 import { chatBackgroundStyle, useChatBackground } from '@/lib/chat-background';
 import {
@@ -48,6 +49,7 @@ import { useCall } from './CallProvider';
 import { MessageBubble } from './MessageBubble';
 import { MessageInput } from './MessageInput';
 import { EncryptionNote } from './EncryptionNote';
+import { DayDivider, UnreadDivider } from './DayDivider';
 import { ForwardModal } from './ForwardModal';
 import { GroupInfoPanel } from './GroupInfoPanel';
 import { ChatBackgroundModal } from './ChatBackgroundModal';
@@ -89,6 +91,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const bottomRef = useRef<HTMLDivElement>(null);
   const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Unread count captured the first time this conversation renders, before ChatProvider zeroes it
+  // -- used to place the "unread messages" divider.
+  const unreadAtOpenRef = useRef<{ id: string; count: number }>({ id: '', count: 0 });
   const [atBottom, setAtBottom] = useState(true);
   const [newCount, setNewCount] = useState(0);
   // Optimistic sends: temp id -> "mark as failed" timer, cleared when the server echoes back.
@@ -786,6 +791,22 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // are never drawn as bubbles.
   const visibleMessages = messages.filter((m) => !m.control);
 
+  // Capture the unread count once per conversation (first render where `conversation` is known).
+  if (conversation && unreadAtOpenRef.current.id !== conversationId) {
+    unreadAtOpenRef.current = { id: conversationId, count: conversation.unreadCount ?? 0 };
+  }
+  const firstUnreadId = (() => {
+    const cnt = unreadAtOpenRef.current.id === conversationId ? unreadAtOpenRef.current.count : 0;
+    if (!cnt) return null;
+    let seen = 0;
+    for (let i = visibleMessages.length - 1; i >= 0; i--) {
+      if (visibleMessages[i].sender?._id === user._id) continue;
+      if (++seen === cnt) return visibleMessages[i]._id;
+    }
+    return null;
+  })();
+  const chatRows = buildChatRows(visibleMessages, user._id, !!conversation?.isGroup, firstUnreadId);
+
   const title = conversation ? conversationTitle(conversation, user._id) : 'جارٍ التحميل…';
   const avatarUser = conversation ? conversationAvatarUser(conversation, user._id) : undefined;
   const presence = !conversation?.isGroup ? presenceLabel(avatarUser) : null;
@@ -983,17 +1004,25 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </div>
           </div>
         ) : (
-          <div className="flex-1 space-y-4">
-          {visibleMessages.map((message, index) => {
-            const prev = visibleMessages[index - 1];
+          <div className="flex-1">
+          {chatRows.map((row) => {
+            if (row.kind === 'day') return <DayDivider key={row.id} label={row.label} />;
+            if (row.kind === 'unread') return <UnreadDivider key={row.id} />;
+            const message = row.message;
             const isOwn = message.sender?._id === user._id;
-            const showAvatar = !prev || prev.sender?._id !== message.sender?._id;
             return (
-              <div key={message._id} ref={(el) => { messageRefs.current[message._id] = el; }} className="transition-all">
+              <div
+                key={message._id}
+                ref={(el) => { messageRefs.current[message._id] = el; }}
+                className={cn('transition-all', row.flags.lastInGroup ? 'mb-3' : 'mb-0.5')}
+              >
                 <MessageBubble
                   message={message}
                   isOwn={isOwn}
-                  showAvatar={showAvatar}
+                  showAvatar={row.flags.lastInGroup}
+                  showName={row.flags.showName}
+                  firstInGroup={row.flags.firstInGroup}
+                  lastInGroup={row.flags.lastInGroup}
                   conversation={conversation}
                   currentUserId={user._id}
                   onReply={setReplyingTo}

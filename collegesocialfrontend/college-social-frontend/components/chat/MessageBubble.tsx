@@ -39,6 +39,11 @@ interface MessageBubbleProps {
   message: Message;
   isOwn: boolean;
   showAvatar: boolean;
+  /** Group chat, first bubble of a same-sender cluster: render the sender's name. */
+  showName?: boolean;
+  firstInGroup?: boolean;
+  /** Last bubble of a cluster: show the timestamp + read ticks. */
+  lastInGroup?: boolean;
   conversation: Conversation;
   currentUserId: string;
   onReply: (message: Message) => void;
@@ -70,6 +75,9 @@ export function MessageBubble({
   message,
   isOwn,
   showAvatar,
+  showName = false,
+  firstInGroup = true,
+  lastInGroup = true,
   conversation,
   currentUserId,
   onReply,
@@ -448,6 +456,12 @@ export function MessageBubble({
               }
             }}
           >
+            {showName && (
+              <p className="mb-0.5 px-1 text-[11px] font-semibold text-accent">
+                {message.sender?.name ?? 'مستخدم محذوف'}
+              </p>
+            )}
+
             {message.forwarded && (
               <p className="px-1 text-[11px] italic text-muted-foreground">إعادة توجيه</p>
             )}
@@ -601,8 +615,12 @@ export function MessageBubble({
                   className={cn(
                     'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
                     isOwn
-                      ? 'rounded-bl-md bg-gradient-accent text-white shadow-soft'
-                      : 'rounded-br-md bg-surface-2/70 text-foreground',
+                      ? 'bg-gradient-accent text-white shadow-soft'
+                      : 'bg-surface-2/70 text-foreground',
+                    // Tail notch only on the last bubble of a cluster; tighten the inner corner
+                    // on continuation bubbles so a cluster reads as one shape.
+                    lastInGroup && (isOwn ? 'rounded-bl-md' : 'rounded-br-md'),
+                    !firstInGroup && (isOwn ? 'rounded-tl-md' : 'rounded-tr-md'),
                   )}
                 >
                   <TaggedText text={message.text} />
@@ -640,24 +658,26 @@ export function MessageBubble({
               </div>
             )}
 
-            <span className="mt-1 flex items-center gap-1 px-1 text-xs text-muted-foreground">
-              {message.encrypted && <Lock className="h-3 w-3 shrink-0 opacity-70" />}
-              {message.edited && <span className="italic">مُعدَّلة ·</span>}
-              {timeAgo(message.createdAt)}
-              {isOwn && message.failed ? (
-                <button
-                  type="button"
-                  onClick={() => onRetry?.(message)}
-                  className="flex items-center gap-1 font-medium text-red-200 underline"
-                >
-                  <RotateCw className="h-3 w-3" /> لم تُرسل — إعادة المحاولة
-                </button>
-              ) : isOwn && message.pending ? (
-                <Clock className="h-3 w-3 text-white/60" />
-              ) : isOwn ? (
-                <ReadTicks status={status} />
-              ) : null}
-            </span>
+            {(lastInGroup || message.edited || (isOwn && (message.pending || message.failed))) && (
+              <span className="mt-1 flex items-center gap-1 px-1 text-xs text-muted-foreground">
+                {message.encrypted && <Lock className="h-3 w-3 shrink-0 opacity-70" />}
+                {message.edited && <span className="italic">مُعدَّلة ·</span>}
+                {timeAgo(message.createdAt)}
+                {isOwn && message.failed ? (
+                  <button
+                    type="button"
+                    onClick={() => onRetry?.(message)}
+                    className="flex items-center gap-1 font-medium text-red-200 underline"
+                  >
+                    <RotateCw className="h-3 w-3" /> لم تُرسل — إعادة المحاولة
+                  </button>
+                ) : isOwn && message.pending ? (
+                  <Clock className="h-3 w-3 text-white/60" />
+                ) : isOwn ? (
+                  <ReadTicks status={status} />
+                ) : null}
+              </span>
+            )}
           </div>
 
           {/* Reaction picker */}
