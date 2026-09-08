@@ -107,18 +107,6 @@ export class UsersService {
     return count > 0;
   }
 
-  // True once the user has published an E2EE key bundle from a device (see docs/e2ee-design.md).
-  // Used to decide whether a 1:1 conversation can be end-to-end encrypted.
-  async hasE2eeKeys(userId: string): Promise<boolean> {
-    if (!Types.ObjectId.isValid(userId)) return false;
-    const doc = await this.userModel
-      .findById(userId)
-      .select('e2ee.identityKey')
-      .lean<{ e2ee?: { identityKey?: string } | null }>()
-      .exec();
-    return !!doc?.e2ee?.identityKey;
-  }
-
   // --- Friendship: request/accept, mirrored across both users' documents (see user.schema.ts) ---
 
   async sendFriendRequest(userId: string, targetId: string): Promise<UserDocument> {

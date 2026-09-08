@@ -228,41 +228,6 @@ export class User {
     digestHour: number | null;
   };
 
-  // End-to-end encryption key bundle (see docs/e2ee-design.md). Absent -> the user hasn't set up
-  // E2EE, so their conversations stay plaintext. Public keys only; the matching private keys never
-  // leave the user's browser. `identityKey`/`identitySig` are long-term (b64 SPKI); `signedPreKey`
-  // is a rotating ECDH prekey signed by `identitySig`. One-time prekeys live in the E2eePreKey
-  // collection, not here.
-  @Prop({
-    type: {
-      identityKey: { type: String, required: true },
-      identitySig: { type: String, required: true },
-      signedPreKey: {
-        type: { key: { type: String }, sig: { type: String }, id: { type: Number }, createdAt: { type: Date } },
-        _id: false,
-      },
-      registeredAt: { type: Date },
-    },
-    default: null,
-    _id: false,
-  })
-  e2ee: {
-    identityKey: string;
-    identitySig: string;
-    signedPreKey: { key: string; sig: string; id: number; createdAt: Date };
-    registeredAt: Date;
-  } | null;
-
-  // Passphrase-encrypted backup of the user's E2EE identity (docs/e2ee-design.md §7, phase P6).
-  // Opaque ciphertext -- the server can't read it and never learns the passphrase. Lets a new
-  // device restore the SAME identity key so contacts don't see a "security code changed" warning.
-  @Prop({
-    type: { blob: { type: String }, updatedAt: { type: Date } },
-    default: null,
-    _id: false,
-  })
-  e2eeBackup: { blob: string; updatedAt: Date } | null;
-
   // The student personalises their AI assistant. `aiAssistantName` is the name they gave it
   // (shown in the chat header; the assistant introduces itself with it). `aiPreferredName` is
   // what the assistant should call the student (defaults to the first word of `name`). Both are

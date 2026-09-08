@@ -6,7 +6,6 @@ import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import type { Conversation, Message } from '@/lib/types';
-import { ensureDeviceRegistered, isE2eeEnabledOnThisDevice } from '@/lib/e2ee';
 
 interface ChatContextValue {
   conversations: Conversation[];
@@ -67,25 +66,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     refresh();
   }, [refresh]);
 
-  // Make sure this device has an E2EE key bundle published (idempotent, no-op when the flag is
-  // off, the browser lacks WebCrypto, or the user disabled encryption on this device). Also tops
-  // up the one-time prekey pool. Runs once per signed-in user.
-  useEffect(() => {
-    const uid = user?._id;
-    if (!uid || !isE2eeEnabledOnThisDevice()) return;
-    let cancelled = false;
-    void (async () => {
-      try {
-        if (!cancelled) await ensureDeviceRegistered(uid);
-      } catch {
-        /* best-effort -- chat still works unencrypted */
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [user?._id]);
-
   // Stale-closure-free view of the current list, for the socket listener below.
   const conversationsRef = useRef<Conversation[]>([]);
   useEffect(() => {
@@ -128,8 +108,6 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     const onNewMessage = (message: Message) => {
       if (!message?.conversation) return;
-      // Encrypted control carriers (reaction/edit/delete) aren't real messages -- no list bump.
-      if (message.control) return;
       ensureKnown(message.conversation);
       // WhatsApp-style: raise the unread badge only for messages from someone else that land
       // in a conversation the user isn't currently viewing.
@@ -137,7 +115,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const isActive = message.conversation === activeIdRef.current;
       bumpLocal(
         message.conversation,
-        message.encrypted ? '🔒 رسالة' : message.text || '📎',
+        message.text || '📎',
         message.createdAt ?? new Date().toISOString(),
         !fromMe && !isActive,
       );

@@ -8,7 +8,6 @@ import {
   Camera,
   Crown,
   Image as ImageIcon,
-  Lock,
   LogOut,
   Pencil,
   Pin,
@@ -31,7 +30,6 @@ import { isArchived, isGroupAdmin, isMuted, isPinned, otherParticipants, presenc
 import { assetUrl, cn } from '@/lib/utils';
 import type { Conversation, User } from '@/lib/types';
 import { SharedMediaPanel } from './SharedMediaPanel';
-import { SafetyNumberModal } from './SafetyNumberModal';
 
 const DISAPPEARING_OPTIONS = [
   { label: 'إيقاف', seconds: 0 },
@@ -61,7 +59,6 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
   const [results, setResults] = useState<User[]>([]);
   const [busy, setBusy] = useState(false);
   const [mediaOpen, setMediaOpen] = useState(false);
-  const [safetyOpen, setSafetyOpen] = useState(false);
 
   useEffect(() => {
     setNameDraft(conversation.name ?? '');
@@ -409,21 +406,6 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
           </div>
         )}
 
-        {/* Encryption (1:1 only, once the thread is encrypted) */}
-        {!conversation.isGroup && conversation.e2ee && targetUser && (
-          <div className="space-y-1 border-t border-border pt-3">
-            <button
-              onClick={() => setSafetyOpen(true)}
-              className="flex w-full items-center gap-2.5 rounded-xl2 px-2 py-2.5 text-start text-sm text-foreground hover:bg-surface-2"
-            >
-              <Lock className="h-4 w-4 text-emerald-500" /> التحقق من التشفير
-            </button>
-            <p className="px-2 pb-1 text-[11px] text-muted-foreground">
-              الرسائل مشفّرة من طرف إلى طرف. قارن رمز الأمان مع {targetUser.name} للتأكّد.
-            </p>
-          </div>
-        )}
-
         {/* Danger zone */}
         <div className="space-y-1 border-t border-border pt-3">
           <button
@@ -470,14 +452,6 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
         </div>
       </div>
       <SharedMediaPanel open={mediaOpen} onClose={() => setMediaOpen(false)} conversationId={conversation._id} />
-      {!conversation.isGroup && targetUser && (
-        <SafetyNumberModal
-          open={safetyOpen}
-          onClose={() => setSafetyOpen(false)}
-          peerId={targetUser._id}
-          peerName={targetUser.name}
-        />
-      )}
     </Modal>
   );
 }
