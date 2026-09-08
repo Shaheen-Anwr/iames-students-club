@@ -87,7 +87,14 @@ export async function ensureDeviceRegistered(userId: string): Promise<boolean> {
     oneTimePreKeys: opks,
   });
 
-  await putIdentity({ userId, ikPriv: ik.privateKey, ikSigPriv: ikSig.privateKey, createdAt: Date.now() });
+  await putIdentity({
+    userId,
+    ikPriv: ik.privateKey,
+    ikPub: ik.publicKey,
+    ikSigPriv: ikSig.privateKey,
+    ikSigPub: ikSig.publicKey,
+    createdAt: Date.now(),
+  });
   await putSpk({ id: spkId, priv: spk.privateKey, pub: spkPub, createdAt: Date.now() });
   return true;
 }

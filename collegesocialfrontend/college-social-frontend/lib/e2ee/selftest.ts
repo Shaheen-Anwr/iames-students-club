@@ -7,7 +7,14 @@
 import { b64, exportPublic, generateECDH, generateECDSA, sign, unb64 } from './crypto';
 import { encodeInner, decodeInner, type DRHeader, type InnerEnvelope } from './envelope';
 import { initiateX3DH, respondX3DH, type PeerBundle } from './x3dh';
-import { initRatchetInitiator, initRatchetResponder, ratchetDecrypt, ratchetEncrypt } from './ratchet';
+import {
+  initRatchetInitiator,
+  initRatchetResponder,
+  ratchetDecrypt,
+  ratchetEncrypt,
+  type RatchetState,
+} from './ratchet';
+import { createSessionManager, type SessionDeps } from './session-core';
 
 interface Wire {
   x3dh?: { ik: string; ek: string; opkId: number | null };
@@ -115,6 +122,111 @@ export async function e2eeSelfTest(): Promise<{ ok: boolean; log: string[] }> {
     assert(threw, 'A tampered ciphertext is rejected (GCM tag)');
 
     log.push('— all checks passed —');
+    return { ok: true, log };
+  } catch (e) {
+    log.push(`ERROR: ${e instanceof Error ? e.message : String(e)}`);
+    return { ok: false, log };
+  }
+}
+
+/**
+ * Exercises the session.ts bridge (bootstrap-on-first-message, prekey-header-until-acked, state
+ * persistence) with in-memory deps standing in for IndexedDB + the /api/e2ee key registry.
+ */
+export async function e2eeSessionSelfTest(): Promise<{ ok: boolean; log: string[] }> {
+  const log: string[] = [];
+  const assert = (cond: boolean, msg: string) => {
+    log.push(`${cond ? '✓' : '✗'} ${msg}`);
+    if (!cond) throw new Error(msg);
+  };
+  const CONV = 'conv-1';
+
+  try {
+    // --- Bob's device + published bundle (server side simulated) --------------------------------
+    const bobIk = await generateECDH(false);
+    const bobIkSig = await generateECDSA(false);
+    const bobSpk = await generateECDH(false);
+    const bobSpkPub = await exportPublic(bobSpk.publicKey);
+    const bobSpkSig = await sign(bobIkSig.privateKey, unb64(bobSpkPub));
+    const bobIkPub = await exportPublic(bobIk.publicKey);
+    const bobIkSigPub = await exportPublic(bobIkSig.publicKey);
+    const bobOpkPriv = new Map<number, CryptoKey>();
+    const bobOpkPool: { keyId: number; publicKey: string }[] = [];
+    for (let i = 1; i <= 3; i++) {
+      const k = await generateECDH(false);
+      bobOpkPriv.set(i, k.privateKey);
+      bobOpkPool.push({ keyId: i, publicKey: await exportPublic(k.publicKey) });
+    }
+
+    const aliceIk = await generateECDH(false);
+    const aliceSpk = await generateECDH(false); // unused (Alice initiates) but deps require it
+
+    const aliceStates = new Map<string, RatchetState>();
+    const bobStates = new Map<string, RatchetState>();
+
+    const aliceDeps: SessionDeps = {
+      loadState: async (id) => aliceStates.get(id),
+      saveState: async (id, s) => void aliceStates.set(id, s),
+      identity: async () => ({ priv: aliceIk.privateKey, pub: aliceIk.publicKey }),
+      signedPreKeyPair: async () => aliceSpk,
+      takeOneTimePreKeyPriv: async () => null,
+      fetchPeerBundle: async (): Promise<PeerBundle> => {
+        const opk = bobOpkPool.shift() ?? null;
+        return {
+          identityKey: bobIkPub,
+          identitySig: bobIkSigPub,
+          signedPreKey: { key: bobSpkPub, sig: bobSpkSig, id: 1 },
+          oneTimePreKey: opk,
+        };
+      },
+    };
+    const bobDeps: SessionDeps = {
+      loadState: async (id) => bobStates.get(id),
+      saveState: async (id, s) => void bobStates.set(id, s),
+      identity: async () => ({ priv: bobIk.privateKey, pub: bobIk.publicKey }),
+      signedPreKeyPair: async () => bobSpk,
+      takeOneTimePreKeyPriv: async (keyId) => {
+        const k = bobOpkPriv.get(keyId) ?? null;
+        bobOpkPriv.delete(keyId);
+        return k;
+      },
+      fetchPeerBundle: async () => {
+        throw new Error('Bob never initiates in this test');
+      },
+    };
+
+    const alice = createSessionManager(aliceDeps);
+    const bob = createSessionManager(bobDeps);
+    const text = (b: string): InnerEnvelope => ({ k: 'text', body: b });
+
+    // 1. Alice's first message bootstraps + carries the X3DH header.
+    const w1 = await alice.encrypt(CONV, 'bob', text('أول رسالة'));
+    assert(w1.type === 'x3dh' && !!w1.x3dh, 'Alice #1 is a prekey (x3dh) message');
+    const d1 = await bob.decrypt(CONV, w1);
+    assert(d1.k === 'text' && d1.body === 'أول رسالة', 'Bob bootstraps + decrypts Alice #1');
+
+    // 2. Alice sends again BEFORE Bob replies -> still a prekey message; Bob (session exists) is fine.
+    const w2 = await alice.encrypt(CONV, 'bob', text('ثانية قبل الرد'));
+    assert(w2.type === 'x3dh', 'Alice #2 still carries the prekey header (not acked yet)');
+    assert((await bob.decrypt(CONV, w2)).k === 'text', 'Bob decrypts Alice #2');
+
+    // 3. Bob replies -> Alice decrypts, which clears her pending prekey header.
+    const wb = await bob.encrypt(CONV, 'alice', text('ردّ بوب'));
+    assert(wb.type === 'msg', "Bob's reply is a normal message");
+    const db = await alice.decrypt(CONV, wb);
+    assert(db.k === 'text' && db.body === 'ردّ بوب', 'Alice decrypts Bob and acks the handshake');
+
+    // 4. Alice's next message is now a plain 'msg'.
+    const w3 = await alice.encrypt(CONV, 'bob', text('بعد التأكيد'));
+    assert(w3.type === 'msg' && !w3.x3dh, 'Alice #3 no longer carries the prekey header');
+    assert((await bob.decrypt(CONV, w3)).k === 'text', 'Bob decrypts Alice #3');
+
+    // 5. State really persisted: a fresh SessionManager over the same maps keeps going.
+    const alice2 = createSessionManager(aliceDeps);
+    const w4 = await alice2.encrypt(CONV, 'bob', text('من مثيل جديد'));
+    assert((await bob.decrypt(CONV, w4)).k === 'text', 'A new SessionManager resumes from persisted state');
+
+    log.push('— session checks passed —');
     return { ok: true, log };
   } catch (e) {
     log.push(`ERROR: ${e instanceof Error ? e.message : String(e)}`);

@@ -16,6 +16,7 @@ import {
   type Bytes,
 } from './crypto';
 import { headerAad, type DRHeader } from './envelope';
+import type { X3DHHeader } from './x3dh';
 
 const MAX_SKIP = 1000;
 const RK_INFO = 'iaems-dr-rk';
@@ -31,6 +32,10 @@ export interface RatchetState {
   nr: number;
   pn: number;
   skipped: { id: string; mk: string }[]; // id = `${dhr}:${n}`, mk = b64; bounded to MAX_SKIP
+  // Initiator only: the X3DH prekey header to keep attaching to every outbound message until the
+  // peer replies (proving they ran the handshake). Cleared by session.ts on the first decrypt.
+  // Ratchet functions ignore it -- it just rides along in the persisted session blob.
+  pendingX3DH?: X3DHHeader | null;
 }
 
 async function kdfRK(rk: Bytes, dhOut: Bytes): Promise<{ rk: Bytes; ck: Bytes }> {
@@ -46,7 +51,11 @@ async function kdfCK(ck: Bytes): Promise<{ ck: Bytes; mk: Bytes }> {
 // --- session bring-up (the X3DH -> DR handoff) --------------------------------------------------
 
 /** Initiator: SK from X3DH + the responder's signed-prekey public as the initial DHr. */
-export async function initRatchetInitiator(sk: Bytes, theirSignedPreKeyPub: string): Promise<RatchetState> {
+export async function initRatchetInitiator(
+  sk: Bytes,
+  theirSignedPreKeyPub: string,
+  pendingX3DH?: X3DHHeader,
+): Promise<RatchetState> {
   const dhs = await generateECDH(false);
   const dhrKey = await importECDHPublic(theirSignedPreKeyPub);
   const { rk, ck } = await kdfRK(sk, await ecdh(dhs.privateKey, dhrKey));
@@ -61,6 +70,7 @@ export async function initRatchetInitiator(sk: Bytes, theirSignedPreKeyPub: stri
     nr: 0,
     pn: 0,
     skipped: [],
+    pendingX3DH: pendingX3DH ?? null,
   };
 }
 
@@ -77,6 +87,7 @@ export async function initRatchetResponder(sk: Bytes, mySignedPreKey: CryptoKeyP
     nr: 0,
     pn: 0,
     skipped: [],
+    pendingX3DH: null,
   };
 }
 
