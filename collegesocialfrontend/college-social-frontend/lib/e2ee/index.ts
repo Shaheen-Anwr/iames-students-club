@@ -34,4 +34,5 @@ export {
   type InnerEnvelope,
   type DRHeader,
 } from './envelope';
-export { e2eeSelfTest } from './selftest';
+export { e2eeSession, createSessionManager, type SessionManager } from './session';
+export { e2eeSelfTest, e2eeSessionSelfTest } from './selftest';

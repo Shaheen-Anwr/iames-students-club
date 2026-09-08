@@ -46,7 +46,9 @@ export interface IdentityRecord {
   key: 'identity';
   userId: string;
   ikPriv: CryptoKey;
+  ikPub: CryptoKey; // stored -- a non-extractable private can't re-derive its public
   ikSigPriv: CryptoKey;
+  ikSigPub: CryptoKey;
   createdAt: number;
 }
 export function putIdentity(rec: Omit<IdentityRecord, 'key'>): Promise<unknown> {
