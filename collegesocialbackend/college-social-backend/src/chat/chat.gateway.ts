@@ -264,7 +264,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       dto.text ?? '',
       dto.attachments,
       dto.replyTo,
-      dto.encrypted && dto.payload ? { payload: dto.payload } : undefined,
+      dto.encrypted && dto.payload ? { payload: dto.payload, control: !!dto.control } : undefined,
     );
 
     // Broadcast to everyone in the room, including the sender (so all their tabs update)

@@ -7,6 +7,7 @@
 //   P3a session bridge (session-core.ts / session.ts)       -- done (verified via selftest.ts)
 //   P3b wire into ChatWindow / MessageBubble / list         -- done (chat.ts seam + plaintext cache)
 //   P4  safety-number verification + key-change warnings    -- done (verification.ts / verify.ts)
+//   P5  control messages (reaction/edit/delete) + media enc -- done (chat.ts encryptInner, media.ts)
 
 export { e2eeSupported, b64, unb64 } from './crypto';
 export {
@@ -40,11 +41,22 @@ export {
 export { e2eeSession, createSessionManager, type SessionManager } from './session';
 export {
   encryptText,
-  decryptMessage,
+  encryptInner,
+  decryptToInner,
   rememberOutgoing,
+  rememberInner,
   adoptServerId,
-  type DecryptResult,
+  type DecryptedInner,
+  type ControlInner,
+  type MediaInner,
 } from './chat';
+export {
+  sealBlob,
+  openBlobBytes,
+  fetchAndOpen,
+  fetchAndDecryptBlob,
+  type SealedBlob,
+} from './media';
 export { computeSafetyNumber, formatSafetyNumber } from './verification';
 export {
   myIdentityKey,

@@ -159,6 +159,7 @@ export class ChatService {
             sender: { $ne: uid },
             readBy: { $ne: uid },
             deletedFor: { $ne: uid },
+            control: { $ne: true }, // encrypted reaction/edit/delete carriers aren't "unread"
           },
         },
         { $group: { _id: '$conversation', count: { $sum: 1 } } },
@@ -272,7 +273,7 @@ export class ChatService {
     text: string,
     attachments: AttachmentDto[] | undefined,
     replyTo: string | undefined,
-    e2ee?: { payload: string },
+    e2ee?: { payload: string; control?: boolean },
   ): Promise<MessageDocument> {
     const conversation = await this.assertCanAccessConversation(conversationId, senderId);
     if (!e2ee && !text?.trim() && !attachments?.length) {
@@ -299,12 +300,14 @@ export class ChatService {
     const validMentionIds = await this.usersService.findExistingIds(candidateMentionIds);
     const mentions = validMentionIds.map((id) => new Types.ObjectId(id));
 
+    const isControl = !!e2ee?.control;
     const message = await new this.messageModel({
       conversation: new Types.ObjectId(conversationId),
       sender: new Types.ObjectId(senderId),
       text: e2ee ? '' : (text ?? ''),
       encrypted: !!e2ee,
       payload: e2ee ? e2ee.payload : null,
+      control: isControl,
       attachments: e2ee ? [] : (attachments ?? []),
       replyTo: replyTo ? new Types.ObjectId(replyTo) : null,
       readBy: [new Types.ObjectId(senderId)],
@@ -317,29 +320,33 @@ export class ChatService {
       await this.conversationModel.updateOne({ _id: conversation._id }, { $set: { e2ee: true } }).exec();
     }
 
-    const previewText = e2ee ? '🔒 رسالة' : text?.slice(0, 120) || this.attachmentPreview(attachments);
-    // A new message "revives" the conversation for anyone who had deleted it -- same behavior
-    // as most chat apps, where deleting only hides it until the next incoming message.
-    await this.conversationModel
-      .findByIdAndUpdate(conversationId, {
-        $set: { lastMessagePreview: previewText, lastMessageAt: new Date(), lastMessageId: message._id },
-        $pull: { deletedBy: { $in: conversation.participants } },
-      })
-      .exec();
+    // A control message (reaction/edit/delete) is delivered + persisted for replay, but it is not
+    // a "new message": no preview bump, no conversation revive, no notification.
+    if (!isControl) {
+      const previewText = e2ee ? '🔒 رسالة' : text?.slice(0, 120) || this.attachmentPreview(attachments);
+      // A new message "revives" the conversation for anyone who had deleted it -- same behavior
+      // as most chat apps, where deleting only hides it until the next incoming message.
+      await this.conversationModel
+        .findByIdAndUpdate(conversationId, {
+          $set: { lastMessagePreview: previewText, lastMessageAt: new Date(), lastMessageId: message._id },
+          $pull: { deletedBy: { $in: conversation.participants } },
+        })
+        .exec();
 
-    const mentionedIds = new Set(validMentionIds);
-    for (const participant of conversation.participants) {
-      const recipientId = participant.toString();
-      if (recipientId === senderId) continue;
-      // A specifically @mentioned participant gets the more specific 'mention' notification
-      // instead of the generic 'chat_message' one, so nobody gets pinged twice for one message.
-      await this.notificationsService.create({
-        recipient: recipientId,
-        actor: senderId,
-        type: mentionedIds.has(recipientId) ? 'mention' : 'chat_message',
-        conversationId,
-        preview: previewText,
-      });
+      const mentionedIds = new Set(validMentionIds);
+      for (const participant of conversation.participants) {
+        const recipientId = participant.toString();
+        if (recipientId === senderId) continue;
+        // A specifically @mentioned participant gets the more specific 'mention' notification
+        // instead of the generic 'chat_message' one, so nobody gets pinged twice for one message.
+        await this.notificationsService.create({
+          recipient: recipientId,
+          actor: senderId,
+          type: mentionedIds.has(recipientId) ? 'mention' : 'chat_message',
+          conversationId,
+          preview: previewText,
+        });
+      }
     }
 
     return message.populate(MESSAGE_POPULATE);

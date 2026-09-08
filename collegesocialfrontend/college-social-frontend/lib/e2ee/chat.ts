@@ -1,32 +1,26 @@
 // The seam between ChatWindow and the E2EE protocol. ChatWindow never touches ratchet state or
-// wire envelopes directly -- it calls these four functions and gets back plain strings.
+// wire envelopes directly -- it calls these helpers and gets back plain strings / inner envelopes.
 //
-//   encryptText   -> opaque `payload` string to hand the socket (`{ encrypted: true, payload }`)
-//   decryptMessage-> the cleartext for a received `message.encrypted` bubble (cache-first)
-//   rememberOutgoing / adoptServerId -> keep our own sent text readable after a reload
+//   encryptText / encryptInner  -> opaque `payload` string for the socket
+//   decryptToInner              -> the decrypted InnerEnvelope for a received `message.encrypted`
+//   rememberOutgoing / rememberInner / adoptServerId -> keep our own sends readable after a reload
 //
 // Message keys are deleted on first use (forward secrecy), so a reload can't re-derive history.
-// Every successful decrypt (and every send) is mirrored into an IndexedDB plaintext cache keyed
-// by message id; that's what makes the thread survive a refresh on this device.
+// Every successful decrypt (and every send) is mirrored into an IndexedDB cache keyed by message
+// id; that's what makes the thread -- and replayed reactions/edits/deletes -- survive a refresh.
 
 import { isWireEnvelope, type InnerEnvelope, type WireEnvelope } from './envelope';
 import { e2eeSession } from './session';
 import { getPlaintext, putPlaintext, renamePlaintext } from './store';
 
-export interface DecryptResult {
-  text: string;
-  failed: boolean;
-}
+/** Reaction / edit / delete carried as an encrypted control message (not rendered as a bubble). */
+export type ControlInner = Extract<InnerEnvelope, { k: 'reaction' | 'edit' | 'delete' }>;
+/** An encrypted attachment: the blob lives (ciphertext) on the CDN, the key rides in here. */
+export type MediaInner = Extract<InnerEnvelope, { k: 'media' }>;
 
-// A non-text inner envelope (reaction/edit/delete/media control messages -- P5). Until those are
-// wired end to end, render them as a neutral marker rather than leaking "undefined".
-function describeNonText(inner: InnerEnvelope): string {
-  switch (inner.k) {
-    case 'media':
-      return '🔒 مرفق مشفّر';
-    default:
-      return '🔒 رسالة';
-  }
+export interface DecryptedInner {
+  inner: InnerEnvelope | null;
+  failed: boolean;
 }
 
 /** Encrypt one outgoing text message. Returns the JSON string to send as `payload`. */
@@ -39,42 +33,65 @@ export async function encryptText(
   return JSON.stringify(wire);
 }
 
-/** Cleartext for a received encrypted message. Cache-first; a failed decrypt is not thrown. */
-export async function decryptMessage(message: {
-  _id: string;
-  conversation: string;
-  payload?: string | null;
-}): Promise<DecryptResult> {
-  const cached = await getPlaintext(message._id);
-  if (cached) return { text: cached.text, failed: false };
+/** Encrypt a non-text inner envelope (control message or media descriptor). */
+export async function encryptInner(
+  conversationId: string,
+  peerId: string,
+  inner: ControlInner | MediaInner,
+): Promise<string> {
+  const wire = await e2eeSession.encrypt(conversationId, peerId, inner);
+  return JSON.stringify(wire);
+}
 
-  if (!message.payload) return { text: '', failed: true };
+/**
+ * The decrypted inner envelope for a received encrypted message. Cache-first; never throws.
+ * `cacheOnly` (used for our OWN outbound messages -- the ratchet can't decrypt them, and trying
+ * would corrupt its state) skips the live decrypt and just reports a miss.
+ */
+export async function decryptToInner(
+  message: { _id: string; conversation: string; payload?: string | null },
+  cacheOnly = false,
+): Promise<DecryptedInner> {
+  const cached = await getPlaintext(message._id);
+  if (cached) {
+    try {
+      return { inner: JSON.parse(cached.inner) as InnerEnvelope, failed: false };
+    } catch {
+      /* corrupt cache entry -- fall through to a fresh decrypt */
+    }
+  }
+  if (cacheOnly) return { inner: null, failed: true };
+
+  if (!message.payload) return { inner: null, failed: true };
   let wire: unknown;
   try {
     wire = JSON.parse(message.payload);
   } catch {
-    return { text: '', failed: true };
+    return { inner: null, failed: true };
   }
-  if (!isWireEnvelope(wire)) return { text: '', failed: true };
+  if (!isWireEnvelope(wire)) return { inner: null, failed: true };
 
   try {
     const inner = await e2eeSession.decrypt(message.conversation, wire as WireEnvelope);
-    const text = inner.k === 'text' ? inner.body : describeNonText(inner);
     await putPlaintext({
       messageId: message._id,
       conversationId: message.conversation,
-      text,
-      k: inner.k,
+      inner: JSON.stringify(inner),
     });
-    return { text, failed: false };
+    return { inner, failed: false };
   } catch {
-    return { text: '', failed: true };
+    return { inner: null, failed: true };
   }
 }
 
-/** Remember the cleartext of a message we just sent (optimistic bubble, temp id). */
+/** Remember the decrypted inner of a message (our own send, or an edit that rewrote the text). */
+export function rememberInner(messageId: string, conversationId: string, inner: InnerEnvelope): void {
+  void putPlaintext({ messageId, conversationId, inner: JSON.stringify(inner) });
+}
+
+/** Remember the cleartext of a text message we just sent (optimistic bubble, temp id). */
 export function rememberOutgoing(tempId: string, conversationId: string, text: string): void {
-  void putPlaintext({ messageId: tempId, conversationId, text, k: 'text' });
+  rememberInner(tempId, conversationId, { k: 'text', body: text });
 }
 
 /** Move the remembered cleartext onto the permanent id once the server echoes the message back. */

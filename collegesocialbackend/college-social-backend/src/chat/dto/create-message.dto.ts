@@ -70,4 +70,10 @@ export class CreateMessageDto {
   @IsString()
   @MaxLength(20000)
   payload?: string;
+
+  // Encrypted control message (reaction/edit/delete). Only meaningful with `encrypted` + `payload`.
+  // The server stores and relays it but skips preview/notification/unread side effects.
+  @IsOptional()
+  @IsBoolean()
+  control?: boolean;
 }

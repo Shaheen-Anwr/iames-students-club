@@ -128,6 +128,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
     const onNewMessage = (message: Message) => {
       if (!message?.conversation) return;
+      // Encrypted control carriers (reaction/edit/delete) aren't real messages -- no list bump.
+      if (message.control) return;
       ensureKnown(message.conversation);
       // WhatsApp-style: raise the unread badge only for messages from someone else that land
       // in a conversation the user isn't currently viewing.

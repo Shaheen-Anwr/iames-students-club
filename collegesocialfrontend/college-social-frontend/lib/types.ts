@@ -747,10 +747,25 @@ export interface Message {
   // server-side and `payload` holds the opaque WireEnvelope JSON; the client decrypts it locally.
   encrypted?: boolean;
   payload?: string | null;
+  /** Encrypted control carrier (reaction/edit/delete) -- applied client-side, never rendered. */
+  control?: boolean;
   /** Client-only: plaintext recovered by decrypting `payload` (or a marker when that failed). */
   decrypted?: string | null;
   /** Client-only: set when `payload` could not be decrypted on this device. */
   decryptFailed?: boolean;
+  /** Client-only: the decrypted `{ k: 'media' }` descriptor for an encrypted attachment. */
+  media?: {
+    kind: 'image' | 'voice' | 'file';
+    url: string;
+    mk: string;
+    iv: string;
+    name?: string;
+    mime?: string;
+    size?: number;
+    dur?: number;
+  } | null;
+  /** Client-only: object URL for an encrypted attachment whose bytes were sent from this device. */
+  localMediaUrl?: string | null;
   /** @deprecated use `attachments` */
   attachmentUrl?: string | null;
   attachments?: Attachment[];
