@@ -30,6 +30,7 @@ import { useToast } from '@/lib/toast-context';
 import type { Conversation, Message } from '@/lib/types';
 
 import { EmojiPicker, QuickReactionBar } from './EmojiPicker';
+import { EncryptedMedia } from './EncryptedMedia';
 import { LinkPreviewCard } from './LinkPreviewCard';
 import { MessageMenu, type MessageMenuItem } from './MessageMenu';
 import { VoiceMessagePlayer } from './VoiceMessagePlayer';
@@ -233,7 +234,7 @@ export function MessageBubble({
     },
   ];
 
-  if (isOwn && message.text && !message.encrypted) {
+  if (isOwn && message.text) {
     desktopMenuItems.push({
       key: 'edit',
       label: 'تعديل',
@@ -290,7 +291,7 @@ export function MessageBubble({
     },
   ];
 
-  if (isOwn && message.text && !message.encrypted) {
+  if (isOwn && message.text) {
     mobileMenuItems.push({
       key: 'edit',
       label: 'تعديل',
@@ -326,9 +327,12 @@ export function MessageBubble({
     },
   });
 
-  // Forwarding an encrypted message would re-send its (server-blank) body -- drop that action.
+  // An encrypted attachment can't be forwarded in v1 (no re-upload path); encrypted text is
+  // re-encrypted into each destination by ChatWindow.
   const visibleMenu = (items: MessageMenuItem[]) =>
-    message.encrypted ? items.filter((i) => i.key !== 'forward') : items;
+    message.encrypted && (message.media || message.localMediaUrl)
+      ? items.filter((i) => i.key !== 'forward')
+      : items;
 
   function closeMobileActions() {
     setMobileActionsOpen(false);
@@ -577,12 +581,16 @@ export function MessageBubble({
               );
             })}
 
+            {(message.media || message.localMediaUrl) && !message.decryptFailed && (
+              <EncryptedMedia message={message} isOwn={isOwn} onImageClick={onImageClick} />
+            )}
+
             {message.decryptFailed ? (
               <div className="flex items-center gap-2 rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
                 <Lock className="h-3.5 w-3.5 shrink-0" />
                 تعذّر فك تشفير هذه الرسالة على هذا الجهاز
               </div>
-            ) : decrypting ? (
+            ) : message.media || message.localMediaUrl ? null : decrypting ? (
               <div className="flex items-center gap-2 rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
                 <Lock className="h-3.5 w-3.5 shrink-0 animate-pulse" />
                 جارٍ فك التشفير…

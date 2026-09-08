@@ -69,6 +69,12 @@ export class Message {
   @Prop({ type: String, default: null })
   payload: string | null;
 
+  // Encrypted control message (reaction / edit / delete carried as an opaque inner envelope --
+  // see docs/e2ee-design.md §5). Persisted so it reaches an offline peer and can be replayed on
+  // reload, but the server never previews it, notifies for it, or renders it as a bubble.
+  @Prop({ default: false })
+  control: boolean;
+
   @Prop({ type: [AttachmentSchema], default: [] })
   attachments: Attachment[];
 

@@ -112,11 +112,13 @@ export function deleteSession(conversationId: string): Promise<unknown> {
 }
 
 // --- decrypted-plaintext cache -------------------------------------------------------------------
+// The ratchet deletes each message key after first use, so a reload can't re-derive history; we
+// keep the decrypted inner envelope (JSON) per message id so the thread still renders -- and so
+// control messages (reaction/edit/delete) can be replayed on reload without re-running the ratchet.
 export interface PlaintextRecord {
   messageId: string;
   conversationId: string;
-  text: string;
-  k: string; // inner envelope kind ('text' | 'media' | ...) -- future-proofs the cache
+  inner: string; // JSON.stringify(InnerEnvelope)
   ts: number;
 }
 export function putPlaintext(rec: Omit<PlaintextRecord, 'ts'>): Promise<unknown> {
@@ -131,7 +133,7 @@ export function getPlaintext(messageId: string): Promise<PlaintextRecord | undef
 export async function renamePlaintext(fromId: string, toId: string): Promise<void> {
   const rec = await getPlaintext(fromId);
   if (!rec) return;
-  await putPlaintext({ messageId: toId, conversationId: rec.conversationId, text: rec.text, k: rec.k });
+  await putPlaintext({ messageId: toId, conversationId: rec.conversationId, inner: rec.inner });
   await tx('msgcache', 'readwrite', (s) => s.delete(fromId)).catch(() => undefined);
 }
 

@@ -5,23 +5,34 @@ import { Mic, Paperclip, Pencil, Reply, Send, Smile, Trash2, X } from 'lucide-re
 import { Button } from '@/components/ui/Button';
 import { MentionTextarea } from '@/components/shared/MentionTextarea';
 import { api, ApiError } from '@/lib/api';
+import { sealBlob, type MediaInner } from '@/lib/e2ee';
 import { haptic } from '@/lib/haptics';
 import { useToast } from '@/lib/toast-context';
 import { formatBytes } from '@/lib/utils';
 import type { Attachment, AttachmentType, Message } from '@/lib/types';
 import { EmojiPicker } from './EmojiPicker';
 
+export type EncryptedMediaDraft = MediaInner & { localUrl: string };
+
 interface MessageInputProps {
   onSend: (text: string, attachments?: Attachment[], replyTo?: string) => void;
+  /** Encrypted thread: attachments are sealed + uploaded here, then handed over as descriptors. */
+  onEncryptedMedia?: (drafts: EncryptedMediaDraft[], replyTo?: string) => void;
   onTyping: () => void;
   onStopTyping: () => void;
-  /** End-to-end encrypted thread: text only in v1 -- hide attachments + voice. */
+  /** End-to-end encrypted thread. */
   encrypted?: boolean;
   replyingTo?: Message | null;
   onCancelReply: () => void;
   editingMessage?: Message | null;
   onCancelEdit: () => void;
   onSubmitEdit: (messageId: string, text: string) => void;
+}
+
+function mediaKind(mime: string): MediaInner['kind'] {
+  if (mime.startsWith('image/')) return 'image';
+  if (mime.startsWith('audio/')) return 'voice';
+  return 'file';
 }
 
 function categoryForMime(mimeType: string): { category: 'photos' | 'videos' | 'audio' | 'files'; type: AttachmentType } {
@@ -33,6 +44,7 @@ function categoryForMime(mimeType: string): { category: 'photos' | 'videos' | 'a
 
 export function MessageInput({
   onSend,
+  onEncryptedMedia,
   onTyping,
   onStopTyping,
   encrypted = false,
@@ -93,6 +105,36 @@ export function MessageInput({
     return { url: uploaded.url, type, name: file.name, size: uploaded.size, mimeType: uploaded.mimeType, chunkCount: uploaded.chunkCount };
   }
 
+  // Encrypted attachment: seal the bytes under a fresh key, upload the CIPHERTEXT, and hand back a
+  // descriptor (the key + IV ride in the encrypted inner envelope, never near the CDN).
+  // v1 caps at ~9.5MB so the ciphertext never trips the CDN's raw-asset split (a split upload only
+  // exposes its first piece by URL, which we can't reassemble for an encrypted blob).
+  async function sealAndUpload(file: File): Promise<EncryptedMediaDraft> {
+    if (file.size > 9_500_000) {
+      throw new ApiError(400, 'الحد الأقصى للمرفق المشفّر ٩٫٥ ميغابايت.');
+    }
+    const bytes = await file.arrayBuffer();
+    setProgress({ label: 'جارٍ التشفير…', pct: 0 });
+    const sealed = await sealBlob(bytes);
+    const cipherFile = new File([sealed.data], `${file.name}.enc`, { type: 'application/octet-stream' });
+    const uploaded = await api.upload<{ url: string; size: number }>(
+      '/upload/file',
+      cipherFile,
+      (pct) => setProgress({ label: 'جارٍ الرفع…', pct: Math.round(pct) }),
+    );
+    return {
+      k: 'media',
+      kind: mediaKind(file.type),
+      url: uploaded.url,
+      mk: sealed.mk,
+      iv: sealed.iv,
+      name: file.name,
+      mime: file.type || undefined,
+      size: file.size,
+      localUrl: URL.createObjectURL(new Blob([bytes], file.type ? { type: file.type } : undefined)),
+    };
+  }
+
   async function handleSend() {
     if (editingMessage) {
       if (!text.trim()) return;
@@ -102,6 +144,32 @@ export function MessageInput({
     }
 
     if (!text.trim() && files.length === 0) return;
+
+    // --- Encrypted thread: text (if any) goes as an encrypted message, files as sealed media ---
+    if (encrypted) {
+      const body = text.trim();
+      const drafts: EncryptedMediaDraft[] = [];
+      if (files.length) {
+        setUploading(true);
+        try {
+          for (const file of files) drafts.push(await sealAndUpload(file));
+        } catch (err) {
+          showToast(err instanceof ApiError ? err.message : 'تعذّر إرفاق الملف.', 'error');
+          setUploading(false);
+          setProgress(null);
+          return;
+        }
+        setUploading(false);
+        setProgress(null);
+      }
+      if (body) onSend(body, undefined, replyingTo?._id);
+      if (drafts.length) onEncryptedMedia?.(drafts, replyingTo?._id);
+      haptic('tap');
+      setText('');
+      setFiles([]);
+      onCancelReply();
+      return;
+    }
 
     let attachments: Attachment[] | undefined;
     if (files.length) {
@@ -157,20 +225,29 @@ export function MessageInput({
           setUploading(true);
           try {
             const file = new File([blob], `voice-${Date.now()}.webm`, { type: 'audio/webm' });
-            const uploaded = await api.upload<{ url: string; size: number; mimeType: string }>('/upload/audio', file);
-            const attachment: Attachment = {
-              url: uploaded.url,
-              type: 'voice',
-              size: uploaded.size,
-              mimeType: uploaded.mimeType,
-              duration: recordSeconds,
-            };
-            onSend('', [attachment], replyingTo?._id);
-            onCancelReply();
+            if (encrypted) {
+              const draft = await sealAndUpload(file);
+              draft.kind = 'voice';
+              draft.dur = recordSeconds;
+              onEncryptedMedia?.([draft], replyingTo?._id);
+              onCancelReply();
+            } else {
+              const uploaded = await api.upload<{ url: string; size: number; mimeType: string }>('/upload/audio', file);
+              const attachment: Attachment = {
+                url: uploaded.url,
+                type: 'voice',
+                size: uploaded.size,
+                mimeType: uploaded.mimeType,
+                duration: recordSeconds,
+              };
+              onSend('', [attachment], replyingTo?._id);
+              onCancelReply();
+            }
           } catch (err) {
             showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال الرسالة الصوتية.', 'error');
           } finally {
             setUploading(false);
+            setProgress(null);
           }
         }
         setRecordSeconds(0);
@@ -292,26 +369,22 @@ export function MessageInput({
               anchorClassName="absolute bottom-full start-0 z-30 mb-2 w-72 rounded-2xl border border-border bg-surface p-3 shadow-card animate-slide-up"
             />
           </div>
-          {!encrypted && (
-            <>
-              <button
-                onClick={() => fileInputRef.current?.click()}
-                className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-accent active:scale-95"
-              >
-                <Paperclip className="h-5 w-5" />
-              </button>
-              <input
-                ref={fileInputRef}
-                type="file"
-                multiple
-                className="hidden"
-                onChange={(e) => {
-                  addFiles(e.target.files);
-                  e.target.value = '';
-                }}
-              />
-            </>
-          )}
+          <button
+            onClick={() => fileInputRef.current?.click()}
+            className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-accent active:scale-95"
+          >
+            <Paperclip className="h-5 w-5" />
+          </button>
+          <input
+            ref={fileInputRef}
+            type="file"
+            multiple
+            className="hidden"
+            onChange={(e) => {
+              addFiles(e.target.files);
+              e.target.value = '';
+            }}
+          />
           <MentionTextarea
             rows={1}
             value={text}
@@ -330,7 +403,7 @@ export function MessageInput({
             placeholder={encrypted ? '🔒 رسالة مشفّرة' : 'اكتب رسالة'}
             className="max-h-32 flex-1 resize-none rounded-2xl border border-transparent bg-surface-2/70 px-4 py-2.5 text-base leading-relaxed placeholder:text-muted-foreground transition-colors focus:bg-surface focus:outline-none focus:ring-2 focus:ring-accent/30 md:text-[15px]"
           />
-          {!encrypted && !editingMessage && !text.trim() && files.length === 0 ? (
+          {!editingMessage && !text.trim() && files.length === 0 ? (
             <button
               onClick={startRecording}
               disabled={uploading}
