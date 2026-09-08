@@ -87,6 +87,18 @@ export function importECDSAPublic(spkiB64: string): Promise<CryptoKey> {
   return subtle.importKey('spki', unb64(spkiB64), { name: 'ECDSA', namedCurve: 'P-256' }, true, ['verify']);
 }
 
+// pkcs8 private-key export/import -- only used for the passphrase key backup (P6). Identity +
+// signed-prekey keypairs are generated `extractable` so this works; one-time prekeys are not.
+export async function exportPrivate(key: CryptoKey): Promise<string> {
+  return b64(await subtle.exportKey('pkcs8', key));
+}
+export function importECDHPrivate(pkcs8B64: string, extractable = true): Promise<CryptoKey> {
+  return subtle.importKey('pkcs8', unb64(pkcs8B64), { name: 'ECDH', namedCurve: 'P-256' }, extractable, ['deriveBits']);
+}
+export function importECDSAPrivate(pkcs8B64: string, extractable = true): Promise<CryptoKey> {
+  return subtle.importKey('pkcs8', unb64(pkcs8B64), { name: 'ECDSA', namedCurve: 'P-256' }, extractable, ['sign']);
+}
+
 // --- DH / signatures --------------------------------------------------------------------------
 /** 32 raw bytes of shared secret from our ECDH private key and their ECDH public key. */
 export async function ecdh(priv: CryptoKey, pub: CryptoKey): Promise<Bytes> {
@@ -115,6 +127,17 @@ export async function hmac(key: Bytes, data: Bytes): Promise<Bytes> {
 }
 export async function sha256(data: Bytes): Promise<Bytes> {
   return toBytes(await subtle.digest('SHA-256', data));
+}
+
+/** PBKDF2-SHA-256 -> 32 raw bytes. Used to turn a backup passphrase into an AES key (P6). */
+export async function pbkdf2(passphrase: string, salt: Bytes, iterations: number): Promise<Bytes> {
+  const base = await subtle.importKey('raw', utf8(passphrase), 'PBKDF2', false, ['deriveBits']);
+  const bits = await subtle.deriveBits(
+    { name: 'PBKDF2', salt, iterations, hash: 'SHA-256' },
+    base,
+    256,
+  );
+  return toBytes(bits);
 }
 
 // --- AES-256-GCM -------------------------------------------------------------------------------

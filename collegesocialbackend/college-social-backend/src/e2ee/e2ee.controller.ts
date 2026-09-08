@@ -1,9 +1,9 @@
-import { Body, Controller, Get, Param, Post, UseGuards } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, Post, Put, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { E2eeService } from './e2ee.service';
-import { AddPreKeysDto, RegisterKeysDto } from './dto/register-keys.dto';
+import { AddPreKeysDto, BackupDto, RegisterKeysDto } from './dto/register-keys.dto';
 
 // Public-key registry for chat E2EE (docs/e2ee-design.md). Every route is 403 until E2EE_ENABLED.
 @UseGuards(JwtAuthGuard)
@@ -38,5 +38,22 @@ export class E2eeController {
   @Get('keys/:userId/identity')
   identity(@Param('userId') userId: string) {
     return this.e2eeService.getIdentity(userId);
+  }
+
+  // --- passphrase key backup (P6). The blob is opaque ciphertext. ---
+  @Get('backup')
+  getBackup(@CurrentUser() user: AuthenticatedUser) {
+    return this.e2eeService.getBackup(user.userId);
+  }
+
+  @Put('backup')
+  putBackup(@CurrentUser() user: AuthenticatedUser, @Body() dto: BackupDto) {
+    return this.e2eeService.putBackup(user.userId, dto.blob);
+  }
+
+  @Delete('backup')
+  async deleteBackup(@CurrentUser() user: AuthenticatedUser) {
+    await this.e2eeService.deleteBackup(user.userId);
+    return { ok: true };
   }
 }

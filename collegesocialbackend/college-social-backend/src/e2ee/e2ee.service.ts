@@ -109,14 +109,42 @@ export class E2eeService {
     return { identityKey: user.e2ee.identityKey };
   }
 
-  async status(userId: string): Promise<{ enabled: boolean; registered: boolean; oneTimePreKeysLeft: number }> {
+  async status(
+    userId: string,
+  ): Promise<{ enabled: boolean; registered: boolean; oneTimePreKeysLeft: number; hasBackup: boolean }> {
     const enabled = !!this.config.get<boolean>('e2eeEnabled');
-    if (!enabled) return { enabled: false, registered: false, oneTimePreKeysLeft: 0 };
+    if (!enabled) return { enabled: false, registered: false, oneTimePreKeysLeft: 0, hasBackup: false };
     const uid = new Types.ObjectId(userId);
     const [user, left] = await Promise.all([
-      this.userModel.findById(uid).select('e2ee.registeredAt').lean().exec(),
+      this.userModel.findById(uid).select('e2ee.registeredAt e2eeBackup.updatedAt').lean().exec(),
       this.preKeyModel.countDocuments({ user: uid }).exec(),
     ]);
-    return { enabled, registered: !!user?.e2ee, oneTimePreKeysLeft: left };
+    return { enabled, registered: !!user?.e2ee, oneTimePreKeysLeft: left, hasBackup: !!user?.e2eeBackup };
+  }
+
+  // --- passphrase key backup (P6) --------------------------------------------------------------
+  async getBackup(userId: string): Promise<{ blob: string | null; updatedAt: string | null }> {
+    this.assertEnabled();
+    const user = await this.userModel.findById(userId).select('e2eeBackup').lean().exec();
+    return {
+      blob: user?.e2eeBackup?.blob ?? null,
+      updatedAt: user?.e2eeBackup?.updatedAt?.toISOString() ?? null,
+    };
+  }
+
+  async putBackup(userId: string, blob: string): Promise<{ updatedAt: string }> {
+    this.assertEnabled();
+    const updatedAt = new Date();
+    await this.userModel
+      .updateOne({ _id: new Types.ObjectId(userId) }, { $set: { e2eeBackup: { blob, updatedAt } } })
+      .exec();
+    return { updatedAt: updatedAt.toISOString() };
+  }
+
+  async deleteBackup(userId: string): Promise<void> {
+    this.assertEnabled();
+    await this.userModel
+      .updateOne({ _id: new Types.ObjectId(userId) }, { $set: { e2eeBackup: null } })
+      .exec();
   }
 }

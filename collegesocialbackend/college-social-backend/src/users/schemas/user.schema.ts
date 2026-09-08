@@ -253,6 +253,16 @@ export class User {
     registeredAt: Date;
   } | null;
 
+  // Passphrase-encrypted backup of the user's E2EE identity (docs/e2ee-design.md §7, phase P6).
+  // Opaque ciphertext -- the server can't read it and never learns the passphrase. Lets a new
+  // device restore the SAME identity key so contacts don't see a "security code changed" warning.
+  @Prop({
+    type: { blob: { type: String }, updatedAt: { type: Date } },
+    default: null,
+    _id: false,
+  })
+  e2eeBackup: { blob: string; updatedAt: Date } | null;
+
   // The student personalises their AI assistant. `aiAssistantName` is the name they gave it
   // (shown in the chat header; the assistant introduces itself with it). `aiPreferredName` is
   // what the assistant should call the student (defaults to the first word of `name`). Both are

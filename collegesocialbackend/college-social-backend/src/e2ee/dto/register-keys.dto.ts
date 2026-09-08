@@ -67,3 +67,12 @@ export class AddPreKeysDto {
   @Type(() => OneTimePreKeyDto)
   oneTimePreKeys: OneTimePreKeyDto[];
 }
+
+export class BackupDto {
+  // A JSON `BackupEnvelope` (PBKDF2 salt + AES-GCM iv/ct). The identity backup is ~1KB; cap
+  // generously so a future format that also carries the signed prekey still fits.
+  @IsString()
+  @MinLength(40)
+  @MaxLength(20000)
+  blob: string;
+}
