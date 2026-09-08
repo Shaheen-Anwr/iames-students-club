@@ -36,6 +36,7 @@ import {
   decryptToInner,
   encryptInner,
   encryptText,
+  isE2eeAvailable,
   isE2eeEnabledOnThisDevice,
   reconcilePeerIdentity,
   rememberInner,
@@ -132,10 +133,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       : null;
   const deviceE2eeEnabled = isE2eeEnabledOnThisDevice();
   // This conversation should be encrypted: sticky flag from the server, or both sides currently
-  // have key bundles. Groups are never encrypted (v1).
-  const e2eeActive = (!!conversation?.e2ee || e2eeRemote) && !!peerId;
-  // Encrypted thread, but the user turned encryption off on this device -> can't read or write it.
-  const e2eeLockedOut = e2eeActive && !deviceE2eeEnabled;
+  // have key bundles. Groups are never encrypted (v1). Gated on `deviceE2eeEnabled` (which is
+  // false whenever the feature flag is off) so a stale sticky `conversation.e2ee` in the DB can't
+  // re-activate the encrypted UI after the flag has been switched off -- the thread just behaves
+  // as a normal plaintext chat again.
+  const e2eeActive = deviceE2eeEnabled && (!!conversation?.e2ee || e2eeRemote) && !!peerId;
+  // Only meaningful while the feature is live but the user opted out on THIS device.
+  const e2eeLockedOut =
+    isE2eeAvailable() && !deviceE2eeEnabled && (!!conversation?.e2ee || e2eeRemote) && !!peerId;
   const peerIdRef = useRef<string | null>(null);
   useEffect(() => {
     peerIdRef.current = peerId;
@@ -204,6 +209,17 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       }
     })();
   }, [messages, deviceE2eeEnabled, user?._id]);
+
+  // E2EE off on this device (feature flag off, or opted out): don't leave old encrypted messages
+  // spinning on "decrypting…" forever -- flag them so the bubble shows a static placeholder.
+  useEffect(() => {
+    if (deviceE2eeEnabled) return;
+    setMessages((prev) =>
+      prev.some((m) => m.encrypted && !m.decrypted && !m.decryptFailed)
+        ? prev.map((m) => (m.encrypted && !m.decrypted && !m.decryptFailed ? { ...m, decryptFailed: true } : m))
+        : prev,
+    );
+  }, [messages, deviceE2eeEnabled]);
 
   // ========== LOAD MESSAGES ==========
   // Depends on conversationId ONLY. It used to also depend on `conversation`, so every presence
