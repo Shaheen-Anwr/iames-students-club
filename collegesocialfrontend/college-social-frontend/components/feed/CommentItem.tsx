@@ -203,7 +203,7 @@ export function CommentItem({ comment, onDeleted }: { comment: Comment; onDelete
               </div>
             </div>
           ) : (
-            <p className="mt-0.5 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+            <p className="mt-0.5 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
               <TaggedText text={text} />
             </p>
           )}

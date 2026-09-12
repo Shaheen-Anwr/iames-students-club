@@ -26,7 +26,7 @@ export default function FeedPage() {
   return (
     <div className="relative min-h-0 flex-1 overflow-hidden">
       <div aria-hidden className="bg-mesh pointer-events-none absolute inset-0 opacity-70" />
-      <div ref={scrollRef} className="relative h-full overflow-y-auto scrollbar-thin">
+      <div ref={scrollRef} className="relative h-full overflow-x-hidden overflow-y-auto scrollbar-thin">
         <ChatProvider>
           {/* "المجتمع" hub strip -- mobile only; on desktop the top nav + right rail already
               cover cross-navigation and /feed is a full dashboard. */}

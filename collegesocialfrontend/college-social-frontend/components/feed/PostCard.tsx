@@ -304,7 +304,7 @@ export function PostCard({
         </div>
       ) : (
         caption && (
-          <p className="mt-4 whitespace-pre-wrap text-[15px] leading-relaxed text-foreground text-pretty">
+          <p className="mt-4 whitespace-pre-wrap break-words text-[15px] leading-relaxed text-foreground text-pretty">
             <TaggedText text={caption} />
           </p>
         )

@@ -36,7 +36,7 @@ export function SharedPostPreview({ post }: { post: Post }) {
         </div>
 
         {post.caption && (
-          <p className="mt-3 whitespace-pre-wrap text-sm leading-relaxed text-foreground">
+          <p className="mt-3 whitespace-pre-wrap break-words text-sm leading-relaxed text-foreground">
             <TaggedText text={post.caption} />
           </p>
         )}
