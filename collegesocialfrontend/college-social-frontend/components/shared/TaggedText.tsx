@@ -41,7 +41,13 @@ export function TaggedText({ text }: { text: string }) {
       const trailing = match[3].match(/[.,!?;:)\]]+$/)?.[0] ?? '';
       const href = trailing ? match[3].slice(0, -trailing.length) : match[3];
       nodes.push(
-        <a key={key++} href={href} target="_blank" rel="noopener noreferrer" className="text-accent hover:underline">
+        <a
+          key={key++}
+          href={href}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="text-accent break-words hover:underline"
+        >
           {href}
         </a>,
       );
