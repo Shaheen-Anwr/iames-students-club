@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState, type RefObject } from 'react';
+import { useEffect, useMemo, useRef, useState, useTransition, type RefObject } from 'react';
 import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { ArrowDown, ArrowUp, Inbox } from 'lucide-react';
@@ -75,6 +75,7 @@ export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement |
   const [academicYear, setAcademicYear] = useState<AcademicYear | ''>('');
   const [specialization, setSpecialization] = useState<Specialization | ''>('');
   const [sortMode, setSortMode] = useState<SortMode>('latest');
+  const [, startTransition] = useTransition();
 
   // The year/specialization option lists follow the viewer's own شعبة when they have one -- both
   // feed tabs are now locked to it server-side. The "عام" شعبة dropdown only exists for a viewer
@@ -141,18 +142,27 @@ export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement |
   // "New posts" pill: on tab/app focus, peek at the newest post for this exact filter and, if
   // it's ahead of what we're showing, offer a one-tap jump-to-top + refresh. No polling.
   const [hasNew, setHasNew] = useState(false);
+  const newestProbe = useRef<{ startedAt: number; promise: Promise<void> | null }>({ startedAt: 0, promise: null });
   const topId = posts[0]?._id;
   useEffect(() => {
     if (loading || isError) return;
     const check = async () => {
       if (document.visibilityState !== 'visible') return;
+      const now = Date.now();
+      if (newestProbe.current.promise || now - newestProbe.current.startedAt < 5_000) return;
+      newestProbe.current.startedAt = now;
+      newestProbe.current.promise = (async () => {
       try {
         const res = await api.get<{ items: Post[] } | Post[]>(`/posts?${baseQuery}&before=&limit=1`);
         const newest = (Array.isArray(res) ? res[0] : res.items?.[0])?._id;
         if (newest && newest !== topId) setHasNew(true);
       } catch {
         /* ignore -- a transient peek failure is not worth surfacing */
+      } finally {
+        newestProbe.current.promise = null;
       }
+      })();
+      await newestProbe.current.promise;
     };
     window.addEventListener('focus', check);
     document.addEventListener('visibilitychange', check);
@@ -261,18 +271,18 @@ export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement |
 
       <FeedToolbar
         scope={scope}
-        onScopeChange={(next) => router.replace(`/feed?scope=${next}`)}
+        onScopeChange={(next) => startTransition(() => router.replace(`/feed?scope=${next}`))}
         showScopeTabs={!!viewerDepartment}
         departmentLabel={viewerDepartment ? DEPARTMENT_LABELS[viewerDepartment] : undefined}
         viewerDepartment={viewerDepartment}
         courseCode={courseCode}
-        onCourseChange={setCourseCode}
+        onCourseChange={(value) => startTransition(() => setCourseCode(value))}
         department={department}
-        onDepartmentChange={setDepartment}
+        onDepartmentChange={(value) => startTransition(() => setDepartment(value))}
         academicYear={academicYear}
-        onAcademicYearChange={setAcademicYear}
+        onAcademicYearChange={(value) => startTransition(() => setAcademicYear(value))}
         specialization={specialization}
-        onSpecializationChange={setSpecialization}
+        onSpecializationChange={(value) => startTransition(() => setSpecialization(value))}
         sortMode={sortMode}
         onSortChange={setSortMode}
       />
