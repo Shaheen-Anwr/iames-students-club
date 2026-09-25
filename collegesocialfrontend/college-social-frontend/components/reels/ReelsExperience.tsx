@@ -18,6 +18,28 @@ interface Props {
   initialPage?: number;
 }
 
+const viewedReelsKey = 'iaems:viewed-reels';
+
+function wasViewedThisSession(reelId: string): boolean {
+  try {
+    const viewed = JSON.parse(sessionStorage.getItem(viewedReelsKey) ?? '[]');
+    return Array.isArray(viewed) && viewed.includes(reelId);
+  } catch {
+    return false;
+  }
+}
+
+function markViewedThisSession(reelId: string): void {
+  try {
+    const viewed = JSON.parse(sessionStorage.getItem(viewedReelsKey) ?? '[]');
+    const next = new Set(Array.isArray(viewed) ? viewed : []);
+    next.add(reelId);
+    sessionStorage.setItem(viewedReelsKey, JSON.stringify([...next].slice(-500)));
+  } catch {
+    // Session storage is best-effort; ReelCard still prevents duplicate events while mounted.
+  }
+}
+
 export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 }: Props) {
   const { showToast } = useToast();
   const router = useRouter();
@@ -130,6 +152,8 @@ export function ReelsExperience({ initialReels, initialHasMore, initialPage = 1 
   }
 
   function handleView(reel: Reel) {
+    if (wasViewedThisSession(reel.id)) return;
+    markViewedThisSession(reel.id);
     track(AnalyticsEvent.ReelViewed);
     api.post(`/reels/${reel.id}/view`).catch(() => {});
   }
