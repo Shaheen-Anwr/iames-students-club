@@ -41,6 +41,9 @@ export const AnalyticsEvent = {
   AssignmentCompleted: 'assignment_completed',
   QuizSubmitted: 'quiz_submitted', // { score_pct }
   LectureOpened: 'lecture_opened', // { kind: 'pdf'|'video' }
+  UploadStarted: 'upload_started', // { category, transport, size_mb }
+  UploadSucceeded: 'upload_succeeded', // { category, transport, size_mb, duration_ms }
+  UploadFailed: 'upload_failed', // { category, transport, size_mb, status, duration_ms }
 
   // --- Re-engagement ----------------------------------------------------------------------
   NotificationOpened: 'notification_opened', // { type }

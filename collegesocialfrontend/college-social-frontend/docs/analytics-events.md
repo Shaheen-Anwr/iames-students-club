@@ -55,6 +55,9 @@ The event dictionary for the UI/UX + retention roadmap. Names live in `lib/analy
 | `assignment_completed` | `AssignmentCard` marked done (un-mark skipped) | — |
 | `quiz_submitted` | quiz attempt posts in `QuizDetailView` | `score_pct` |
 | `lecture_opened` | "فتح في وضع القراءة" tapped on a `LectureCard` | `kind` (`pdf`) |
+| `upload_started` | an attachment upload begins | `category`, `transport`, `size_mb` |
+| `upload_succeeded` | an attachment upload completes | `category`, `transport`, `size_mb`, `duration_ms` |
+| `upload_failed` | an attachment upload fails or falls back | `category`, `transport`, `size_mb`, `status`, `duration_ms` |
 
 ### Re-engagement
 

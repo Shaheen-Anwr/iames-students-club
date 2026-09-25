@@ -34,6 +34,7 @@ export interface DirectVideoUploadDeps<T> {
   /** 0-100, matches UploadProgressHandler. */
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
+  requestId?: string;
 }
 
 // One raw file part's signed public_id -- unlike video (where Cloudinary auto-assigns each
@@ -66,6 +67,7 @@ export interface DirectFileUploadDeps<T> {
   /** 0-100, matches UploadProgressHandler. */
   onProgress?: (percent: number) => void;
   signal?: AbortSignal;
+  requestId?: string;
 }
 
 // Exactly the params one Cloudinary upload POST needs -- generalizes over video (one shared
@@ -78,6 +80,7 @@ interface PieceUploadParams {
   chunkSize: number;
   /** Exact params the signature covers -- echoed back verbatim in the upload POST. */
   signedParams: Record<string, string | number>;
+  requestId?: string;
 }
 
 // Thrown when the direct path can't proceed and the caller should fall back to the server route.
@@ -193,6 +196,7 @@ async function uploadOnePiece(
     const headers: Record<string, string> = single
       ? {}
       : { 'X-Unique-Upload-Id': uploadId, 'Content-Range': `bytes ${start}-${end - 1}/${total}` };
+    if (params.requestId) headers['X-Upload-Request-Id'] = params.requestId;
 
     let attempt = 0;
     for (;;) {
@@ -330,6 +334,7 @@ export async function uploadVideoDirect<T>(file: File, deps: DirectVideoUploadDe
       // Cloudinary auto-assigns each video piece's public_id, so the same signed params cover
       // every piece -- unlike a raw file part, which needs its own public_id (see uploadFileDirect).
       signedParams: { folder: ticket.folder, tags: ticket.tags, timestamp: ticket.timestamp, signature: ticket.signature },
+      requestId: deps.requestId,
     }),
     (loaded) => report(PREP_SHARE + (loaded / totalBytes) * (0.95 - PREP_SHARE)),
     signal,
@@ -399,6 +404,7 @@ export async function uploadFileDirect<T>(file: File, deps: DirectFileUploadDeps
           signature: part.signature,
           ...(part.format ? { format: part.format } : {}),
         },
+        requestId: deps.requestId,
       };
     },
     (loaded) => report((loaded / totalBytes) * 0.95),

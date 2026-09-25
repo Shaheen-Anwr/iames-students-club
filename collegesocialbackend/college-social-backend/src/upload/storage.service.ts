@@ -367,8 +367,13 @@ export class StorageService {
   // here every part needs its own signature over its own fixed public_id, so the ticket is a list
   // of per-part signatures instead of one shared one.
 
-  private directFileUploadSignedParams(publicId: string, timestamp: number, ext: string): Record<string, string | number> {
-    const params: Record<string, string | number> = { folder: 'files', tags: DIRECT_UPLOAD_TAG, public_id: publicId, timestamp };
+  private directFileUploadSignedParams(
+    category: Extract<UploadCategory, 'files' | 'lectures'>,
+    publicId: string,
+    timestamp: number,
+    ext: string,
+  ): Record<string, string | number> {
+    const params: Record<string, string | number> = { folder: category, tags: DIRECT_UPLOAD_TAG, public_id: publicId, timestamp };
     // Raw uploads skip Cloudinary's content-based format detection (see uploadSingleAsset's own
     // comment on this) -- without it, the delivered file loses its extension.
     if (ext) params.format = ext;
@@ -389,7 +394,9 @@ export class StorageService {
     parts: { publicId: string; timestamp: number; signature: string; format: string }[];
   } {
     if (!this.configured) throw new BadRequestException('رفع الملفات غير متاح حالياً');
-    if (category !== 'files') throw new BadRequestException('الرفع المباشر مدعوم لقسم الملفات فقط حالياً');
+    if (category !== 'files' && category !== 'lectures') {
+      throw new BadRequestException('الرفع المباشر مدعوم للملفات والمحاضرات فقط حالياً');
+    }
     if (!(fileSize > 0)) throw new BadRequestException('حجم الملف غير صالح');
 
     const maxPieceBytes = chunkThresholdBytes(category);
@@ -406,7 +413,7 @@ export class StorageService {
     const parts = Array.from({ length: partCount }, (_, i) => {
       const publicId = `${groupId}-part-${i}`;
       const signature = cloudinary.utils.api_sign_request(
-        this.directFileUploadSignedParams(publicId, timestamp, ext),
+        this.directFileUploadSignedParams(category, publicId, timestamp, ext),
         apiSecret,
       );
       return { publicId, timestamp, signature, format: ext };
@@ -415,7 +422,7 @@ export class StorageService {
     return {
       cloudName: this.config.get<string>('cloudinary.cloudName') ?? '',
       apiKey: this.config.get<string>('cloudinary.apiKey') ?? '',
-      folder: 'files',
+      folder: category,
       tags: DIRECT_UPLOAD_TAG,
       groupId,
       maxPieceBytes,
@@ -429,7 +436,9 @@ export class StorageService {
   // Cloudinary auto-assigned them): every part's id is deterministic from groupId + its index.
   async confirmDirectFileUpload(category: UploadCategory, groupId: string, partCount: number): Promise<UploadOutcome> {
     if (!this.configured) throw new BadRequestException('رفع الملفات غير متاح حالياً');
-    if (category !== 'files') throw new BadRequestException('الرفع المباشر مدعوم لقسم الملفات فقط حالياً');
+    if (category !== 'files' && category !== 'lectures') {
+      throw new BadRequestException('الرفع المباشر مدعوم للملفات والمحاضرات فقط حالياً');
+    }
     if (partCount < 1 || partCount > MAX_DIRECT_UPLOAD_PIECES) {
       throw new BadRequestException('طلب تأكيد الرفع غير صالح');
     }
