@@ -4,6 +4,8 @@ import {
   Controller,
   Delete,
   ForbiddenException,
+  Headers,
+  Logger,
   Post,
   UploadedFile,
   UploadedFiles,
@@ -30,6 +32,8 @@ import { ConfirmDirectFileUploadDto } from './dto/confirm-direct-file-upload.dto
 @UseGuards(JwtAuthGuard)
 @Controller('upload')
 export class UploadController {
+  private readonly logger = new Logger(UploadController.name);
+
   constructor(
     private readonly usersService: UsersService,
     private readonly storageService: StorageService,
@@ -87,12 +91,17 @@ export class UploadController {
   // POST /api/upload/lecture -> pdf/ppt/doc slide decks and notes
   @Post('lecture')
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('lectures')))
-  async uploadLecture(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthenticatedUser) {
+  async uploadLecture(
+    @UploadedFile() file: Express.Multer.File,
+    @CurrentUser() user: AuthenticatedUser,
+    @Headers('x-upload-request-id') requestId?: string,
+  ) {
     if (user.role === 'student') {
       throw new ForbiddenException('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط');
     }
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
     const { url, chunkCount } = await this.storageService.upload(file, 'lectures');
+    this.logger.log(`Lecture upload received (${file.size} bytes, request ${requestId ?? 'untracked'}).`);
     return { url, chunkCount, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
   }
 
@@ -138,9 +147,10 @@ export class UploadController {
   // POST /api/upload/file -> anything else (zip, code, etc.)
   @Post('file')
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('files')))
-  async uploadFile(@UploadedFile() file: Express.Multer.File) {
+  async uploadFile(@UploadedFile() file: Express.Multer.File, @Headers('x-upload-request-id') requestId?: string) {
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
     const { url, chunkCount } = await this.storageService.upload(file, 'files');
+    this.logger.log(`File upload received (${file.size} bytes, request ${requestId ?? 'untracked'}).`);
     return { url, chunkCount, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
   }
 
@@ -159,6 +169,32 @@ export class UploadController {
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   async confirmFileUpload(@Body() dto: ConfirmDirectFileUploadDto) {
     const { url, chunkCount } = await this.storageService.confirmDirectFileUpload('files', dto.groupId, dto.partCount);
+    return {
+      url,
+      chunkCount,
+      originalName: dto.originalName ?? 'file',
+      size: dto.size ?? 0,
+      mimeType: dto.mimeType ?? 'application/octet-stream',
+    };
+  }
+
+  // Direct large lecture uploads avoid frontend-host request-size limits before reaching Render.
+  @Post('lecture/sign')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  signLectureUpload(@Body() dto: SignDirectFileUploadDto, @CurrentUser() user: AuthenticatedUser) {
+    if (user.role === 'student') {
+      throw new ForbiddenException('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط');
+    }
+    return this.storageService.createDirectFileUploadTicket('lectures', dto.fileSize, dto.originalName ?? '');
+  }
+
+  @Post('lecture/confirm')
+  @Throttle({ default: { limit: 30, ttl: 60000 } })
+  async confirmLectureUpload(@Body() dto: ConfirmDirectFileUploadDto, @CurrentUser() user: AuthenticatedUser) {
+    if (user.role === 'student') {
+      throw new ForbiddenException('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط');
+    }
+    const { url, chunkCount } = await this.storageService.confirmDirectFileUpload('lectures', dto.groupId, dto.partCount);
     return {
       url,
       chunkCount,

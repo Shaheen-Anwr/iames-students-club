@@ -1,5 +1,7 @@
 import Cookies from 'js-cookie';
 import { compressImage, compressImages, type CompressImageOptions } from './compress-image';
+import { captureError, captureEvent } from './observability';
+import { AnalyticsEvent } from './analytics';
 import {
   uploadVideoDirect,
   uploadFileDirect,
@@ -309,11 +311,38 @@ export async function regenerateAiMessage(
 // XMLHttpRequest for the upload path specifically -- everything else stays on fetch via request().
 export type UploadProgressHandler = (percent: number) => void;
 
-function uploadWithProgress<T>(path: string, formData: FormData, onProgress?: UploadProgressHandler, isRetry = false): Promise<T> {
+function uploadRequestId(): string {
+  try {
+    return crypto.randomUUID();
+  } catch {
+    return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  }
+}
+
+function uploadSizeMb(size: number): number {
+  return Math.round((size / (1024 * 1024)) * 10) / 10;
+}
+
+function uploadCategory(path: string): string {
+  return path.replace(/^\/?upload\//, '').split('/')[0] || 'unknown';
+}
+
+function uploadWithProgress<T>(
+  path: string,
+  formData: FormData,
+  onProgress?: UploadProgressHandler,
+  isRetry = false,
+  requestId = uploadRequestId(),
+  startedAt = performance.now(),
+  sizeBytes = 0,
+): Promise<T> {
+  const category = uploadCategory(path);
+  if (!isRetry) captureEvent(AnalyticsEvent.UploadStarted, { category, transport: 'multipart', size_mb: uploadSizeMb(sizeBytes) });
   return new Promise<T>((resolve, reject) => {
     const xhr = new XMLHttpRequest();
     xhr.open('POST', `${API_URL}${path}`);
     xhr.withCredentials = true;
+    xhr.setRequestHeader('X-Upload-Request-Id', requestId);
     const token = getToken();
     if (token) xhr.setRequestHeader('Authorization', `Bearer ${token}`);
 
@@ -333,7 +362,7 @@ function uploadWithProgress<T>(path: string, formData: FormData, onProgress?: Up
 
       if (xhr.status === 401 && !isRetry) {
         refreshAccessToken()
-          .then(() => uploadWithProgress<T>(path, formData, onProgress, true))
+          .then(() => uploadWithProgress<T>(path, formData, onProgress, true, requestId, startedAt, sizeBytes))
           .then(resolve, () => {
             clearToken();
             reject(new ApiError(401, extractMessage(body, 'فشل الطلب (401)')));
@@ -342,14 +371,40 @@ function uploadWithProgress<T>(path: string, formData: FormData, onProgress?: Up
       }
 
       if (xhr.status < 200 || xhr.status >= 300) {
-        reject(new ApiError(xhr.status, extractMessage(body, `فشل الطلب (${xhr.status})`)));
+        const error = new ApiError(xhr.status, extractMessage(body, `فشل الطلب (${xhr.status})`));
+        captureEvent(AnalyticsEvent.UploadFailed, {
+          category,
+          transport: 'multipart',
+          size_mb: uploadSizeMb(sizeBytes),
+          status: xhr.status,
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
+        captureError(error, { uploadRequestId: requestId, category, transport: 'multipart', status: xhr.status });
+        reject(error);
         return;
       }
 
+      captureEvent(AnalyticsEvent.UploadSucceeded, {
+        category,
+        transport: 'multipart',
+        size_mb: uploadSizeMb(sizeBytes),
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
       resolve(body as T);
     };
 
-    xhr.onerror = () => reject(new ApiError(0, 'تعذّر الاتصال بالخادم'));
+    xhr.onerror = () => {
+      const error = new ApiError(0, `تعذّر الاتصال بالخادم (رمز التتبع: ${requestId})`);
+      captureEvent(AnalyticsEvent.UploadFailed, {
+        category,
+        transport: 'multipart',
+        size_mb: uploadSizeMb(sizeBytes),
+        status: 0,
+        duration_ms: Math.round(performance.now() - startedAt),
+      });
+      captureError(error, { uploadRequestId: requestId, category, transport: 'multipart', status: 0 });
+      reject(error);
+    };
     xhr.send(formData);
   });
 }
@@ -442,20 +497,38 @@ export const api = {
   },
   upload: async <T>(path: string, file: File, onProgress?: UploadProgressHandler) => {
     const category = path.replace(/^\/?upload\//, '');
+    const requestId = uploadRequestId();
+    const startedAt = performance.now();
 
     // Video: upload the bytes straight from the browser to Cloudinary (segmenting oversized files
     // in-browser first), skipping the server hop entirely. Any failure that isn't a user abort
     // falls through to the plain server multipart route below.
     if (category === 'video' && directUploadEnabled()) {
       assertWithinSizeLimit(path, file);
+      captureEvent(AnalyticsEvent.UploadStarted, { category, transport: 'cloudinary', size_mb: uploadSizeMb(file.size) });
       try {
-        return await uploadVideoDirect<T>(file, {
+        const result = await uploadVideoDirect<T>(file, {
           sign: () => api.post<DirectUploadTicket>('/upload/video/sign'),
           confirm: (publicIds, meta) => api.post<T>('/upload/video/confirm', { publicIds, ...meta }),
           onProgress,
+          requestId,
         });
+        captureEvent(AnalyticsEvent.UploadSucceeded, {
+          category,
+          transport: 'cloudinary',
+          size_mb: uploadSizeMb(file.size),
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
+        return result;
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        captureEvent(AnalyticsEvent.UploadFailed, {
+          category,
+          transport: 'cloudinary',
+          size_mb: uploadSizeMb(file.size),
+          status: (err as { status?: number })?.status ?? 0,
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
         if (!(err instanceof DirectUploadUnavailableError)) {
           // eslint-disable-next-line no-console
           console.warn('[upload] direct video upload failed, falling back to server route:', err);
@@ -466,17 +539,34 @@ export const api = {
     // Large generic files (PDFs, scanned books, zips, etc.): same idea as video above, but split
     // by plain byte-range slicing (no re-encoding needed for opaque bytes) -- only worth the extra
     // round trip once a file is big enough to need splitting at all.
-    const FILE_DIRECT_UPLOAD_THRESHOLD_BYTES = 8 * 1024 * 1024;
-    if (category === 'file' && directUploadEnabled() && file.size > FILE_DIRECT_UPLOAD_THRESHOLD_BYTES) {
+    const FILE_DIRECT_UPLOAD_THRESHOLD_BYTES = 4 * 1024 * 1024;
+    if ((category === 'file' || category === 'lecture') && directUploadEnabled() && file.size > FILE_DIRECT_UPLOAD_THRESHOLD_BYTES) {
       assertWithinSizeLimit(path, file);
+      captureEvent(AnalyticsEvent.UploadStarted, { category, transport: 'cloudinary', size_mb: uploadSizeMb(file.size) });
       try {
-        return await uploadFileDirect<T>(file, {
-          sign: (fileSize, originalName) => api.post<DirectFileUploadTicket>('/upload/file/sign', { fileSize, originalName }),
-          confirm: (groupId, partCount, meta) => api.post<T>('/upload/file/confirm', { groupId, partCount, ...meta }),
+        const result = await uploadFileDirect<T>(file, {
+          sign: (fileSize, originalName) =>
+            api.post<DirectFileUploadTicket>(`/upload/${category}/sign`, { fileSize, originalName }),
+          confirm: (groupId, partCount, meta) => api.post<T>(`/upload/${category}/confirm`, { groupId, partCount, ...meta }),
           onProgress,
+          requestId,
         });
+        captureEvent(AnalyticsEvent.UploadSucceeded, {
+          category,
+          transport: 'cloudinary',
+          size_mb: uploadSizeMb(file.size),
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
+        return result;
       } catch (err) {
         if (err instanceof DOMException && err.name === 'AbortError') throw err;
+        captureEvent(AnalyticsEvent.UploadFailed, {
+          category,
+          transport: 'cloudinary',
+          size_mb: uploadSizeMb(file.size),
+          status: (err as { status?: number })?.status ?? 0,
+          duration_ms: Math.round(performance.now() - startedAt),
+        });
         if (!(err instanceof DirectUploadUnavailableError)) {
           // eslint-disable-next-line no-console
           console.warn('[upload] direct file upload failed, falling back to server route:', err);
@@ -489,7 +579,7 @@ export const api = {
     assertWithinSizeLimit(path, prepared);
     const formData = new FormData();
     formData.append('file', prepared);
-    return uploadWithProgress<T>(path, formData, onProgress);
+    return uploadWithProgress<T>(path, formData, onProgress, false, requestId, startedAt, prepared.size);
   },
   uploadMany: async <T>(path: string, files: File[], onProgress?: UploadProgressHandler) => {
     const opts = compressOptsFor(path);
