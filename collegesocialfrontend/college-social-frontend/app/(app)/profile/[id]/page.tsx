@@ -12,7 +12,7 @@ import { ProfileFriendsTab } from '@/components/profile/ProfileFriendsTab';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
-import type { ProfileTab } from '@/components/profile/ProfileTabs';
+import { ProfileTabs, type ProfileTab } from '@/components/profile/ProfileTabs';
 import type { Conversation, User } from '@/lib/types';
 
 export default function UserProfilePage() {
@@ -65,18 +65,20 @@ export default function UserProfilePage() {
           isOwn={isOwn}
           onPhotoUploaded={isOwn ? (photoUrl) => setProfile((p) => (p ? { ...p, photoUrl } : p)) : undefined}
           onCoverPhotoUploaded={isOwn ? (coverPhotoUrl) => setProfile((p) => (p ? { ...p, coverPhotoUrl } : p)) : undefined}
-          tab={tab}
           onTabChange={setTab}
+          actions={!isOwn ? (
+            <>
+              <Button onClick={handleMessage} loading={messaging} size="lg" className="min-w-[140px] flex-1 sm:flex-none">
+                <MessageCircle className="h-4 w-4" />
+                مراسلة
+              </Button>
+              <FriendActionButton targetUser={profile} size="lg" className="min-w-[140px] flex-1 sm:flex-none" />
+            </>
+          ) : undefined}
         />
-        {!isOwn && (
-          <div className="flex gap-2">
-            <Button onClick={handleMessage} loading={messaging} size="lg" className="flex-1">
-              <MessageCircle className="h-4 w-4" />
-              مراسلة
-            </Button>
-            <FriendActionButton targetUser={profile} size="lg" className="flex-1" />
-          </div>
-        )}
+        <div className="sticky top-0 z-20 -mx-4 border-b border-border/70 bg-surface/95 px-4 py-2 backdrop-blur-xl">
+          <ProfileTabs active={tab} onChange={setTab} friendsCount={profile.friends?.length} />
+        </div>
         {tab === 'posts' && <UserPostsFeed userId={profile._id} />}
         {tab === 'about' && <AboutCard user={profile} />}
         {tab === 'friends' && <ProfileFriendsTab profileId={profile._id} isOwn={isOwn} />}

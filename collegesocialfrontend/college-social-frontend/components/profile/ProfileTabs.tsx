@@ -22,13 +22,16 @@ export function ProfileTabs({
   friendsCount?: number;
 }) {
   return (
-    <div className="flex gap-1 border-b border-border/70 pb-2">
+    <div role="tablist" aria-label="أقسام الملف الشخصي" className="flex gap-1 overflow-x-auto scrollbar-none">
       {TABS.map((tab) => (
         <button
           key={tab.id}
+          type="button"
+          role="tab"
+          aria-selected={active === tab.id}
           onClick={() => onChange(tab.id)}
           className={cn(
-            'rounded-full px-4 py-2 text-sm font-medium transition-all active:scale-95',
+            'min-h-10 shrink-0 rounded-full px-4 py-2 text-sm font-medium transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
             active === tab.id
               ? 'bg-accent/10 text-accent ring-1 ring-inset ring-accent/20'
               : 'text-muted-foreground hover:bg-surface-2/70 hover:text-foreground',
