@@ -65,7 +65,8 @@ export function AvatarUploader({
         size="xl"
         ring
         viewable
-        className="border-4 border-surface transition-opacity group-hover:opacity-90"
+        fit="contain"
+        className="rounded-2xl border-4 border-surface bg-surface-2 shadow-elev-2 transition-opacity group-hover:opacity-90"
       />
       <div className="absolute bottom-0 end-0">
         <Dropdown

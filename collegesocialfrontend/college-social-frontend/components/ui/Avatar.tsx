@@ -10,6 +10,8 @@ interface AvatarProps {
   className?: string;
   ring?: boolean;
   online?: boolean;
+  // Preserve the whole source photo in larger profile-picture frames.
+  fit?: 'cover' | 'contain';
   // Opt-in: tap the photo to open it full-screen. Off by default so control avatars
   // (nav menu, pickers, the uploader's edit button) stay plain.
   viewable?: boolean;
@@ -35,21 +37,28 @@ const dotSizeClasses = {
   xl: 'h-4 w-4',
 };
 
-export function Avatar({ src, name, size = 'md', className, ring, online, viewable }: AvatarProps) {
+export function Avatar({ src, name, size = 'md', className, ring, online, viewable, fit = 'cover' }: AvatarProps) {
   const [errored, setErrored] = useState(false);
 
   useEffect(() => {
     setErrored(false);
   }, [src]);
 
-  const thumbSrc = src ? cldOptimize(src, { width: sizePx[size], height: sizePx[size], crop: 'thumb' }) : undefined;
+  const thumbSrc = src
+    ? cldOptimize(src, { width: sizePx[size], height: sizePx[size], crop: fit === 'contain' ? 'limit' : 'thumb' })
+    : undefined;
   const showPhoto = Boolean(thumbSrc) && !errored;
 
   const image = (
     // Uploaded avatars are user photos from the backend; keep as plain <img> to avoid
     // configuring next/image remote patterns for a dynamic, per-deployment backend origin.
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={thumbSrc} alt={name} className="h-full w-full object-cover" onError={() => setErrored(true)} />
+    <img
+      src={thumbSrc}
+      alt={name}
+      className={cn('h-full w-full', fit === 'contain' ? 'object-contain' : 'object-cover')}
+      onError={() => setErrored(true)}
+    />
   );
 
   return (
