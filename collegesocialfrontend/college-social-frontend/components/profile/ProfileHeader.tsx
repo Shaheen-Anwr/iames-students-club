@@ -53,7 +53,8 @@ export function ProfileHeader({
               size="xl"
               ring
               viewable
-              className="h-24 w-24 border-4 border-surface text-3xl sm:h-28 sm:w-28"
+              fit="contain"
+              className="h-24 w-24 rounded-2xl border-4 border-surface bg-surface-2 text-3xl shadow-elev-2 sm:h-28 sm:w-28"
             />
           )}
         </div>

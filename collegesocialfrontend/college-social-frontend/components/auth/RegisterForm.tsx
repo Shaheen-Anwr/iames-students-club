@@ -155,11 +155,11 @@ export function RegisterForm() {
           <button
             type="button"
             onClick={() => fileInputRef.current?.click()}
-            className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-full border-2 border-dashed border-border bg-surface-2 transition-colors hover:border-accent"
+            className="group relative h-20 w-20 shrink-0 overflow-hidden rounded-2xl border-2 border-dashed border-border bg-surface-2 transition-colors hover:border-accent"
           >
             {photoPreview ? (
               // eslint-disable-next-line @next/next/no-img-element
-              <img src={photoPreview} alt="معاينة الصورة الشخصية" className="h-full w-full object-cover" />
+              <img src={photoPreview} alt="معاينة الصورة الشخصية" className="h-full w-full object-contain" />
             ) : (
               <Camera className="mx-auto mt-6 h-7 w-7 text-muted-foreground group-hover:text-accent" />
             )}
