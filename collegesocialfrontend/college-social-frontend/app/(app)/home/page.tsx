@@ -13,6 +13,8 @@ import { useRawQuery } from '@/lib/query';
 import { buildNudge, classPhase } from '@/lib/today';
 import { getEffectiveOrder, type HomeLayoutPrefs, type WidgetContext } from '@/lib/home-widgets';
 import type { DashboardResponse } from '@/lib/types';
+import { FeedFriendSuggestionsCard } from '@/components/feed/FeedFriendSuggestionsCard';
+import { FeedFriendSuggestionsCarousel } from '@/components/feed/FeedFriendSuggestionsCarousel';
 
 export default function HomePage() {
   const { user } = useAuth();
@@ -67,6 +69,15 @@ export default function HomePage() {
             <FirstWeekChecklist />
           </div>
         )}
+
+        <div className="animate-slide-up" style={{ animationDelay: '80ms' }}>
+          <div className="hidden lg:block">
+            <FeedFriendSuggestionsCard />
+          </div>
+          <div className="lg:hidden">
+            <FeedFriendSuggestionsCarousel />
+          </div>
+        </div>
 
         {/* Everything below is customizable -- see profile > "تخصيص الرئيسية"
             (components/profile/CustomizeHomeCard.tsx) and lib/home-widgets.tsx's registry. Half-

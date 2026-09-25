@@ -24,7 +24,6 @@ import { CreatePostBox } from './CreatePostBox';
 import { PostCard } from './PostCard';
 import { FeedToolbar, type SortMode } from './FeedToolbar';
 import { AnnouncementsStrip } from '@/components/announcements/AnnouncementsStrip';
-import { FeedFriendSuggestionsCarousel } from './FeedFriendSuggestionsCarousel';
 
 const PAGE_SIZE = 10;
 
@@ -290,8 +289,6 @@ export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement |
       <AnnouncementsStrip />
 
       <CreatePostBox onCreated={handleCreated} defaultScope={scope} />
-
-      <FeedFriendSuggestionsCarousel />
 
       {loading ? (
         <div className="space-y-4">
