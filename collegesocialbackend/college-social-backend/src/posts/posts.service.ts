@@ -162,7 +162,18 @@ export class PostsService {
       hashtags: parseHashtags(caption),
       mentions,
     });
-    await post.save();
+    try {
+      await post.save();
+    } catch (error) {
+      if (post.attachmentType !== 'none') {
+        await this.storageService
+          .destroyPostAttachment(post.attachmentType, post.attachmentUrl, post.attachmentChunkCount, post.images)
+          .catch((cleanupError) => {
+            this.logger.warn(`Failed to clean up attachment after post creation failure: ${cleanupError instanceof Error ? cleanupError.message : cleanupError}`);
+          });
+      }
+      throw error;
+    }
 
     // Fire-and-forget: a failed extraction just means this lecture isn't searchable by the AI
     // assistant yet, never a user-facing error blocking the post from being created.
