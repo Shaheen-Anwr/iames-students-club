@@ -28,9 +28,16 @@ export function PwaRegistrar() {
       window.location.reload();
     });
 
+    let registration: ServiceWorkerRegistration | undefined;
+    const update = () => {
+      void registration?.update();
+    };
+
     navigator.serviceWorker
       .register('/sw.js', { updateViaCache: 'none' })
       .then((reg) => {
+        registration = reg;
+        void reg.update();
         const promote = (worker: ServiceWorker | null) => {
           if (worker && navigator.serviceWorker.controller) worker.postMessage('SKIP_WAITING');
         };
@@ -43,6 +50,13 @@ export function PwaRegistrar() {
         });
       })
       .catch(() => {});
+
+    window.addEventListener('pageshow', update);
+    document.addEventListener('visibilitychange', update);
+    return () => {
+      window.removeEventListener('pageshow', update);
+      document.removeEventListener('visibilitychange', update);
+    };
   }, []);
 
   return null;

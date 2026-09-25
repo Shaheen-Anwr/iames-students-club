@@ -8,7 +8,7 @@
 //
 // Bump VERSION on any change here so `activate` drops the old caches.
 
-const VERSION = 'v3';
+const VERSION = 'v4';
 const STATIC_CACHE = `iaems-static-${VERSION}`;
 const PAGES_CACHE = `iaems-pages-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
