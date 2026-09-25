@@ -42,17 +42,17 @@ export function UserPostsFeed({ userId }: { userId: string }) {
 
   if (posts.length === 0) {
     return (
-      <div className="rounded-xl2 border border-dashed border-border">
+      <div className="rounded-xl2 border border-dashed border-border bg-surface/70 shadow-elev-1">
         <EmptyState icon={Inbox} title="لا توجد منشورات لعرضها" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <section aria-label="منشورات المستخدم" className="animate-fade-in space-y-5">
       {posts.map((post) => (
         <PostCard key={post._id} post={post} onDeleted={handleDeleted} />
       ))}
-    </div>
+    </section>
   );
 }

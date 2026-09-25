@@ -64,7 +64,7 @@ export function CoverPhotoUploader({
   return (
     <div
       className={cn(
-        'group relative h-36 sm:h-48',
+        'group relative h-44 sm:h-56',
         displayCoverUrl
           ? 'cursor-zoom-in bg-cover bg-center'
           : 'bg-gradient-to-l from-background via-surface-2 to-accent/20',

@@ -14,7 +14,7 @@ import { ProfileFriendsTab } from '@/components/profile/ProfileFriendsTab';
 import { UserPostsFeed } from '@/components/profile/UserPostsFeed';
 import { Button } from '@/components/ui/Button';
 import { Spinner } from '@/components/ui/Spinner';
-import type { ProfileTab } from '@/components/profile/ProfileTabs';
+import { ProfileTabs, type ProfileTab } from '@/components/profile/ProfileTabs';
 
 // Groups the settings stack under scannable headings instead of one undifferentiated column.
 function SettingsSection({ title, children }: { title: string; children: React.ReactNode }) {
@@ -47,9 +47,11 @@ export default function ProfilePage() {
           isOwn
           onPhotoUploaded={(photoUrl) => updateLocalUser({ photoUrl })}
           onCoverPhotoUploaded={(coverPhotoUrl) => updateLocalUser({ coverPhotoUrl })}
-          tab={tab}
           onTabChange={setTab}
         />
+        <div className="sticky top-0 z-20 -mx-4 border-b border-border/70 bg-surface/95 px-4 py-2 backdrop-blur-xl">
+          <ProfileTabs active={tab} onChange={setTab} friendsCount={user.friends?.length} />
+        </div>
         {tab === 'posts' && <UserPostsFeed userId={user._id} />}
         {tab === 'about' && (
           <div className="space-y-6">

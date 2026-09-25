@@ -56,7 +56,7 @@ export function StreakPointsPill({
       <div className={cn('flex items-center gap-3', className)}>
         <div
           className={cn(
-            'flex flex-1 items-center gap-3 rounded-2xl border border-border bg-surface-2/70 px-4 py-3 transition-shadow',
+            'flex min-h-[76px] min-w-0 flex-1 items-center gap-3 rounded-2xl border border-border bg-surface-2/70 px-4 py-3 transition-[box-shadow,border-color] hover:border-accent/25 hover:shadow-elev-2',
             streak > 0 && 'border-warning/30 shadow-[0_0_20px_-8px_rgb(var(--warning)/0.5)]',
           )}
         >
@@ -76,7 +76,7 @@ export function StreakPointsPill({
             </p>
           </div>
         </div>
-        <div className="flex flex-1 items-center gap-3 rounded-2xl border border-border bg-surface-2/70 px-4 py-3">
+        <div className="flex min-h-[76px] min-w-0 flex-1 items-center gap-3 rounded-2xl border border-border bg-surface-2/70 px-4 py-3 transition-[box-shadow,border-color] hover:border-accent/25 hover:shadow-elev-2">
           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
             <Sparkles className="h-5 w-5" />
           </div>
