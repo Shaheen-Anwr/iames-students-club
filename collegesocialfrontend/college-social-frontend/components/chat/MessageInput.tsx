@@ -48,9 +48,16 @@ export function MessageInput({
     setText(editingMessage?.text ?? '');
   }, [editingMessage]);
   const [files, setFiles] = useState<File[]>([]);
+  const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [progress, setProgress] = useState<{ label: string; pct: number } | null>(null);
   const [emojiOpen, setEmojiOpen] = useState(false);
+
+  useEffect(() => {
+    const urls = files.map((file) => (file.type.startsWith('image/') ? URL.createObjectURL(file) : ''));
+    setPreviewUrls(urls);
+    return () => urls.forEach((url) => url && URL.revokeObjectURL(url));
+  }, [files]);
 
   const [recording, setRecording] = useState(false);
   const [recordSeconds, setRecordSeconds] = useState(0);
@@ -197,8 +204,8 @@ export function MessageInput({
   const formattedRecordTime = `${Math.floor(recordSeconds / 60)}:${(recordSeconds % 60).toString().padStart(2, '0')}`;
 
   return (
-    <div className="border-t border-border bg-surface">
-      <div className="mx-auto w-full max-w-3xl p-4">
+    <div className="border-t border-border bg-surface shadow-[0_-8px_24px_-20px_rgb(0_0_0/0.4)]">
+      <div className="mx-auto w-full max-w-3xl px-3 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] sm:p-4">
       {editingMessage && (
         <div className="mb-3 flex items-center gap-2.5 rounded-xl2 bg-accent/10 px-3.5 py-2 text-sm">
           <Pencil className="h-4 w-4 shrink-0 text-accent" />
@@ -225,15 +232,20 @@ export function MessageInput({
       )}
 
       {files.length > 0 && (
-        <div className="mb-3 flex flex-wrap gap-2">
+        <div className="mb-3 flex flex-wrap gap-2.5">
           {files.map((file, i) => (
-            <div key={i} className="flex items-center gap-2.5 rounded-xl2 bg-surface-2/70 px-3.5 py-2">
-              <Paperclip className="h-4 w-4 shrink-0 text-accent" />
+            <div key={`${file.name}-${file.lastModified}-${i}`} className="flex min-w-0 items-center gap-2.5 rounded-xl2 border border-border/70 bg-surface-2/70 px-2.5 py-2">
+              {previewUrls[i] ? (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={previewUrls[i]} alt={`معاينة ${file.name}`} className="h-12 w-12 shrink-0 rounded-lg object-cover" />
+              ) : (
+                <Paperclip className="ms-1 h-4 w-4 shrink-0 text-accent" />
+              )}
               <div className="min-w-0">
                 <p className="max-w-[10rem] truncate text-sm font-medium text-foreground">{file.name}</p>
                 <p className="text-xs text-muted-foreground">{formatBytes(file.size)}</p>
               </div>
-              <button onClick={() => removeFile(i)} className="rounded-full p-1 text-muted-foreground hover:bg-surface hover:text-danger">
+              <button type="button" aria-label={`إزالة ${file.name}`} onClick={() => removeFile(i)} className="rounded-full p-1 text-muted-foreground hover:bg-surface hover:text-danger">
                 <X className="h-4 w-4" />
               </button>
             </div>
@@ -290,7 +302,9 @@ export function MessageInput({
             />
           </div>
           <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
+            aria-label="إرفاق ملف"
             className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-transform hover:scale-110 hover:bg-surface-2 hover:text-accent active:scale-95"
           >
             <Paperclip className="h-5 w-5" />
@@ -325,8 +339,10 @@ export function MessageInput({
           />
           {!editingMessage && !text.trim() && files.length === 0 ? (
             <button
+              type="button"
               onClick={startRecording}
               disabled={uploading}
+              aria-label="تسجيل رسالة صوتية"
               className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white shadow-soft transition-transform hover:shadow-glow active:scale-95"
             >
               <Mic className="h-4 w-4" />

@@ -133,14 +133,20 @@ export function ConversationList() {
             return (
               <button
                 key={f.key}
+                type="button"
+                aria-pressed={active}
                 onClick={() => setFilter(f.key)}
                 className={cn(
-                  'shrink-0 rounded-full px-3.5 py-1.5 text-xs font-medium transition-all active:scale-95',
-                  active ? 'bg-gradient-accent text-white shadow-elev-1' : 'bg-surface-2 text-muted-foreground hover:text-foreground',
+                  'min-h-9 shrink-0 rounded-full px-3.5 py-2 text-sm font-medium transition-all active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60',
+                  active ? 'bg-gradient-accent text-white shadow-elev-1' : 'bg-surface-2 text-muted-foreground hover:bg-surface-3 hover:text-foreground',
                 )}
               >
                 {f.label}
-                {count > 0 && <span className="ms-1 opacity-80">{count}</span>}
+                {count > 0 && (
+                  <span className={cn('ms-1.5 inline-flex min-w-5 items-center justify-center rounded-full px-1 text-xs', active ? 'bg-white/20' : 'bg-surface text-foreground')}>
+                    {count > 99 ? '99+' : count}
+                  </span>
+                )}
               </button>
             );
           })}
@@ -234,16 +240,17 @@ export function ConversationList() {
               >
                 <Link
                   href={href}
+                  aria-current={active ? 'page' : undefined}
                   className={cn(
-                    'relative flex items-center gap-3 border-b border-border/70 bg-surface px-4 py-3.5 transition-colors hover:bg-surface-2',
+                    'relative flex min-h-[76px] items-center gap-3 border-b border-border/70 bg-surface px-4 py-3.5 transition-colors hover:bg-surface-2',
                     active &&
-                      'bg-accent/10 hover:bg-accent/10 before:absolute before:inset-y-2 before:start-0 before:w-1 before:rounded-full before:bg-accent',
+                      'bg-accent/10 shadow-[inset_0_0_0_1px_rgb(var(--accent)/0.12)] hover:bg-accent/10 before:absolute before:inset-y-2 before:start-0 before:w-1 before:rounded-full before:bg-accent',
                   )}
                 >
                   <Avatar src={assetUrl(conversation.groupIcon ?? avatarUser?.photoUrl)} name={title} size="lg" online={online} />
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="flex min-w-0 items-center gap-1 truncate text-sm font-semibold text-foreground">
+                      <p className={cn('flex min-w-0 items-center gap-1 truncate text-[15px] text-foreground', unread > 0 ? 'font-bold' : 'font-semibold')}>
                         {pinnedFlag && <Pin className="h-3 w-3 shrink-0 text-muted-foreground" />}
                         <span className="truncate">{title}</span>
                         {conversation.visibility === 'public' && (
@@ -253,14 +260,16 @@ export function ConversationList() {
                         )}
                       </p>
                       {conversation.lastMessageAt && (
-                        <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(conversation.lastMessageAt)}</span>
+                        <time dateTime={conversation.lastMessageAt} className={cn('shrink-0 text-xs', unread > 0 ? 'font-semibold text-accent' : 'text-muted-foreground')}>
+                          {timeAgo(conversation.lastMessageAt)}
+                        </time>
                       )}
                     </div>
                     <div className="flex items-center justify-between gap-2">
                       <p
                         className={cn(
-                          'truncate text-xs',
-                          isTyping ? 'font-medium text-accent' : 'text-muted-foreground',
+                          'truncate text-sm',
+                          isTyping ? 'font-semibold text-accent' : unread > 0 ? 'font-medium text-foreground' : 'text-muted-foreground',
                         )}
                       >
                         {isTyping ? 'يكتب الآن...' : conversation.lastMessagePreview || 'قل مرحبًا 👋'}
@@ -268,7 +277,7 @@ export function ConversationList() {
                       <div className="flex shrink-0 items-center gap-1.5">
                         {muted && <BellOff className="h-3 w-3 text-muted-foreground" />}
                         {unread > 0 && (
-                          <span className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-[11px] font-semibold text-white">
+                          <span aria-label={`${unread} رسائل غير مقروءة`} className="flex h-5 min-w-5 items-center justify-center rounded-full bg-accent px-1.5 text-xs font-bold text-white shadow-sm ring-2 ring-surface">
                             {unread > 99 ? '99+' : unread}
                           </span>
                         )}

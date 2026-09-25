@@ -511,8 +511,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   return (
     <div className="flex h-full min-h-0 flex-col bg-surface" style={chatAccentVars(accent)}>
       {/* Header */}
-      <div className="border-b border-border bg-surface">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-2 py-3.5 sm:gap-3 sm:px-4">
+      <div className="border-b border-border bg-surface shadow-sm">
+      <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-2.5 py-3 sm:gap-3 sm:px-4">
         <Link
           href="/chat"
           className="shrink-0 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground lg:hidden"
@@ -520,10 +520,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           <ArrowRight className="h-5 w-5" />
         </Link>
         <button onClick={() => setInfoOpen(true)} className="flex min-w-0 flex-1 items-center gap-2 text-start sm:gap-3">
-          <Avatar src={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)} name={title} size="sm" />
+          <Avatar src={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)} name={title} size="md" online={!conversation?.isGroup && !!avatarUser?.isOnline} />
           <div className="min-w-0 flex-1">
-            <p dir="auto" className="truncate text-sm font-semibold text-foreground">{title}</p>
-            <p className="truncate text-xs text-muted-foreground">
+            <p dir="auto" className="truncate text-base font-semibold text-foreground">{title}</p>
+            <p className="truncate text-sm text-muted-foreground">
               {typing ? (
                 <span className="animate-fade-in text-accent">يكتب الآن…</span>
               ) : conversation?.isGroup ? (

@@ -8,6 +8,7 @@ import {
   Copy,
   FileText,
   Forward,
+  Expand,
   Loader2,
   Pencil,
   Reply,
@@ -44,6 +45,8 @@ interface MessageBubbleProps {
   firstInGroup?: boolean;
   /** Last bubble of a cluster: show the timestamp + read ticks. */
   lastInGroup?: boolean;
+  /** Number of consecutive deleted messages represented by this compact row. */
+  deletedCount?: number;
   conversation: Conversation;
   currentUserId: string;
   onReply: (message: Message) => void;
@@ -78,6 +81,7 @@ export function MessageBubble({
   showName = false,
   firstInGroup = true,
   lastInGroup = true,
+  deletedCount = 1,
   conversation,
   currentUserId,
   onReply,
@@ -190,14 +194,15 @@ export function MessageBubble({
             />
           )}
         </div>
-        <div
-          className={cn(
-            'flex max-w-[75%] flex-col',
-            isOwn ? 'items-end' : 'items-start',
-          )}
-        >
-          <div className="rounded-2xl bg-surface-2/50 px-4 py-2.5 text-[13px] italic text-muted-foreground">
-            {isOwn ? 'قمت بحذف هذه الرسالة' : 'تم حذف هذه الرسالة'}
+        <div className={cn('flex max-w-[85%] flex-col', isOwn ? 'items-end' : 'items-start')}>
+          <div className="rounded-2xl border border-border/70 bg-surface/80 px-4 py-2.5 text-sm italic leading-relaxed text-muted-foreground shadow-sm">
+            {deletedCount > 1
+              ? isOwn
+                ? deletedCount === 2 ? 'قمت بحذف رسالتين' : `قمت بحذف ${deletedCount} رسائل`
+                : deletedCount === 2 ? 'تم حذف رسالتين' : `تم حذف ${deletedCount} رسائل`
+              : isOwn
+                ? 'قمت بحذف هذه الرسالة'
+                : 'تم حذف هذه الرسالة'}
           </div>
         </div>
       </div>
@@ -543,14 +548,19 @@ export function MessageBubble({
                     onTouchStart={handleTouchStart}
                     onTouchEnd={handleTouchEnd}
                     onTouchMove={handleTouchMove}
-                    className="block w-full cursor-pointer"
+                    className="group/image relative block w-full cursor-zoom-in"
+                    aria-label="فتح الصورة بالحجم الكامل"
+                    title="فتح الصورة بالحجم الكامل"
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={cldOptimize(url, { width: 1000 })}
                       alt={attachment.name ?? 'صورة'}
-                      className="animate-bubble-in max-h-64 max-w-full rounded-2xl object-cover"
+                      className="animate-bubble-in h-auto max-h-[min(55vh,24rem)] w-full max-w-[min(72vw,20rem)] rounded-2xl object-contain shadow-sm ring-1 ring-black/5"
                     />
+                    <span aria-hidden="true" className="absolute bottom-2 end-2 flex h-8 w-8 items-center justify-center rounded-full bg-black/55 text-white opacity-0 shadow-sm transition-opacity group-hover/image:opacity-100 group-focus-visible/image:opacity-100">
+                      <Expand className="h-4 w-4" />
+                    </span>
                   </button>
                 );
               }
@@ -628,7 +638,7 @@ export function MessageBubble({
             {message.text && (
               <div
                 className={cn(
-                  'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-[15px] leading-relaxed',
+                  'animate-bubble-in whitespace-pre-wrap break-words rounded-2xl px-4 py-2.5 text-base leading-relaxed',
                   isOwn
                     ? 'bg-gradient-accent text-white shadow-soft'
                     : 'bg-surface-2/70 text-foreground',

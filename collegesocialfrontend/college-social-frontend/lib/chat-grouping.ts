@@ -19,7 +19,7 @@ export interface GroupFlags {
 export type ChatRow =
   | { kind: 'day'; id: string; label: string }
   | { kind: 'unread'; id: string }
-  | { kind: 'msg'; id: string; message: Message; flags: GroupFlags };
+  | { kind: 'msg'; id: string; message: Message; flags: GroupFlags; deletedCount?: number };
 
 export function dayLabel(d: Date): string {
   if (isToday(d)) return 'اليوم';
@@ -52,7 +52,6 @@ export function buildChatRows(
   for (let i = 0; i < messages.length; i++) {
     const m = messages[i];
     const prev = messages[i - 1];
-    const next = messages[i + 1];
     const d = new Date(ts(m));
 
     const dayKey = d.toDateString();
@@ -65,6 +64,23 @@ export function buildChatRows(
     if (firstUnreadId && m._id === firstUnreadId) {
       rows.push({ kind: 'unread', id: 'unread-divider' });
     }
+
+    let deletedCount = 1;
+    if (m.deletedForEveryone) {
+      while (i + 1 < messages.length) {
+        const nextDeleted = messages[i + 1];
+        if (
+          !nextDeleted.deletedForEveryone ||
+          nextDeleted.sender?._id !== m.sender?._id ||
+          new Date(ts(nextDeleted)).toDateString() !== dayKey ||
+          ts(nextDeleted) - ts(messages[i]) >= GROUP_WINDOW_MS ||
+          nextDeleted._id === firstUnreadId
+        ) break;
+        i++;
+        deletedCount++;
+      }
+    }
+    const next = messages[i + 1];
 
     const sameSenderAsPrev =
       !newDay && !!prev && prev.sender?._id === m.sender?._id && ts(m) - ts(prev) < GROUP_WINDOW_MS;
@@ -80,8 +96,9 @@ export function buildChatRows(
 
     rows.push({
       kind: 'msg',
-      id: m._id,
+      id: deletedCount > 1 ? `deleted-${m._id}` : m._id,
       message: m,
+      ...(deletedCount > 1 ? { deletedCount } : {}),
       flags: {
         firstInGroup,
         lastInGroup,
