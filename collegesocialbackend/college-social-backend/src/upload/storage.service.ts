@@ -502,6 +502,59 @@ export class StorageService {
     );
   }
 
+  // Best-effort cleanup for an attachment uploaded before post creation. Post creation is a
+  // two-step flow, so a database failure after Cloudinary accepts the bytes must not leave an
+  // unreferenced asset consuming storage.
+  async destroyPostAttachment(
+    attachmentType: 'lecture' | 'video' | 'file' | 'image',
+    attachmentUrl: string | null | undefined,
+    attachmentChunkCount: number | null | undefined,
+    images: string[] = [],
+  ): Promise<void> {
+    const urls = attachmentType === 'image' ? images : attachmentUrl ? [attachmentUrl] : [];
+    if (!urls.length) return;
+
+    if (!this.configured) {
+      await Promise.all(
+        urls.map((url) => (url.startsWith(LOCAL_URL_PREFIX) ? unlink(join(this.localUploadsRoot, url.slice(LOCAL_URL_PREFIX.length))).catch(() => {}) : undefined)),
+      );
+      return;
+    }
+
+    if (attachmentType === 'video') {
+      await Promise.all(urls.map((url) => this.destroyVideoByUrl(url)));
+      return;
+    }
+
+    const resourceType = attachmentType === 'image' ? 'image' : 'raw';
+    const publicIds = new Set<string>();
+    for (const url of urls) {
+      const publicId = this.cloudinaryPublicId(url);
+      if (!publicId) continue;
+      if (resourceType === 'raw' && (attachmentChunkCount ?? 1) > 1) {
+        const base = publicId.replace(/-part-0$/, '');
+        for (let i = 0; i < (attachmentChunkCount ?? 1); i += 1) publicIds.add(`${base}-part-${i}`);
+      } else {
+        publicIds.add(publicId);
+      }
+    }
+    await Promise.all(
+      [...publicIds].map(
+        (id) => new Promise<void>((resolve) => cloudinary.uploader.destroy(id, { resource_type: resourceType }, () => resolve())),
+      ),
+    );
+  }
+
+  private cloudinaryPublicId(url: string): string | null {
+    if (!url.includes('res.cloudinary.com')) return null;
+    const afterUpload = url.split('/upload/')[1];
+    if (!afterUpload) return null;
+    const parts = afterUpload.split('/');
+    while (parts.length && (/^[a-z]{1,3}_/.test(parts[0]) || /^v\d+$/.test(parts[0]))) parts.shift();
+    const id = parts.join('/');
+    return id.replace(/\.[a-z0-9]+$/i, '') || null;
+  }
+
   private async cleanupPartialUpload(uploaded: UploadApiResponse[], resourceType: 'raw' | 'video'): Promise<void> {
     await Promise.all(
       uploaded.map((r) => new Promise<void>((resolve) => cloudinary.uploader.destroy(r.public_id, { resource_type: resourceType }, () => resolve()))),
