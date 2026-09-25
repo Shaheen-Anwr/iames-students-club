@@ -42,6 +42,7 @@ export function ImageGallery({ images }: { images: string[] }) {
               src={url}
               width={images.length === 1 ? 680 : 400}
               quality="auto:eco"
+              priority
               className="h-full w-full"
               imgClassName="transition-transform hover:scale-105"
             />
