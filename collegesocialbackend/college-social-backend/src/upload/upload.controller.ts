@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Post,
   UploadedFile,
   UploadedFiles,
@@ -86,7 +87,10 @@ export class UploadController {
   // POST /api/upload/lecture -> pdf/ppt/doc slide decks and notes
   @Post('lecture')
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('lectures')))
-  async uploadLecture(@UploadedFile() file: Express.Multer.File) {
+  async uploadLecture(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthenticatedUser) {
+    if (user.role === 'student') {
+      throw new ForbiddenException('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط');
+    }
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
     const { url, chunkCount } = await this.storageService.upload(file, 'lectures');
     return { url, chunkCount, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
@@ -95,7 +99,10 @@ export class UploadController {
   // POST /api/upload/video -> lecture recordings / clips
   @Post('video')
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('videos')))
-  async uploadVideo(@UploadedFile() file: Express.Multer.File) {
+  async uploadVideo(@UploadedFile() file: Express.Multer.File, @CurrentUser() user: AuthenticatedUser) {
+    if (user.role === 'student') {
+      throw new ForbiddenException('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط');
+    }
     if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
     const { url, chunkCount } = await this.storageService.upload(file, 'videos');
     return { url, chunkCount, originalName: file.originalname, size: file.size, mimeType: file.mimetype };

@@ -256,6 +256,10 @@ export function CreatePostBox({
       showToast('اكتب شيئًا أو أرفق ملفًا أولًا.', 'error');
       return;
     }
+    if (file && (pendingType === 'lecture' || pendingType === 'video') && user.role === 'student') {
+      showToast('رفع المقررات الدراسية متاح للمشرفين وأعضاء هيئة التدريس فقط', 'error');
+      return;
+    }
     setSubmitting(true);
     try {
       let attachmentUrl: string | undefined;
