@@ -199,14 +199,14 @@ export function PostCard({
 
       <div className="flex items-start justify-between gap-3">
         {post.author ? (
-          <Link href={`/profile/${post.author._id}`} className="flex items-center gap-3">
+          <Link href={`/profile/${post.author._id}`} className="flex min-w-0 flex-1 items-center gap-3">
             <Avatar src={assetUrl(post.author.photoUrl)} name={post.author.name} size="md" />
-            <div>
-              <div className="flex items-center gap-2">
-                <p className="text-sm font-semibold text-foreground hover:underline">{post.author.name}</p>
+            <div className="min-w-0 flex-1">
+              <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <p dir="auto" className="line-clamp-2 min-w-0 break-words text-sm font-semibold leading-snug text-foreground hover:underline">{post.author.name}</p>
                 <RoleBadge role={post.author.role} />
               </div>
-              <p className="mt-0.5 flex items-center gap-2 text-xs text-muted-foreground">
+              <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
                 {timeAgo(post.createdAt)}
                 {edited && <span>· تم التعديل</span>}
                 {post.courseCode && (

@@ -7,7 +7,7 @@ import type { CourseSummary } from '@/lib/types';
 
 const MAX_CHIPS = 8;
 
-const CHIP = 'shrink-0 rounded-full px-3 py-1.5 text-xs font-medium transition-colors';
+const CHIP = 'shrink-0 snap-start rounded-full px-3 py-1.5 text-xs font-medium transition-colors';
 const CHIP_ACTIVE = 'bg-accent text-white shadow-glow';
 const CHIP_INACTIVE = 'bg-surface-2 text-muted-foreground hover:bg-surface-2/70 hover:text-foreground';
 
@@ -28,14 +28,15 @@ export function CourseChips({ value, onChange }: { value: string | null; onChang
   const top = courses.slice(0, MAX_CHIPS);
 
   return (
-    <div className="flex gap-1.5 overflow-x-auto scrollbar-thin">
-      <button type="button" onClick={() => onChange(null)} className={cn(CHIP, value === null ? CHIP_ACTIVE : CHIP_INACTIVE)}>
+    <div className="flex snap-x gap-1.5 overflow-x-auto scrollbar-thin" aria-label="تصفية حسب المقرر">
+      <button type="button" aria-pressed={value === null} onClick={() => onChange(null)} className={cn(CHIP, value === null ? CHIP_ACTIVE : CHIP_INACTIVE)}>
         الكل
       </button>
       {top.map((course) => (
         <button
           key={course.courseCode}
           type="button"
+          aria-pressed={value === course.courseCode}
           onClick={() => onChange(course.courseCode)}
           className={cn(CHIP, value === course.courseCode ? CHIP_ACTIVE : CHIP_INACTIVE)}
         >

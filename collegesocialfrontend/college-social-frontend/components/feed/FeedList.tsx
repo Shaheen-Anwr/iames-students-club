@@ -263,8 +263,8 @@ export function FeedList({ scrollRef }: { scrollRef?: RefObject<HTMLDivElement |
         <Avatar src={assetUrl(user?.photoUrl)} name={user?.name ?? '?'} size="md" />
         <h1 className="text-gradient-accent text-xl font-extrabold tracking-tight text-balance">
           {isNewUser
-            ? `Welcome to our community${user?.name ? `, ${user.name}` : ''}!`
-            : `Welcome back${user?.name ? `, ${user.name}` : ''}`}
+            ? `مرحبًا بك في مجتمعنا${user?.name ? `، ${user.name}` : ''}!`
+            : `أهلًا بعودتك${user?.name ? `، ${user.name}` : ''}`}
         </h1>
       </div>
 
