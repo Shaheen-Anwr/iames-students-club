@@ -52,11 +52,8 @@ function FilterPill({ label, onClear }: { label: string; onClear: () => void }) 
   );
 }
 
-// Sticky control bar for the feed: scope tabs + course chips + department/year/specialization
-// filters + a sort toggle, all in one glass panel that stays visible while scrolling -- reads as
-// one "environment" instead of several unrelated rows stacked above the post list. On phones the
-// three filter <select>s collapse behind a "تصفية" button (with an active-count badge) that
-// opens a bottom sheet; the active filters stay visible as removable pills.
+// Scope and filter/sort controls stay sticky; course chips scroll away on phones so the toolbar
+// doesn't consume most of the viewport. On phones the filter <select>s collapse behind a sheet.
 export function FeedToolbar({
   scope,
   onScopeChange,
@@ -166,7 +163,8 @@ export function FeedToolbar({
   );
 
   return (
-    <div className="glass sticky top-0 z-10 space-y-3 rounded-2xl p-3 shadow-elev-2">
+    <div className="space-y-2">
+      <div className="glass sticky top-0 z-20 space-y-2 rounded-2xl p-2.5 shadow-elev-2 sm:space-y-3 sm:p-3">
       {showScopeTabs && (
         <Segmented
           fullWidth
@@ -179,8 +177,6 @@ export function FeedToolbar({
           ]}
         />
       )}
-
-      <CourseChips value={courseCode} onChange={onCourseChange} />
 
       <div className="flex items-center gap-2">
         {/* Phones: filters live behind this button + a bottom sheet. */}
@@ -227,6 +223,9 @@ export function FeedToolbar({
           <SortMenu value={sortMode} onChange={onSortChange} />
         </div>
       </div>
+      </div>
+
+      <CourseChips value={courseCode} onChange={onCourseChange} />
 
       <Sheet open={filterSheetOpen} onOpenChange={setFilterSheetOpen} title="تصفية المنشورات">
         <div className="space-y-4 [&_select]:h-11 [&_select]:text-sm">

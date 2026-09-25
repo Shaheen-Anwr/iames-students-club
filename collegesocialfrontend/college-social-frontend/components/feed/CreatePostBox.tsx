@@ -13,6 +13,7 @@ import {
   ImagePlus,
   Lock,
   Paperclip,
+  Plus,
   Users,
   X,
 } from 'lucide-react';
@@ -21,6 +22,7 @@ import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
 import { ProgressBar } from '@/components/ui/ProgressBar';
+import { Sheet } from '@/components/ui/Sheet';
 import { MentionTextarea } from '@/components/shared/MentionTextarea';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
@@ -109,6 +111,7 @@ export function CreatePostBox({
   const dragDepth = useRef(0);
 
   const [open, setOpen] = useState(false);
+  const [attachmentSheetOpen, setAttachmentSheetOpen] = useState(false);
   const [dragActive, setDragActive] = useState(false);
   const [caption, setCaption] = useState('');
   const [courseCode, setCourseCode] = useState('');
@@ -361,41 +364,15 @@ export function CreatePostBox({
           >
             {`شارك ملاحظة أو سؤالاً، يا ${firstName}…`}
           </button>
-          <div className="flex items-center gap-0.5">
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(true);
-                pickImages();
-              }}
-              title="صورة"
-              className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
-            >
-              <ImageIcon className="h-[18px] w-[18px]" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(true);
-                pickFile('lecture');
-              }}
-              title="محاضرة"
-              className="hidden h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent min-[380px]:flex"
-            >
-              <FileText className="h-[18px] w-[18px]" />
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setOpen(true);
-                pickFile('video');
-              }}
-              title="فيديو"
-              className="hidden h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent sm:flex"
-            >
-              <Film className="h-[18px] w-[18px]" />
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={() => setAttachmentSheetOpen(true)}
+            aria-label="إضافة مرفق للمنشور"
+            className="flex h-10 shrink-0 items-center gap-1.5 rounded-full bg-accent/10 px-3 text-sm font-semibold text-accent transition-colors hover:bg-accent/15"
+          >
+            <Plus className="h-4 w-4" />
+            <span>إضافة</span>
+          </button>
         </div>
       ) : (
         <div
@@ -528,6 +505,8 @@ export function CreatePostBox({
                   type="button"
                   onClick={pickImages}
                   disabled={submitting}
+                  aria-label="إضافة صور"
+                  title="إضافة صور"
                   className="group flex items-center gap-2 rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                 >
                   <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-surface-2 transition-colors group-hover:bg-accent/10 group-hover:text-accent">
@@ -541,6 +520,8 @@ export function CreatePostBox({
                     type="button"
                     onClick={() => pickFile(type)}
                     disabled={submitting}
+                    aria-label={`إضافة ${label}`}
+                    title={label}
                     className="group flex items-center gap-2 rounded-full px-2.5 py-1.5 text-xs font-medium text-muted-foreground transition-colors hover:bg-surface-2 disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <span className="flex h-6 w-6 items-center justify-center rounded-lg bg-surface-2 transition-colors group-hover:bg-accent/10 group-hover:text-accent">
@@ -616,6 +597,37 @@ export function CreatePostBox({
         onChange={handleFileChange}
       />
       <input ref={imageInputRef} type="file" multiple accept={IMAGE_ACCEPT} className="hidden" onChange={handleImagesChange} />
+      <Sheet open={attachmentSheetOpen} onOpenChange={setAttachmentSheetOpen} title="إضافة إلى المنشور">
+        <div className="grid grid-cols-2 gap-2.5">
+          <button
+            type="button"
+            onClick={() => {
+              setAttachmentSheetOpen(false);
+              setOpen(true);
+              pickImages();
+            }}
+            className="flex min-h-20 items-center gap-3 rounded-2xl border border-border bg-surface-2/70 p-3 text-start transition-colors hover:border-accent/40 hover:bg-accent/5"
+          >
+            <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent"><ImageIcon className="h-5 w-5" /></span>
+            <span className="text-sm font-medium text-foreground">صور</span>
+          </button>
+          {ATTACHMENT_OPTIONS.map(({ type, label, icon: Icon }) => (
+            <button
+              key={type}
+              type="button"
+              onClick={() => {
+                setAttachmentSheetOpen(false);
+                setOpen(true);
+                pickFile(type);
+              }}
+              className="flex min-h-20 items-center gap-3 rounded-2xl border border-border bg-surface-2/70 p-3 text-start transition-colors hover:border-accent/40 hover:bg-accent/5"
+            >
+              <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-accent"><Icon className="h-5 w-5" /></span>
+              <span className="text-sm font-medium text-foreground">{label}</span>
+            </button>
+          ))}
+        </div>
+      </Sheet>
     </Card>
   );
 }
