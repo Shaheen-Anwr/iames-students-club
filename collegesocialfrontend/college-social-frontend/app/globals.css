@@ -4,6 +4,12 @@
 
 @layer base {
   :root {
+    /* Layout rhythm is named here so new pages share gutters without changing
+       the existing 4px-based Tailwind spacing utilities. */
+    --page-gutter: clamp(1rem, 3vw, 2rem);
+    --page-block: clamp(1.25rem, 2.5vw, 2rem);
+    --section-gap: clamp(1.25rem, 2vw, 1.75rem);
+
     /* Light theme -- clean near-white paper, greys tinted a few points toward the indigo
        accent hue so neutrals and accent feel like one family rather than grey + indigo. */
     --background: 247 248 252;

@@ -8,7 +8,7 @@
  * Not linked anywhere in the product nav on purpose.
  */
 
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { Sparkles, Heart, Bell, Check, Pencil, Trash2, Inbox, List, LayoutGrid, Search } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
@@ -31,16 +31,14 @@ import { PullToRefresh } from '@/components/ui/PullToRefresh';
 import { SwipeableRow } from '@/components/ui/SwipeableRow';
 import { FadeIn, Stagger, Pressable } from '@/components/ui/Motion';
 import { motion } from '@/lib/motion';
+import { PageContainer, PageGrid, PageHeader, PageSection } from '@/components/ui/PageLayout';
 
 function Section({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+  const headingId = useId();
   return (
-    <section className="space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-foreground">{title}</h2>
-        {hint && <p className="text-sm text-muted-foreground">{hint}</p>}
-      </div>
+    <PageSection title={title} description={hint} headingId={headingId}>
       {children}
-    </section>
+    </PageSection>
   );
 }
 
@@ -67,17 +65,31 @@ export default function DevUiPage() {
   const [view, setView] = useState<'list' | 'grid'>('list');
 
   return (
-    <div className="mx-auto w-full max-w-4xl space-y-12 px-4 py-8">
-      <header className="space-y-1">
-        <h1 className="text-fluid-2xl font-bold text-foreground text-balance">
-          نظام التصميم — لوحة المراجعة
-        </h1>
-        <p className="text-sm text-muted-foreground">
-          Phase A foundation + Phase B primitives. Toggle light/dark from the navbar. Resize to a
-          phone width (&lt; 768px): <strong>Modal</strong> and <strong>Dropdown</strong> flip to
-          drag-to-dismiss bottom sheets.
-        </p>
-      </header>
+    <PageContainer className="max-w-4xl space-y-12">
+      <PageHeader
+        title="نظام التصميم — لوحة المراجعة"
+        description={
+          <>
+            Phase A foundation + Phase B primitives. Toggle light/dark from the navbar. Resize to a
+            phone width (&lt; 768px): <strong>Modal</strong> and <strong>Dropdown</strong> flip to
+            drag-to-dismiss bottom sheets.
+          </>
+        }
+        className="text-balance"
+      />
+
+      <Section
+        title="Responsive page pattern"
+        hint="Shared page frame and semantic grid: stacks on mobile and progressively opens up as space allows."
+      >
+        <PageGrid columns={3}>
+          {['Reading width · 65ch', 'Content width · 80rem', 'Mobile-first grid'].map((label) => (
+            <Card key={label} className="p-4 text-sm font-medium text-foreground">
+              {label}
+            </Card>
+          ))}
+        </PageGrid>
+      </Section>
 
       <Section
         title="Surfaces & borders"
@@ -357,6 +369,6 @@ export default function DevUiPage() {
           </div>
         </Card>
       </Section>
-    </div>
+    </PageContainer>
   );
 }

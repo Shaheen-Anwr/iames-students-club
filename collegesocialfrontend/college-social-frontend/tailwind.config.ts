@@ -15,6 +15,19 @@ const config: Config = {
   ],
   theme: {
     extend: {
+      screens: {
+        // Compact phones get a breakpoint; the remaining breakpoints use Tailwind defaults.
+        xs: '480px',
+      },
+      spacing: {
+        'page-gutter': 'var(--page-gutter)',
+        'page-block': 'var(--page-block)',
+        'section-gap': 'var(--section-gap)',
+      },
+      maxWidth: {
+        content: '80rem',
+        reading: '65ch',
+      },
       fontFamily: {
         sans: ['var(--font-arabic)', 'var(--font-latin)', 'Tahoma', 'Arial', 'sans-serif'],
       },
