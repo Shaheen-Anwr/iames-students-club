@@ -1,12 +1,15 @@
 'use client';
 
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import Link from 'next/link';
 import { ArrowRight, FileText, LayoutGrid, List, Plus, Search, Video } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
+import { LoadError } from '@/components/ui/LoadError';
 import { Spinner } from '@/components/ui/Spinner';
 import { cn } from '@/lib/utils';
-import { api } from '@/lib/api';
+import { useInfiniteApiList } from '@/lib/query';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import { useAuth } from '@/lib/auth-context';
 import { DEPARTMENTS, DEPARTMENT_LABELS, type Department } from '@/lib/departments';
 import {
@@ -58,11 +61,6 @@ export function LecturesBrowser({
   const lockedDepartment: Department | '' = user?.isSuperAdmin ? '' : user?.department ?? '';
   const canPickDepartment = !lockedDepartment;
 
-  const [posts, setPosts] = useState<Post[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
-  const [hasMore, setHasMore] = useState(true);
-  const [page, setPage] = useState(1);
   const [modalOpen, setModalOpen] = useState(false);
 
   const [department, setDepartment] = useState<Department | ''>('');
@@ -72,6 +70,46 @@ export function LecturesBrowser({
   const [query, setQuery] = useState('');
   const [view, setView] = useState<'list' | 'grid'>('list');
   const [sort, setSort] = useState<'newest' | 'oldest'>('newest');
+
+  // The picked شعبة for staff, or the viewer's locked own شعبة otherwise.
+  const effectiveDepartment = lockedDepartment || department;
+
+  const specializationOptions = effectiveDepartment
+    ? SPECIALIZATIONS_BY_DEPARTMENT[effectiveDepartment]
+    : [];
+
+  const academicYearOptions = effectiveDepartment
+    ? getAcademicYearsForDepartment(effectiveDepartment)
+    : ACADEMIC_YEARS;
+
+  // Text inputs are debounced so typing fires one request, not one per keystroke (which also let a
+  // slow early response overwrite the final one).
+  const debouncedQuery = useDebouncedValue(query.trim());
+  const debouncedCourseCode = useDebouncedValue(courseCode.trim());
+
+  const params = new URLSearchParams({ type: attachmentType });
+  if (effectiveDepartment) params.set('department', effectiveDepartment);
+  if (academicYear) params.set('academicYear', academicYear);
+  if (specialization) params.set('specialization', specialization);
+  const effectiveCourseCode = folder ?? debouncedCourseCode;
+  if (effectiveCourseCode) params.set('courseCode', effectiveCourseCode);
+  if (debouncedQuery) params.set('q', debouncedQuery);
+  const listPath = `/posts/lectures?${params.toString()}`;
+
+  // Cached per filter combination: coming back to this page (or flipping back to a filter) paints
+  // instantly from cache, and the previous results stay on screen while a new filter loads.
+  const queryKey = ['lectures', listPath];
+  const qc = useQueryClient();
+  const {
+    items: posts,
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+    hasNextPage: hasMore,
+    fetchNextPage,
+    isFetchingNextPage: loadingMore,
+  } = useInfiniteApiList<Post>(listPath, { key: queryKey, pageSize: PAGE_SIZE, keepPrevious: true });
 
   const sortedPosts = useMemo(() => {
     const copy = [...posts];
@@ -85,80 +123,10 @@ export function LecturesBrowser({
     return copy;
   }, [posts, sort]);
 
-  // The picked شعبة for staff, or the viewer's locked own شعبة otherwise.
-  const effectiveDepartment = lockedDepartment || department;
-
-  const specializationOptions = effectiveDepartment
-    ? SPECIALIZATIONS_BY_DEPARTMENT[effectiveDepartment]
-    : [];
-
-  const academicYearOptions = effectiveDepartment
-    ? getAcademicYearsForDepartment(effectiveDepartment)
-    : ACADEMIC_YEARS;
-
-  function buildQuery(targetPage: number) {
-    const params = new URLSearchParams({
-      type: attachmentType,
-      page: String(targetPage),
-      limit: String(PAGE_SIZE),
-    });
-
-    if (effectiveDepartment) params.set('department', effectiveDepartment);
-    if (academicYear) params.set('academicYear', academicYear);
-    if (specialization) params.set('specialization', specialization);
-
-    const effectiveCourseCode = folder ?? courseCode.trim();
-
-    if (effectiveCourseCode) {
-      params.set('courseCode', effectiveCourseCode);
-    }
-
-    if (query.trim()) {
-      params.set('q', query.trim());
-    }
-
-    return params.toString();
-  }
-
-  useEffect(() => {
-    setLoading(true);
-    setPage(1);
-
-    api
-      .get<Post[]>(`/posts/lectures?${buildQuery(1)}`)
-      .then((data) => {
-        setPosts(data);
-        setHasMore(data.length === PAGE_SIZE);
-      })
-      .finally(() => setLoading(false));
-
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [
-    attachmentType,
-    effectiveDepartment,
-    academicYear,
-    specialization,
-    courseCode,
-    query,
-    folder,
-  ]);
-
-  async function loadMore() {
-    setLoadingMore(true);
-
-    try {
-      const nextPage = page + 1;
-      const data = await api.get<Post[]>(
-        `/posts/lectures?${buildQuery(nextPage)}`,
-      );
-
-      setPosts((prev) => [...prev, ...data]);
-      setPage(nextPage);
-      setHasMore(data.length === PAGE_SIZE);
-    } finally {
-      setLoadingMore(false);
-    }
-  }
+  const patchPages = (fn: (pages: Post[][]) => Post[][]) =>
+    qc.setQueryData<InfiniteData<Post[], number>>(queryKey, (data) =>
+      data ? { ...data, pages: fn(data.pages) } : data,
+    );
 
   function handleDepartmentChange(value: Department | '') {
     setDepartment(value);
@@ -175,11 +143,14 @@ export function LecturesBrowser({
   }
 
   function handleUploaded(post: Post) {
-    setPosts((prev) => [post, ...prev]);
+    patchPages(([first = [], ...rest]) => [[post, ...first], ...rest]);
+    // Other filter combinations may include the new upload too -- let them refetch on next view.
+    qc.invalidateQueries({ queryKey: ['lectures'], refetchType: 'none' });
   }
 
   function handleDeleted(id: string) {
-    setPosts((prev) => prev.filter((p) => p._id !== id));
+    patchPages((pages) => pages.map((page) => page.filter((p) => p._id !== id)));
+    qc.invalidateQueries({ queryKey: ['lectures'], refetchType: 'none' });
   }
 
   const Icon = attachmentType === 'lecture' ? FileText : Video;
@@ -330,6 +301,8 @@ export function LecturesBrowser({
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : isError && posts.length === 0 ? (
+        <LoadError onRetry={() => refetch()} retrying={isRefetching} />
       ) : posts.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
           <Icon className="h-8 w-8" />
@@ -359,7 +332,7 @@ export function LecturesBrowser({
                 variant="outline"
                 size="sm"
                 loading={loadingMore}
-                onClick={loadMore}
+                onClick={() => fetchNextPage()}
               >
                 عرض المزيد
               </Button>

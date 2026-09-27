@@ -1,54 +1,53 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient, type InfiniteData } from '@tanstack/react-query';
 import { Megaphone, Pin, Plus, ThumbsUp, Trash2 } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
+import { LoadError } from '@/components/ui/LoadError';
 import { Spinner } from '@/components/ui/Spinner';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
+import { useInfiniteApiList } from '@/lib/query';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import type { Announcement } from '@/lib/types';
 import { CreateAnnouncementModal } from '@/components/announcements/CreateAnnouncementModal';
 
 const PAGE_SIZE = 20;
+const QUERY_KEY = ['announcements-page'];
 
 export default function AnnouncementsPage() {
   const { user } = useAuth();
   const { showToast } = useToast();
-  const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(true);
-  const [loadingMore, setLoadingMore] = useState(false);
   const [modalOpen, setModalOpen] = useState(false);
 
   const canPost = user?.role === 'professor' || user?.role === 'admin';
 
-  useEffect(() => {
-    api
-      .get<Announcement[]>(`/announcements?page=1&limit=${PAGE_SIZE}`)
-      .then((data) => {
-        setAnnouncements(data);
-        setHasMore(data.length === PAGE_SIZE);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  const qc = useQueryClient();
+  const {
+    items: announcements,
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+    hasNextPage: hasMore,
+    fetchNextPage,
+    isFetchingNextPage: loadingMore,
+  } = useInfiniteApiList<Announcement>('/announcements', { key: QUERY_KEY, pageSize: PAGE_SIZE });
 
-  async function loadMore() {
-    setLoadingMore(true);
-    const nextPage = page + 1;
-    const data = await api.get<Announcement[]>(`/announcements?page=${nextPage}&limit=${PAGE_SIZE}`);
-    setAnnouncements((prev) => [...prev, ...data]);
-    setPage(nextPage);
-    setHasMore(data.length === PAGE_SIZE);
-    setLoadingMore(false);
-  }
+  // Optimistic edits go straight into the cached pages, so they survive navigating away and back.
+  const setAnnouncements = (fn: (list: Announcement[]) => Announcement[]) =>
+    qc.setQueryData<InfiniteData<Announcement[], number>>(QUERY_KEY, (data) =>
+      data ? { ...data, pages: data.pages.map((page) => fn(page)) } : data,
+    );
 
   function handleCreated(announcement: Announcement) {
-    setAnnouncements((prev) => [announcement, ...prev]);
+    qc.setQueryData<InfiniteData<Announcement[], number>>(QUERY_KEY, (data) =>
+      data ? { ...data, pages: [[announcement, ...(data.pages[0] ?? [])], ...data.pages.slice(1)] } : data,
+    );
   }
 
   async function toggleLike(id: string) {
@@ -101,6 +100,8 @@ export default function AnnouncementsPage() {
         <div className="flex justify-center py-12">
           <Spinner className="h-6 w-6" />
         </div>
+      ) : isError && announcements.length === 0 ? (
+        <LoadError onRetry={() => refetch()} retrying={isRefetching} />
       ) : announcements.length === 0 ? (
         <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-border py-16 text-center text-muted-foreground">
           <Megaphone className="h-8 w-8" />
@@ -148,7 +149,7 @@ export default function AnnouncementsPage() {
           })}
           {hasMore && (
             <div className="flex justify-center pt-2">
-              <Button variant="outline" size="sm" loading={loadingMore} onClick={loadMore}>
+              <Button variant="outline" size="sm" loading={loadingMore} onClick={() => fetchNextPage()}>
                 عرض المزيد
               </Button>
             </div>

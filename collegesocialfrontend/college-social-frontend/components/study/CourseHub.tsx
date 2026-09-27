@@ -1,14 +1,16 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { useQueryClient } from '@tanstack/react-query';
 import Link from 'next/link';
 import { BookOpen, ChevronLeft, Paperclip, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { Modal } from '@/components/ui/Modal';
+import { LoadError } from '@/components/ui/LoadError';
 import { Spinner } from '@/components/ui/Spinner';
-import { api } from '@/lib/api';
+import { useRawQuery } from '@/lib/query';
 import { useAuth } from '@/lib/auth-context';
 import { cn, timeAgo } from '@/lib/utils';
 import type { CourseSummary, ScheduleEntry } from '@/lib/types';
@@ -35,24 +37,33 @@ function courseColor(code: string) {
 export function CourseHub() {
   const { user } = useAuth();
   const canManageCourses = user?.role === 'admin' || user?.role === 'professor';
-  const [courses, setCourses] = useState<CourseSummary[]>([]);
-  const [myEntries, setMyEntries] = useState<ScheduleEntry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
 
-  useEffect(() => {
-    Promise.all([api.get<CourseSummary[]>('/posts/courses'), api.get<ScheduleEntry[]>('/schedule')])
-      .then(([courseData, entries]) => {
-        setCourses(courseData);
-        setMyEntries(entries);
-      })
-      .finally(() => setLoading(false));
-  }, []);
+  // Cached: returning to the study hub paints instantly instead of re-spinning.
+  const qc = useQueryClient();
+  const coursesQ = useRawQuery<CourseSummary[]>(['course-hub', 'courses'], '/posts/courses');
+  const entriesQ = useRawQuery<ScheduleEntry[]>(['course-hub', 'schedule'], '/schedule');
+  const courses = coursesQ.data ?? [];
+  const myEntries = entriesQ.data ?? [];
+  const loading = coursesQ.isPending || entriesQ.isPending;
+  const failed = (coursesQ.isError && !coursesQ.data) || (entriesQ.isError && !entriesQ.data);
 
   const myCourseNames = Array.from(new Set(myEntries.map((e) => e.courseName))).sort((a, b) => a.localeCompare(b, 'ar'));
 
   function handleAdded(entry: ScheduleEntry) {
-    setMyEntries((prev) => [...prev, entry]);
+    qc.setQueryData<ScheduleEntry[]>(['course-hub', 'schedule'], (prev) => [...(prev ?? []), entry]);
+  }
+
+  if (failed) {
+    return (
+      <LoadError
+        onRetry={() => {
+          coursesQ.refetch();
+          entriesQ.refetch();
+        }}
+        retrying={coursesQ.isRefetching || entriesQ.isRefetching}
+      />
+    );
   }
 
   if (loading) {

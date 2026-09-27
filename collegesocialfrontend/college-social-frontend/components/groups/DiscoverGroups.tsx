@@ -1,16 +1,20 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
+import { keepPreviousData } from '@tanstack/react-query';
 import { useRouter } from 'next/navigation';
 import { Search, Users } from 'lucide-react';
 import { Card } from '@/components/ui/Card';
 import { EmptyState } from '@/components/ui/EmptyState';
+import { LoadError } from '@/components/ui/LoadError';
 import { Spinner } from '@/components/ui/Spinner';
 import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/lib/toast-context';
 import { useGroups } from '@/lib/groups-context';
+import { useRawQuery } from '@/lib/query';
+import { useDebouncedValue } from '@/lib/use-debounced-value';
 import type { StudyGroup } from '@/lib/types';
 
 export function DiscoverGroups() {
@@ -19,25 +23,22 @@ export function DiscoverGroups() {
   const { showToast } = useToast();
   const { addGroup } = useGroups();
   const [query, setQuery] = useState('');
-  const [groups, setGroups] = useState<StudyGroup[]>([]);
-  const [loading, setLoading] = useState(true);
   const [joiningId, setJoiningId] = useState<string | null>(null);
 
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    const handle = setTimeout(() => {
-      api.get<StudyGroup[]>(`/groups/discover${query.trim() ? `?search=${encodeURIComponent(query.trim())}` : ''}`).then((data) => {
-        if (cancelled) return;
-        setGroups(data);
-        setLoading(false);
-      });
-    }, 300);
-    return () => {
-      cancelled = true;
-      clearTimeout(handle);
-    };
-  }, [query]);
+  // Cached per search term; the previous results stay visible while a new search loads. A failed
+  // request now surfaces LoadError instead of spinning forever (the old effect had no catch).
+  const search = useDebouncedValue(query.trim());
+  const {
+    data: groups = [],
+    isPending: loading,
+    isError,
+    isRefetching,
+    refetch,
+  } = useRawQuery<StudyGroup[]>(
+    ['groups-discover', search],
+    `/groups/discover${search ? `?search=${encodeURIComponent(search)}` : ''}`,
+    { placeholderData: keepPreviousData },
+  );
 
   async function handleJoin(group: StudyGroup) {
     setJoiningId(group._id);
@@ -72,6 +73,8 @@ export function DiscoverGroups() {
           <div className="flex justify-center py-10">
             <Spinner className="h-5 w-5" />
           </div>
+        ) : isError && groups.length === 0 ? (
+          <LoadError onRetry={() => refetch()} retrying={isRefetching} />
         ) : groups.length === 0 ? (
           <div className="mx-4 mt-4 rounded-2xl border border-dashed border-border sm:mx-6">
             <EmptyState icon={Users} title="لا توجد مجموعات عامة مطابقة" />

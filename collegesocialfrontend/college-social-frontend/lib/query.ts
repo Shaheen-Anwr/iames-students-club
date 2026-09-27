@@ -2,6 +2,7 @@
 
 import { useMemo } from 'react';
 import {
+  keepPreviousData,
   QueryClient,
   useInfiniteQuery,
   useQuery,
@@ -70,7 +71,13 @@ export function useRawQuery<T>(key: unknown[], path: string, opts?: QueryOpts<T>
  */
 export function useInfiniteApiList<T>(
   path: string,
-  opts?: { key?: unknown[]; pageSize?: number; enabled?: boolean },
+  opts?: {
+    key?: unknown[];
+    pageSize?: number;
+    enabled?: boolean;
+    /** Keep showing the previous key's items while a new filter/search loads (no spinner flash). */
+    keepPrevious?: boolean;
+  },
 ) {
   const pageSize = opts?.pageSize ?? 10;
   const query = useInfiniteQuery<T[], Error, { pages: T[][] }, unknown[], number>({
@@ -83,6 +90,7 @@ export function useInfiniteApiList<T>(
     getNextPageParam: (lastPage, allPages) =>
       lastPage.length === pageSize ? allPages.length + 1 : undefined,
     enabled: opts?.enabled,
+    placeholderData: opts?.keepPrevious ? keepPreviousData : undefined,
   });
 
   const items = useMemo(() => query.data?.pages.flat() ?? [], [query.data]);
