@@ -3,6 +3,7 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { getModelToken } from '@nestjs/mongoose';
+import * as compression from 'compression';
 import * as cookieParser from 'cookie-parser';
 import { Model } from 'mongoose';
 
@@ -77,8 +78,6 @@ async function bootstrap() {
   // for every request instead of the real client IP.
   app.getHttpAdapter().getInstance().set('trust proxy', 1);
 
-  await runStartupMigrations(app.get<Model<UserDocument>>(getModelToken(User.name)));
-
   // Multi-instance chat: if REDIS_URL is configured, route Socket.IO through the Redis adapter so
   // several backend processes share rooms/presence. No REDIS_URL -> keep the default in-memory
   // adapter (single instance). A failed Redis connect is non-fatal: log and fall back.
@@ -94,6 +93,20 @@ async function bootstrap() {
     }
   }
 
+  // gzip JSON/text responses (feed pages shrink ~70-85%, which dominates load time on mobile data).
+  // Server-sent events are excluded: compression buffers output, which would stall the AI chat's
+  // token stream until the whole answer is done. Binary media types are skipped by the default
+  // filter (not compressible), so attachment/video streaming is unaffected.
+  app.use(
+    compression({
+      threshold: 1024,
+      filter: (req, res) => {
+        const type = res.getHeader('Content-Type');
+        if (typeof type === 'string' && type.includes('text/event-stream')) return false;
+        return compression.filter(req, res);
+      },
+    }),
+  );
   app.use(cookieParser());
 
   // Strip unknown fields and auto-transform payloads (e.g. "2430525" -> number where needed)
@@ -116,6 +129,15 @@ async function bootstrap() {
 
   const port = config.get<number>('port') ?? 3001;
   await app.listen(port);
+
+  // Run the idempotent migrations *after* the port is open so a cold start (Render spins the
+  // instance down when idle) serves its first request immediately instead of waiting on several
+  // collection-wide updateMany calls + syncIndexes. Nothing on the request path depends on them
+  // finishing first; a failure is logged, not fatal, and retried on the next boot.
+  runStartupMigrations(app.get<Model<UserDocument>>(getModelToken(User.name))).catch((err: Error) => {
+    // eslint-disable-next-line no-console
+    console.error(`Startup migrations failed: ${err.message}`);
+  });
   // eslint-disable-next-line no-console
   console.log(`Backend running on http://localhost:${port}/api`);
 }

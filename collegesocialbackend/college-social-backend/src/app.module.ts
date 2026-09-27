@@ -3,7 +3,8 @@ import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { ServeStaticModule } from '@nestjs/serve-static';
-import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { UserThrottlerGuard } from './common/guards/user-throttler.guard';
 // Aliased -- this app already has its own ScheduleModule (./schedule/schedule.module, class
 // timetables) that the bare name would collide with. This one just enables @Cron() decorators
 // anywhere in the app (used by CalendarEventsService's reminder-push cron).
@@ -61,11 +62,13 @@ import { AppController } from './app.controller';
         uri: config.get<string>('mongodbUri'),
       }),
     }),
-    // Global default rate limit; auth endpoints override with tighter limits via @Throttle().
+    // Global default rate limit -- counted per route, per signed-in user (see UserThrottlerGuard;
+    // anonymous requests fall back to per-IP). Auth endpoints override with tighter limits via
+    // @Throttle(). 120/min leaves room for fast scrolling/liking and the app's polling endpoints.
     // errorMessage is set explicitly -- otherwise a 429 falls back to @nestjs/throttler's English
     // default, which stands out badly on this all-Arabic UI (e.g. surfaced as a chat toast).
     ThrottlerModule.forRoot({
-      throttlers: [{ ttl: 60000, limit: 20 }],
+      throttlers: [{ ttl: 60000, limit: 120 }],
       errorMessage: 'محاولات كثيرة جدًا، حاول مرة أخرى بعد قليل',
     }),
     CronScheduleModule.forRoot(),
@@ -116,6 +119,6 @@ import { AppController } from './app.controller';
     RoomsModule,
     StreamModule,
   ],
-  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }],
+  providers: [{ provide: APP_GUARD, useClass: UserThrottlerGuard }],
 })
 export class AppModule {}
