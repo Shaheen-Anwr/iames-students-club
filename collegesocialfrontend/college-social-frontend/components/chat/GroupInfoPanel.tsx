@@ -248,7 +248,7 @@ export function GroupInfoPanel({ open, onClose, conversation, onChanged }: Group
               ) : (
                 <>
                   <p className="text-xs text-muted-foreground">{targetUser ? `الرقم الجامعي ${targetUser.collegeId ?? ''}` : ''}</p>
-                  <p className="mt-1 text-xs text-accent">{presenceLabel(targetUser)}</p>
+                  <p className="mt-1 text-xs text-accent">{presenceLabel(targetUser, user)}</p>
                 </>
               )}
               {conversation.isGroup && isAdmin && (

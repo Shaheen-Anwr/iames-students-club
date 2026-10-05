@@ -10,6 +10,7 @@ import {
   ChevronUp,
   FileText,
   Film,
+  LayoutGrid,
   Image as ImageIcon,
   Loader2,
   Mic,
@@ -19,6 +20,7 @@ import {
   Send,
   Smile,
   Sparkles,
+  Sticker,
   Undo2,
   Wand2,
   X,
@@ -34,10 +36,12 @@ import { cldOptimize } from '@/lib/images';
 import { useLongPress } from '@/lib/use-long-press';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn, formatBytes } from '@/lib/utils';
-import type { Attachment, AttachmentType, ChatRewriteMode, Message, MessageEffect } from '@/lib/types';
+import type { Attachment, AttachmentType, ChatRewriteMode, Message, MessageEffect, User } from '@/lib/types';
 import { EmojiPicker } from './EmojiPicker';
 import { ScheduleSendModal } from './ChatModals';
 import { VoiceRecorder } from './VoiceRecorder';
+import { StickerPicker } from './StickerPicker';
+import { ShareCardPicker } from './ShareCardPicker';
 
 export interface SendPayload {
   text: string;
@@ -160,6 +164,21 @@ function useDismiss(open: boolean, ref: React.RefObject<HTMLElement>, onClose: (
   }, [open, ref, onClose]);
 }
 
+// رافد in the @-mention list: picking it inserts `@[رافد](rafed)`, which the backend answers.
+const MENTION_EXTRAS = [
+  {
+    _id: 'rafed',
+    name: 'رافد',
+    collegeId: '',
+    subtitle: 'المساعد الذكي — اسأله هنا أمام الجميع',
+    icon: (
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white">
+        <Sparkles className="h-3.5 w-3.5" />
+      </span>
+    ),
+  } as unknown as User & { subtitle: string; icon: React.ReactNode },
+];
+
 export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(function MessageInput(
   {
     conversationId,
@@ -200,6 +219,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   const [sendMenuOpen, setSendMenuOpen] = useState(false);
   const [aiMenuOpen, setAiMenuOpen] = useState(false);
   const [scheduleOpen, setScheduleOpen] = useState(false);
+  const [stickersOpen, setStickersOpen] = useState(false);
+  const [cardsOpen, setCardsOpen] = useState(false);
   const [recording, setRecording] = useState(false);
   const [armed, setArmed] = useState<Armed>({});
   const [aiBusy, setAiBusy] = useState(false);
@@ -529,6 +550,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     { key: 'camera', label: 'الكاميرا', icon: Camera, tone: 'from-rose-500 to-pink-500', run: () => cameraInputRef.current?.click() },
     { key: 'doc', label: 'مستند', icon: FileText, tone: 'from-sky-500 to-blue-600', run: () => fileInputRef.current?.click() },
     { key: 'poll', label: 'استطلاع', icon: BarChart3, tone: 'from-amber-400 to-orange-500', run: onCreatePoll },
+    { key: 'sticker', label: 'ملصق', icon: Sticker, tone: 'from-emerald-400 to-teal-500', run: () => setStickersOpen(true) },
+    { key: 'platform', label: 'من المنصة', icon: LayoutGrid, tone: 'from-fuchsia-500 to-purple-600', run: () => setCardsOpen(true) },
   ];
 
   return (
@@ -888,6 +911,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               </div>
               <MentionTextarea
                 inputRef={textareaRef}
+                extraSuggestions={MENTION_EXTRAS}
                 rows={1}
                 value={text}
                 dir="auto"
@@ -1074,6 +1098,13 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
           e.target.value = '';
         }}
       />
+
+      <StickerPicker
+        open={stickersOpen}
+        onClose={() => setStickersOpen(false)}
+        onSend={async (attachment) => !!(await onSend({ text: '', attachments: [attachment] }))}
+      />
+      <ShareCardPicker open={cardsOpen} conversationId={conversationId} onClose={() => setCardsOpen(false)} />
 
       <ScheduleSendModal
         open={scheduleOpen}

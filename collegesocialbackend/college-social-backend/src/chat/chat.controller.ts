@@ -15,6 +15,11 @@ import { ForwardMessageDto } from './dto/forward-message.dto';
 import { ScheduleMessageDto } from './dto/schedule-message.dto';
 import { ChatSchedulerService } from './chat-scheduler.service';
 import { ChatCallService } from './chat-call.service';
+import { ChatRemindersService } from './chat-reminders.service';
+import { ChatCardsService } from './chat-cards.service';
+import { ChatClassGroupsService } from './chat-class-groups.service';
+import { RemindMessageDto, ShareCardDto } from './dto/chat-extras.dto';
+import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 
 // REST endpoints for conversation setup, history, and everything that doesn't need to be
 // instantaneous. Real-time delivery of new/edited/reacted messages happens over the ChatGateway
@@ -29,6 +34,10 @@ export class ChatController {
     private readonly linkPreviewService: LinkPreviewService,
     private readonly schedulerService: ChatSchedulerService,
     private readonly callService: ChatCallService,
+    private readonly remindersService: ChatRemindersService,
+    private readonly cardsService: ChatCardsService,
+    private readonly classGroups: ChatClassGroupsService,
+    private readonly realtimeEmitter: RealtimeEmitterService,
   ) {}
 
   // STUN/TURN servers for a WebRTC call (TURN credentials are short-lived, minted per user).
@@ -50,7 +59,58 @@ export class ChatController {
 
   @Get('conversations')
   async listConversations(@CurrentUser() user: AuthenticatedUser) {
+    // Students land in their class group (دفعة) automatically -- reconciled here, on the list load.
+    await this.classGroups.ensureMembership(user.userId).catch(() => undefined);
     return this.chatService.listConversationsForUser(user.userId);
+  }
+
+  // "رسائلي المحفوظة" -- find-or-create the user's notes-to-self conversation.
+  @Post('conversations/self')
+  async selfConversation(@CurrentUser() user: AuthenticatedUser) {
+    return this.chatService.getOrCreateSelfConversation(user.userId);
+  }
+
+  // Share a lecture/post/assignment/event/listing into a conversation as a card.
+  @Post('conversations/:id/cards')
+  async shareCard(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: ShareCardDto) {
+    const card = await this.cardsService.resolve(user.userId, dto.kind, dto.refId);
+    const message = await this.chatService.saveMessage(id, user.userId, dto.text ?? '', undefined, undefined, { card });
+    this.realtimeEmitter.emitToConversation(id, 'newMessage', message);
+    return message;
+  }
+
+  // The composer's "share from the platform" picker.
+  @Get('cards/suggestions')
+  async cardSuggestions(@CurrentUser() user: AuthenticatedUser) {
+    return this.cardsService.suggestions(user.userId);
+  }
+
+  // A thread: its root message + all replies (group chats).
+  @Get('messages/:id/thread')
+  async thread(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.chatService.getThread(id, user.userId);
+  }
+
+  @Get('messages/:id/quiz-result')
+  async quizResult(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.chatService.getQuizResult(id, user.userId);
+  }
+
+  // "ذكّرني" -- remind me about this message at `at`.
+  @Post('messages/:id/remind')
+  async remind(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser, @Body() dto: RemindMessageDto) {
+    return this.remindersService.create(user.userId, id, dto.at);
+  }
+
+  @Get('reminders')
+  async reminders(@CurrentUser() user: AuthenticatedUser) {
+    return this.remindersService.listPending(user.userId);
+  }
+
+  @Delete('reminders/:id')
+  async cancelReminder(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    await this.remindersService.cancel(user.userId, id);
+    return { success: true };
   }
 
   @Post('conversations')

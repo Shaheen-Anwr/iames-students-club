@@ -28,7 +28,12 @@ export type NotificationType =
   | 'event_reminder'
   // Platform/department announcement fanned out by AnnouncementsService -- one per recipient.
   // `actor` is the announcement's author; `title` is the announcement headline.
-  | 'system_announcement';
+  | 'system_announcement'
+  // "ذكّرني" -- a chat message the recipient asked to be reminded about came due (see
+  // ChatRemindersService). `actor` is the recipient themself; links to the message.
+  | 'chat_reminder'
+  // Someone replied in a group-chat thread you started or replied in. Links to the thread.
+  | 'thread_reply';
 
 // The single source of truth for the type list -- used by the schema enum below and by
 // NotificationsService to validate a `mutedTypes` preference patch.
@@ -51,6 +56,8 @@ export const NOTIFICATION_TYPES: NotificationType[] = [
   'wall_comment',
   'event_reminder',
   'system_announcement',
+  'chat_reminder',
+  'thread_reply',
 ];
 
 @Schema({ timestamps: true })

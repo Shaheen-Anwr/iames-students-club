@@ -21,7 +21,7 @@ export type BlockNode =
 const CODE_BLOCK_RE = /```([A-Za-z0-9+#.-]{0,20})[ \t]*\n?([\s\S]*?)```/g;
 const INLINE_CODE_RE = /`([^`\n]+)`/g;
 // URLs and `@[Name](24-hex-id)` mention tokens -- kept intact for TaggedText to linkify.
-const PROTECTED_RE = /(@\[[^\]]+\]\([0-9a-fA-F]{24}\))|(https?:\/\/[^\s<>()]+)/g;
+const PROTECTED_RE = /(@\[[^\]]+\]\((?:[0-9a-fA-F]{24}|rafed)\))|(https?:\/\/[^\s<>()]+)/g;
 
 const MARKERS: { char: string; type: 'bold' | 'italic' | 'strike' }[] = [
   { char: '*', type: 'bold' },

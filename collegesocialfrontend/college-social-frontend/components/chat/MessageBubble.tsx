@@ -9,7 +9,9 @@ import {
   CheckCheck,
   Clock,
   Forward,
+  GraduationCap,
   Languages,
+  MessagesSquare,
   MoreHorizontal,
   Phone,
   PhoneIncoming,
@@ -41,13 +43,17 @@ import {
   formatClock,
   formatDuration,
   formatFullDate,
+  formatListTime,
   messagePreview,
+  messageSenderName,
   senderColor,
   type TickStatus,
 } from '@/lib/chat-helpers';
+import { builtinSticker } from '@/lib/chat-stickers';
+import { AiMarkdown } from '@/components/ai/AiMarkdown';
 import { aiErrorMessage, chatApi } from '@/lib/chat-api';
 import { assetUrl, cn } from '@/lib/utils';
-import type { Attachment, Message, ReplyPreview, User } from '@/lib/types';
+import type { Attachment, ChatBot, Message, ReplyPreview, User } from '@/lib/types';
 
 import { EmojiPicker, QuickReactionBar } from './EmojiPicker';
 import { LinkPreviewCard } from './LinkPreviewCard';
@@ -57,6 +63,7 @@ import { PollBubble } from './PollBubble';
 import { DocumentAttachment, ImageAlbum, VideoAttachment } from './MessageAttachments';
 import { useChatActions, useChatInfo } from './ChatThreadContext';
 import { BubbleTail } from './BubbleTail';
+import { PlatformCard } from './PlatformCard';
 
 export interface TranslationState {
   status: 'loading' | 'done' | 'error';
@@ -170,6 +177,76 @@ function SenderAvatar({ sender }: { sender: Message['sender'] }) {
   return <Avatar src={assetUrl(live?.photoUrl)} name={live?.name ?? 'مستخدم محذوف'} size="sm" viewable />;
 }
 
+// Bot messages have no account: رافد gets the AI mark, platform posts the campus mark.
+function BotAvatar({ bot }: { bot: ChatBot }) {
+  return bot === 'rafed' ? (
+    <span title="رافد" className="flex h-8 w-8 items-center justify-center rounded-full bg-gradient-accent text-white shadow-elev-1">
+      <Sparkles className="h-4 w-4" />
+    </span>
+  ) : (
+    <span title="نظام الكلية" className="flex h-8 w-8 items-center justify-center rounded-full bg-accent/15 text-accent">
+      <GraduationCap className="h-4 w-4" />
+    </span>
+  );
+}
+
+function RowAvatar({ message }: { message: Message }) {
+  return message.bot ? <BotAvatar bot={message.bot} /> : <SenderAvatar sender={message.sender} />;
+}
+
+// A sticker: one of the built-in packs (rendered as a big animated glyph) or an uploaded image.
+function StickerImage({ attachment }: { attachment: Attachment }) {
+  const builtin = builtinSticker(attachment.url);
+  if (builtin) {
+    return (
+      <span role="img" aria-label={builtin.label} title={builtin.label} className="animate-reaction-pop select-none text-[5.5rem] leading-none drop-shadow-md">
+        {builtin.emoji}
+      </span>
+    );
+  }
+  return (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img
+      src={assetUrl(attachment.url) ?? ''}
+      alt={attachment.name ?? 'ملصق'}
+      loading="lazy"
+      draggable={false}
+      className="h-36 w-36 select-none object-contain drop-shadow-md"
+    />
+  );
+}
+
+// "N ردود" under a message that has a discussion: recent repliers' faces, count, last activity.
+function ThreadChip({ message, isOwn }: { message: Message; isOwn: boolean }) {
+  const actions = useChatActions();
+  const count = message.threadCount ?? 0;
+  if (!count) return null;
+  return (
+    <button
+      type="button"
+      onClick={(e) => {
+        e.stopPropagation();
+        actions.openThread(message);
+      }}
+      className={cn(
+        'relative z-[2] mt-1 flex items-center gap-1.5 rounded-full bg-[rgb(var(--chat-in)/0.92)] py-1 pe-2.5 ps-1 text-[12px] font-semibold text-accent shadow-sm ring-1 ring-accent/20 backdrop-blur transition-transform hover:scale-[1.02] active:scale-95',
+        isOwn ? 'self-end' : 'self-start',
+      )}
+    >
+      <span className="flex -space-x-1.5 rtl:space-x-reverse">
+        {(message.threadParticipants ?? []).slice(0, 3).map((p) => (
+          <Avatar key={p._id} src={assetUrl(p.photoUrl)} name={p.name} size="xs" className="h-5 w-5 text-[8px] ring-2 ring-[rgb(var(--chat-in))]" />
+        ))}
+      </span>
+      <MessagesSquare className="h-3.5 w-3.5" />
+      {count === 1 ? 'رد واحد' : count === 2 ? 'ردّان' : count <= 10 ? `${count} ردود` : `${count} ردًا`}
+      {message.threadLastAt && (
+        <span className="font-normal text-muted-foreground">· {formatListTime(message.threadLastAt)}</span>
+      )}
+    </button>
+  );
+}
+
 function SelectCircle({ checked }: { checked: boolean }) {
   return (
     <span
@@ -187,7 +264,7 @@ function SelectCircle({ checked }: { checked: boolean }) {
 function ReplyQuote({ reply, isOwn, onJump }: { reply: ReplyPreview; isOwn: boolean; onJump: () => void }) {
   const preview = reply.deletedForEveryone
     ? 'تم حذف هذه الرسالة'
-    : messagePreview({ text: reply.text, attachments: reply.attachments, poll: reply.poll }) || 'مرفق';
+    : messagePreview({ text: reply.text, attachments: reply.attachments, poll: reply.poll, card: reply.card }) || 'مرفق';
   const image = !reply.deletedForEveryone ? reply.attachments?.find((a) => a.type === 'image') : undefined;
   return (
     <button
@@ -203,8 +280,8 @@ function ReplyQuote({ reply, isOwn, onJump }: { reply: ReplyPreview; isOwn: bool
     >
       <span className={cn('w-1 shrink-0', isOwn ? 'bg-white/80' : 'bg-accent')} />
       <span className="min-w-0 flex-1 px-2.5 py-1.5">
-        <span className={cn('block truncate font-semibold', isOwn ? 'text-white' : senderColor(reply.sender?._id))}>
-          {reply.sender?.name ?? 'مستخدم محذوف'}
+        <span className={cn('block truncate font-semibold', isOwn ? 'text-white' : reply.bot ? 'text-accent' : senderColor(reply.sender?._id))}>
+          {messageSenderName(reply)}
         </span>
         <span dir="auto" className={cn('block truncate', isOwn ? 'text-white/85' : 'text-foreground/70')}>
           {preview}
@@ -588,7 +665,10 @@ function BubbleCard({
     !translation &&
     images.length > 0 &&
     videos.length + audios.length + docs.length === 0;
-  const metaInText = hasText && !previewUrl && !translation;
+  const isRafed = message.bot === 'rafed';
+  // رافد answers in Markdown (lists, bold, code) -- its timestamp sits on its own row.
+  const metaInText = hasText && !previewUrl && !translation && !isRafed;
+  const stickers = attachments.filter((a) => a.type === 'sticker');
   const swallow = () => !!guard?.();
 
   const meta = (onMedia = false) => (
@@ -597,6 +677,20 @@ function BubbleCard({
 
   if (message.call) {
     return <CallLogCard message={message} isOwn={isOwn} status={status} pinned={pinned} starred={starred} />;
+  }
+
+  // A sticker is sent bare, like a big emoji -- no bubble.
+  if (stickers.length && !hasText && !message.replyTo && !message.forwarded) {
+    return (
+      <div className={cn('flex flex-col gap-1', isOwn ? 'items-end' : 'items-start')}>
+        {stickers.map((sticker, i) => (
+          <StickerImage key={i} attachment={sticker} />
+        ))}
+        <span className="rounded-full bg-[rgb(var(--chat-in)/0.85)] px-1.5 py-0.5 shadow-sm backdrop-blur-sm">
+          <Meta message={message} isOwn={isOwn} status={status} pinned={pinned} starred={starred} muted />
+        </span>
+      </div>
+    );
   }
 
   if (emojiSize) {
@@ -633,8 +727,14 @@ function BubbleCard({
         )}
       >
         {showName && (
-          <p className={cn('truncate px-2.5 pt-1.5 text-[12.5px] font-semibold', senderColor(message.sender?._id))}>
-            {message.sender?.name ?? 'مستخدم محذوف'}
+          <p
+            className={cn(
+              'flex items-center gap-1.5 truncate px-2.5 pt-1.5 text-[12.5px] font-semibold',
+              message.bot ? 'text-accent' : senderColor(message.sender?._id),
+            )}
+          >
+            {messageSenderName(message)}
+            {isRafed && <span className="rounded-full bg-accent/10 px-1.5 py-px text-[10px] font-medium">مساعد ذكي</span>}
           </p>
         )}
 
@@ -654,6 +754,14 @@ function BubbleCard({
             }}
           />
         )}
+
+        {message.card && <PlatformCard card={message.card} isOwn={isOwn} />}
+
+        {stickers.map((sticker, i) => (
+          <div key={`s-${i}`} className="flex justify-center p-1">
+            <StickerImage attachment={sticker} />
+          </div>
+        ))}
 
         {images.length > 0 && (
           <div className="p-1">
@@ -689,7 +797,13 @@ function BubbleCard({
 
         {message.poll && <PollBubble message={message} isOwn={isOwn} />}
 
-        {hasText && (
+        {hasText && isRafed && (
+          <div dir="auto" className="min-w-[12rem] px-2.5 pb-0.5 pt-1 text-[14.5px] leading-relaxed [overflow-wrap:anywhere]">
+            <AiMarkdown text={text} />
+          </div>
+        )}
+
+        {hasText && !isRafed && (
           <div
             dir="auto"
             className="relative whitespace-pre-wrap break-words px-2.5 pb-1.5 pt-1 text-[15px] leading-relaxed [overflow-wrap:anywhere]"
@@ -742,7 +856,7 @@ export function MessageCardPreview({
       <BubbleCard
         message={message}
         isOwn={isOwn}
-        showName={isGroup && !isOwn}
+        showName={(isGroup || !!message.bot) && !isOwn}
         firstInGroup
         lastInGroup
         status={status}
@@ -879,7 +993,7 @@ export const MessageBubble = memo(function MessageBubble({
       >
         {highlightFlash}
         {selectionMode && <SelectCircle checked={selected} />}
-        {!isOwn && <div className="w-8 shrink-0">{showAvatar && <SenderAvatar sender={message.sender} />}</div>}
+        {!isOwn && <div className="w-8 shrink-0">{showAvatar && <RowAvatar message={message} />}</div>}
         <div className="relative flex items-center gap-2 rounded-2xl border border-dashed border-border bg-surface/75 px-3.5 py-2 text-[13.5px] italic text-muted-foreground backdrop-blur-sm">
           <Ban className="h-3.5 w-3.5 shrink-0" />
           {deletedCount > 1
@@ -913,7 +1027,7 @@ export const MessageBubble = memo(function MessageBubble({
         {highlightFlash}
         {selectionMode && <SelectCircle checked={selected} />}
 
-        {!isOwn && <div className="w-8 shrink-0">{showAvatar && <SenderAvatar sender={message.sender} />}</div>}
+        {!isOwn && <div className="w-8 shrink-0">{showAvatar && <RowAvatar message={message} />}</div>}
 
         <div className={cn('relative flex min-w-0 max-w-[84%] flex-col sm:max-w-[72%]', isOwn ? 'items-end' : 'items-start')}>
           {/* Desktop hover toolbar */}
@@ -1023,7 +1137,7 @@ export const MessageBubble = memo(function MessageBubble({
             <BubbleCard
               message={message}
               isOwn={isOwn}
-              showName={showName && isGroup}
+              showName={showName && (isGroup || !!message.bot)}
               firstInGroup={firstInGroup}
               lastInGroup={lastInGroup}
               status={status}
@@ -1051,6 +1165,7 @@ export const MessageBubble = memo(function MessageBubble({
           </div>
 
           <ReactionChips message={message} isOwn={isOwn} currentUserId={currentUserId} />
+          <ThreadChip message={message} isOwn={isOwn} />
 
           {isOwn && message.failed && (
             <button

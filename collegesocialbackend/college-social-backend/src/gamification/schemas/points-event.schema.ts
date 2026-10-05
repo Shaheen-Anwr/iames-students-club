@@ -17,6 +17,8 @@ export type PointsReason =
   | 'referral_milestone'
   | 'streak_freeze_used'
   | 'admin_adjust'
+  // Answered the class group's daily question (سؤال اليوم) correctly -- see ChatService.votePoll.
+  | 'daily_question'
   | 'other';
 
 @Schema({ timestamps: { createdAt: true, updatedAt: false } })

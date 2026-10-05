@@ -6,6 +6,7 @@
 import { differenceInCalendarDays, format, isToday, isYesterday } from 'date-fns';
 import { ar } from 'date-fns/locale';
 import type { Message } from './types';
+import { messageSenderKey } from './chat-helpers';
 
 const GROUP_WINDOW_MS = 5 * 60 * 1000;
 
@@ -71,7 +72,7 @@ export function buildChatRows(
         const nextDeleted = messages[i + 1];
         if (
           !nextDeleted.deletedForEveryone ||
-          nextDeleted.sender?._id !== m.sender?._id ||
+          messageSenderKey(nextDeleted) !== messageSenderKey(m) ||
           new Date(ts(nextDeleted)).toDateString() !== dayKey ||
           ts(nextDeleted) - ts(messages[i]) >= GROUP_WINDOW_MS ||
           nextDeleted._id === firstUnreadId
@@ -83,10 +84,10 @@ export function buildChatRows(
     const next = messages[i + 1];
 
     const sameSenderAsPrev =
-      !newDay && !!prev && prev.sender?._id === m.sender?._id && ts(m) - ts(prev) < GROUP_WINDOW_MS;
+      !newDay && !!prev && messageSenderKey(prev) === messageSenderKey(m) && ts(m) - ts(prev) < GROUP_WINDOW_MS;
     const sameSenderAsNext =
       !!next &&
-      next.sender?._id === m.sender?._id &&
+      messageSenderKey(next) === messageSenderKey(m) &&
       new Date(ts(next)).toDateString() === dayKey &&
       ts(next) - ts(m) < GROUP_WINDOW_MS &&
       next._id !== firstUnreadId; // an unread divider breaks the visual cluster
@@ -102,7 +103,7 @@ export function buildChatRows(
       flags: {
         firstInGroup,
         lastInGroup,
-        showName: isGroup && firstInGroup && m.sender?._id !== currentUserId,
+        showName: (isGroup || !!m.bot) && firstInGroup && m.sender?._id !== currentUserId,
       },
     });
   }

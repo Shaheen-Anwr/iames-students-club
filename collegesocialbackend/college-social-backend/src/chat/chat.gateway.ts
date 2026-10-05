@@ -26,6 +26,8 @@ import { Role } from '../common/enums/role.enum';
 import { corsOriginValidator } from '../common/cors-origin';
 import { WsHttpExceptionFilter } from './ws-exception.filter';
 import { ChatCallService } from './chat-call.service';
+import { ChatCardsService } from './chat-cards.service';
+import { ChatVoiceRoomsService } from './chat-voice-rooms.service';
 import { isCallId } from './chat.constants';
 import { Types } from 'mongoose';
 
@@ -89,6 +91,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   // flapping (deploy, wifi blip) from thousands of Mongo writes + presence broadcasts to ~zero.
   private static readonly OFFLINE_GRACE_MS = 8000;
   private readonly pendingOffline = new Map<string, NodeJS.Timeout>();
+  private readonly joiningVoice = new Set<string>();
 
   constructor(
     private readonly jwtService: JwtService,
@@ -98,6 +101,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     private readonly usersService: UsersService,
     private readonly presence: ChatPresenceService,
     private readonly callService: ChatCallService,
+    private readonly cardsService: ChatCardsService,
+    private readonly voiceRooms: ChatVoiceRoomsService,
   ) {}
 
   // Lets HTTP-only services (e.g. PostsService, over comments/reactions) push notifications
@@ -129,6 +134,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       if (client.recovered) {
         if (isFirstSocketForUser) {
           void this.usersService.setOnline(payload.sub, true).catch(() => undefined);
+          void this.usersService.emitPresenceToFriends(payload.sub, true).catch(() => undefined);
         }
         this.scheduleOnlineCountBroadcast();
         return;
@@ -142,9 +148,8 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         this.groupsService.listMyChannelIds(payload.sub),
         this.chatService.listPublicGroupIds(payload.sub),
       ]);
-      // Public groups the user hasn't joined still belong in their live feed -- join those
-      // rooms too, but keep them OUT of the presence-broadcast loop below so a reconnect storm
-      // doesn't fan presence writes across every public group.
+      // Public groups the user hasn't joined still belong in their live feed. Presence is
+      // delivered separately to friends' personal rooms, never to shared conversation rooms.
       const publicOnlyGroupIds = publicGroupIds.filter((id) => !conversationIds.includes(id));
       const rooms = [
         ...conversationIds.map((id) => `conversation:${id}`),
@@ -162,9 +167,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       // and only needed when this is the user's first live socket.
       if (isFirstSocketForUser) {
         void this.usersService.setOnline(payload.sub, true).catch(() => undefined);
-        conversationIds.forEach((id) =>
-          client.to(`conversation:${id}`).emit('presenceUpdate', { userId: payload.sub, isOnline: true }),
-        );
+        void this.usersService.emitPresenceToFriends(payload.sub, true).catch(() => undefined);
       }
       this.scheduleOnlineCountBroadcast();
 
@@ -178,6 +181,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   async handleDisconnect(client: AuthedSocket) {
     const userId = client.data?.userId;
     if (!userId) return;
+
+    // Voice seats belong to a socket, unlike online presence. Close this device's seat even
+    // when the user still has another browser tab connected.
+    await this.leaveVoiceSocket(client.id).catch((error) => this.logger.warn(`Voice disconnect cleanup failed: ${error.message}`));
 
     const stillOnlineElsewhere = await this.presence.untrack(userId);
     if (stillOnlineElsewhere) return; // other tabs/devices remain -- nothing to announce
@@ -194,14 +201,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         if (await this.presence.isOnline(userId)) return; // came back in the meantime
         const lastSeenAt = new Date();
         void this.usersService.setOnline(userId, false, lastSeenAt).catch(() => undefined);
-        void this.chatService
-          .listConversationIdsForUser(userId)
-          .then((ids) =>
-            ids.forEach((id) =>
-              this.server.to(`conversation:${id}`).emit('presenceUpdate', { userId, isOnline: false, lastSeenAt }),
-            ),
-          )
-          .catch(() => undefined);
+        void this.usersService.emitPresenceToFriends(userId, false, lastSeenAt).catch(() => undefined);
         this.scheduleOnlineCountBroadcast();
       }, ChatGateway.OFFLINE_GRACE_MS),
     );
@@ -262,13 +262,19 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     if (this.rateLimited(client, 'sendMessage', 25, 10_000)) {
       throw new WsException('أنت ترسل الرسائل بسرعة كبيرة. تمهّل قليلاً.');
     }
+    // A sticker is an image reference: an uploaded asset or one of the app's built-in packs.
+    if (dto.attachments?.some((a) => a.type === 'sticker' && !/^(https?:\/\/|\/uploads\/|sticker:[a-z0-9-]+\/[a-z0-9-]+$)/i.test(a.url))) {
+      throw new WsException('ملصق غير صالح');
+    }
+    // Cards travel by reference only; the snapshot is built (and access-checked) server-side.
+    const card = dto.card ? await this.cardsService.resolve(client.data.userId, dto.card.kind, dto.card.refId) : null;
     const message = await this.chatService.saveMessage(
       dto.conversationId,
       client.data.userId,
       dto.text ?? '',
       dto.attachments,
       dto.replyTo,
-      { poll: dto.poll, effect: dto.effect, silent: dto.silent },
+      { poll: dto.poll, effect: dto.effect, silent: dto.silent, card, threadRoot: dto.threadRoot ?? null },
     );
 
     // Broadcast to everyone in the room, including the sender (so all their tabs update)
@@ -490,6 +496,111 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     client.to(`channel:${channelId}`).emit('userStopTypingChannel', {
       channelId,
       userId: client.data.userId,
+    });
+  }
+
+  // Voice rooms use acknowledged errors so the UI can always release its microphone on a
+  // failed join. The service validates both membership and the exact socket for every signal.
+  private async voiceAction(client: AuthedSocket, dto: { conversationId?: unknown } | null, action: () => Promise<unknown>) {
+    try {
+      if (!client.data?.userId || typeof dto?.conversationId !== 'string' || !Types.ObjectId.isValid(dto.conversationId)) {
+        throw new WsException('طلب غرفة صوتية غير صالح');
+      }
+      if (this.rateLimited(client, 'voiceRoom', 500, 10_000)) throw new WsException('محاولات كثيرة، انتظر قليلًا');
+      return { ok: true, ...(await action() as object) };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : 'تعذر الاتصال بالغرفة' };
+    }
+  }
+
+  private async publishVoiceState(conversationId: string) {
+    const state = await this.voiceRooms.snapshot(conversationId);
+    this.server.to(`voice-room:${conversationId}`).emit('voiceRoom:state', state);
+    return state;
+  }
+
+  private async leaveVoiceSocket(socketId: string, conversationId?: string) {
+    const ids = await this.voiceRooms.leaveSocket(socketId, conversationId);
+    await Promise.all(ids.map((id) => this.publishVoiceState(id)));
+  }
+
+  @SubscribeMessage('voiceRoom:state')
+  voiceState(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { conversationId: string }) {
+    return this.voiceAction(client, dto, async () => {
+      const state = await this.voiceRooms.state(client.data.userId, dto.conversationId);
+      await client.join(`voice-room:${dto.conversationId}`);
+      this.server.to(`voice-room:${dto.conversationId}`).emit('voiceRoom:state', state);
+      return state;
+    });
+  }
+
+  @SubscribeMessage('voiceRoom:join')
+  voiceJoin(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { conversationId: string; muted?: boolean }) {
+    return this.voiceAction(client, dto, async () => {
+      if (this.joiningVoice.has(client.id)) throw new WsException('جارٍ الانضمام بالفعل');
+      this.joiningVoice.add(client.id);
+      try {
+        await this.leaveVoiceSocket(client.id);
+        const state = await this.voiceRooms.join(client.data.userId, client.id, dto.conversationId, dto.muted !== false);
+        // A disconnect may have arrived while the database join was still pending.
+        if (!client.connected) {
+          await this.leaveVoiceSocket(client.id);
+          throw new WsException('انقطع الاتصال، حاول مجددًا');
+        }
+        await client.join(`voice-room:${dto.conversationId}`);
+        this.server.to(`voice-room:${dto.conversationId}`).emit('voiceRoom:state', state);
+        return state;
+      } finally {
+        this.joiningVoice.delete(client.id);
+      }
+    });
+  }
+
+  @SubscribeMessage('voiceRoom:leave')
+  voiceLeave(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { conversationId: string; unwatch?: boolean }) {
+    return this.voiceAction(client, dto, async () => {
+      await this.leaveVoiceSocket(client.id, dto.conversationId);
+      if (dto.unwatch) await client.leave(`voice-room:${dto.conversationId}`);
+      return {};
+    });
+  }
+
+  @SubscribeMessage('voiceRoom:heartbeat')
+  voiceHeartbeat(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { conversationId: string }) {
+    return this.voiceAction(client, dto, () => this.voiceRooms.heartbeat(client.data.userId, client.id, dto.conversationId));
+  }
+
+  @SubscribeMessage('voiceRoom:mute')
+  voiceMute(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { conversationId: string; muted: boolean }) {
+    return this.voiceAction(client, dto, async () => {
+      if (typeof dto.muted !== 'boolean') throw new WsException('حالة الميكروفون غير صالحة');
+      await this.voiceRooms.mute(client.data.userId, client.id, dto.conversationId, dto.muted);
+      return this.publishVoiceState(dto.conversationId);
+    });
+  }
+
+  @SubscribeMessage('voiceRoom:signal')
+  voiceSignal(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: {
+    conversationId: string; toSocketId: string;
+    description?: { type: string; sdp: string }; candidate?: { candidate?: string };
+  }) {
+    return this.voiceAction(client, dto, async () => {
+      if (typeof dto.toSocketId !== 'string' || dto.toSocketId.length > 100) throw new WsException('مستلم غير صالح');
+      const description = dto.description;
+      const candidate = dto.candidate;
+      if (description) {
+        if (!['offer', 'answer'].includes(description.type) || typeof description.sdp !== 'string' || description.sdp.length > 100_000) {
+          throw new WsException('وصف اتصال غير صالح');
+        }
+      } else if (!candidate || typeof candidate.candidate !== 'string' || candidate.candidate.length > 4096) {
+        throw new WsException('إشارة اتصال غير صالحة');
+      }
+      const target = await this.voiceRooms.relayTarget(client.data.userId, client.id, dto.conversationId, dto.toSocketId);
+      this.server.to(target).emit('voiceRoom:signal', {
+        conversationId: dto.conversationId, fromSocketId: client.id,
+        ...(description ? { description } : { candidate }),
+      });
+      return {};
     });
   }
 

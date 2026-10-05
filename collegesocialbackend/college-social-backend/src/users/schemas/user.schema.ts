@@ -205,6 +205,24 @@ export class User {
   @Prop({ default: false })
   classRemindersOptOut: boolean;
 
+  // Opt-out for the evening "what you missed in your groups" push (ChatEveningDigestService).
+  @Prop({ default: false })
+  eveningDigestOptOut: boolean;
+
+  // Atomic daily claim prevents several API instances from sending the same catch-up push.
+  @Prop({ type: String, default: null, select: false })
+  lastChatDigestDay: string | null;
+
+  // Opt-IN: show 🔥 chat streaks (consecutive days both people messaged) in the chat list/header.
+  // Streaks are tracked for every DM regardless; this only controls whether this user sees them.
+  @Prop({ default: false })
+  chatStreaksEnabled: boolean;
+
+  // Personal sticker collection (image URLs, newest first) -- made from a photo or saved from a
+  // sticker someone sent. Capped server-side (UsersService.addSticker).
+  @Prop({ type: [String], default: [] })
+  stickers: string[];
+
   // Per-user notification controls (profile > الإشعارات). Only the PUSH channel is gated -- the
   // in-app bell always records everything (it's a pull surface). See NotificationsService +
   // DigestService.
@@ -258,6 +276,6 @@ export const UserSchema = SchemaFactory.createForClass(User);
 // The compound one also serves the plain { department } prefix.
 UserSchema.index({ department: 1, points: -1 });
 UserSchema.index({ points: -1 });
-// "Classmates online now" (UsersService.onlineInDepartment): online users in the viewer's شعبة,
-// most-recently-seen first.
+// Online user reporting by department, most-recently-seen first. The friends-only presence
+// lookup uses the default _id index to restrict candidates to the viewer's friends.
 UserSchema.index({ isOnline: 1, department: 1, lastSeenAt: -1 });

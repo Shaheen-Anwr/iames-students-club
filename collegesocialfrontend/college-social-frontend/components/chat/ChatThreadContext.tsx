@@ -22,6 +22,8 @@ export interface ChatThreadActions {
   hideTranslation: (messageId: string) => void;
   /** Call the other person in this (1-to-1) conversation -- from a call-log bubble. */
   call: (type: 'audio' | 'video') => void;
+  /** Open the side discussion hanging off a message (group chats). */
+  openThread: (message: Message) => void;
 }
 
 // Slower-changing thread facts (participants churn on every presence ping). Read only by the

@@ -44,6 +44,8 @@ export interface User {
   // assistant should call the student by. Set from the assistant's first-run card / settings.
   aiAssistantName?: string | null;
   aiPreferredName?: string | null;
+  chatStreaksEnabled?: boolean;
+  eveningDigestOptOut?: boolean;
 }
 
 export type BadgeId =
@@ -681,6 +683,9 @@ export interface MutedEntry {
 
 export interface Conversation {
   _id: string;
+  isSelf?: boolean;
+  classKey?: string | null;
+  streak?: { count: number; day: string | null; lastSent: Record<string, string> } | null;
   // entries are null for a participant whose account has since been deleted.
   participants: (User | null)[];
   isGroup: boolean;
@@ -723,6 +728,8 @@ export interface Poll {
   options: PollOption[];
   multiple: boolean;
   closed: boolean;
+  /** Presence identifies a quiz; answers are fetched privately after voting. */
+  quiz?: { answerHidden?: boolean } | null;
 }
 
 export interface PinnedMessage {
@@ -767,7 +774,7 @@ export interface ChatSummary {
 
 export type ChatRewriteMode = 'improve' | 'formal' | 'friendly' | 'shorter' | 'fix' | 'en' | 'ar';
 
-export type AttachmentType = 'image' | 'video' | 'audio' | 'voice' | 'document';
+export type AttachmentType = 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker';
 
 export interface Attachment {
   url: string;
@@ -798,10 +805,45 @@ export interface MessageReaction {
   emoji: string;
 }
 
+export type ChatBot = 'rafed' | 'system';
+export type ChatCardKind = 'post' | 'assignment' | 'event' | 'listing' | 'status';
+export interface ChatCard {
+  kind: ChatCardKind;
+  refId: string;
+  title: string;
+  subtitle?: string | null;
+  imageUrl?: string | null;
+  href: string;
+  meta?: Record<string, string | number | boolean | null> | null;
+}
+export interface ChatReminder {
+  _id: string;
+  messageId: string;
+  conversationId: string;
+  remindAt: string;
+  preview: string;
+  messageCreatedAt: string;
+}
+export interface ChatQuizResult {
+  correctOptionId: string;
+  selectedOptionId: string;
+  explanation: string;
+  correct: boolean;
+}
+export interface ChatThreadUpdate {
+  conversationId: string;
+  rootId: string;
+  threadCount: number;
+  threadLastAt: string | null;
+  threadParticipants: Pick<User, '_id' | 'name' | 'photoUrl'>[];
+}
+
 export interface ReplyPreview {
   _id: string;
   text: string;
   sender: { _id: string; name: string } | null;
+  bot?: ChatBot | null;
+  card?: ChatCard | null;
   attachments?: Attachment[];
   attachmentUrl?: string | null;
   deletedForEveryone?: boolean;
@@ -813,6 +855,12 @@ export interface Message {
   conversation: string;
   // null when the sender's account has since been deleted.
   sender: User | null;
+  bot?: ChatBot | null;
+  card?: ChatCard | null;
+  threadRoot?: string | null;
+  threadCount?: number;
+  threadLastAt?: string | null;
+  threadParticipants?: Pick<User, '_id' | 'name' | 'photoUrl'>[];
   text: string;
   /** @deprecated use `attachments` */
   attachmentUrl?: string | null;
@@ -924,6 +972,12 @@ export interface ChannelMessage {
   channel: string;
   // null when the sender's account has since been deleted.
   sender: User | null;
+  bot?: ChatBot | null;
+  card?: ChatCard | null;
+  threadRoot?: string | null;
+  threadCount?: number;
+  threadLastAt?: string | null;
+  threadParticipants?: Pick<User, '_id' | 'name' | 'photoUrl'>[];
   text: string;
   /** @deprecated legacy single-attachment field; use `attachments` */
   attachmentUrl?: string | null;

@@ -6,9 +6,12 @@ import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bell,
   BellOff,
+  Bookmark,
   CalendarClock,
   CheckSquare,
   Download,
+  Flame,
+  GraduationCap,
   Info,
   Loader2,
   MessageCircle,
@@ -44,6 +47,7 @@ import {
   messagePreview,
   otherParticipants,
   presenceLabel,
+  canSeePresence,
   stripMentionTokens,
   tickStatus,
   translationTarget,
@@ -84,6 +88,9 @@ import {
   TypingDots,
 } from './ChatChrome';
 import { ChatThreadActionsContext, ChatThreadInfoContext, type ChatThreadActions } from './ChatThreadContext';
+import { MessageThreadModal } from './MessageThreadModal';
+import { RemindMessageModal } from './RemindMessageModal';
+import { GroupVoiceRoom } from './GroupVoiceRoom';
 
 const SEND_TIMEOUT_MS = 12_000;
 // Offer the AI "catch me up" chip when you open a chat with at least this many unread messages.
@@ -190,6 +197,12 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [messageInfoTarget, setMessageInfoTarget] = useState<Message | null>(null);
   const [reactionsTarget, setReactionsTarget] = useState<Message | null>(null);
   const [pollVotesTarget, setPollVotesTarget] = useState<Message | null>(null);
+  // A message's side discussion (group chats), a "remind me" target, رافد composing an answer, and
+  // the header's voice-room button (a counter: each press asks GroupVoiceRoom to join).
+  const [threadTarget, setThreadTarget] = useState<Message | null>(null);
+  const [remindTarget, setRemindTarget] = useState<Message | null>(null);
+  const [rafedTyping, setRafedTyping] = useState(false);
+  const [voiceJoinSignal, setVoiceJoinSignal] = useState(0);
   const [imagePreview, setImagePreview] = useState<{ message: Message; index: number } | null>(null);
 
   const [atBottom, setAtBottom] = useState(true);
@@ -414,6 +427,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
     const onNewMessage = (message: Message) => {
       if (!message || message.conversation !== conversationId) return;
+      // Thread replies live in their discussion panel (the root's chip updates via threadUpdated).
+      if (message.threadRoot) return;
+      if (message.bot === 'rafed') setRafedTyping(false);
       const mine = message.sender?._id === userId;
       setMessages((prev) => {
         if (prev.some((m) => m._id === message._id)) return prev;
@@ -533,8 +549,31 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       if (payload.status === 'failed') showToast(payload.error || 'تعذّر إرسال رسالة مجدولة.', 'error');
     };
 
+    const onThreadUpdated = (payload: {
+      conversationId: string;
+      rootId: string;
+      threadCount: number;
+      threadLastAt: string | null;
+      threadParticipants: Message['threadParticipants'];
+    }) => {
+      if (payload?.conversationId !== conversationId) return;
+      setMessages((prev) =>
+        prev.map((m) =>
+          m._id === payload.rootId
+            ? { ...m, threadCount: payload.threadCount, threadLastAt: payload.threadLastAt, threadParticipants: payload.threadParticipants }
+            : m,
+        ),
+      );
+    };
+
+    const onRafedTyping = (payload: { conversationId: string; active: boolean }) => {
+      if (payload?.conversationId === conversationId) setRafedTyping(!!payload.active);
+    };
+
     socket.on('connect', onConnect);
     socket.on('newMessage', onNewMessage);
+    socket.on('threadUpdated', onThreadUpdated);
+    socket.on('rafedTyping', onRafedTyping);
     socket.on('messageEdited', replaceMessage);
     socket.on('messageReacted', replaceMessage);
     socket.on('messageUpdated', replaceMessage);
@@ -549,6 +588,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     return () => {
       socket.off('connect', onConnect);
       socket.off('newMessage', onNewMessage);
+      socket.off('threadUpdated', onThreadUpdated);
+      socket.off('rafedTyping', onRafedTyping);
       socket.off('messageEdited', replaceMessage);
       socket.off('messageReacted', replaceMessage);
       socket.off('messageUpdated', replaceMessage);
@@ -824,6 +865,26 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     router.replace(`/chat/${conversationId}`, { scroll: false });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [deepLink]);
+
+  // ?thread=<rootId> (a thread-reply notification): open that discussion once the chat has loaded.
+  const threadLink = searchParams?.get('thread');
+  useEffect(() => {
+    if (!threadLink || loading) return;
+    const local = messages.find((m) => m._id === threadLink);
+    if (local) setThreadTarget(local);
+    else
+      chatApi
+        .thread(threadLink)
+        .then((r) => setThreadTarget(r.root))
+        .catch(() => showToast('تعذّر فتح النقاش.', 'error'));
+    router.replace(`/chat/${conversationId}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [threadLink, loading]);
+
+  // Keep رافد's "typing" bubble in view while it answers.
+  useEffect(() => {
+    if (rafedTyping && atBottomRef.current) scrollToBottom('smooth');
+  }, [rafedTyping, scrollToBottom]);
 
   // Keep the typing bubble in view when it appears while you're at the bottom.
   useEffect(() => {
@@ -1184,6 +1245,22 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       case 'closePoll':
         socket?.emit('closePoll', { messageId: message._id });
         break;
+      case 'remind':
+        setRemindTarget(message);
+        break;
+      case 'thread':
+        setThreadTarget(message);
+        break;
+      case 'saveSticker': {
+        const sticker = message.attachments?.find((a) => a.type === 'sticker');
+        if (sticker) {
+          api
+            .post('/users/me/stickers', { url: sticker.url })
+            .then(() => showToast('تمت إضافة الملصق إلى ملصقاتك.'))
+            .catch((err) => showToast(err instanceof ApiError ? err.message : 'تعذّر حفظ الملصق.', 'error'));
+        }
+        break;
+      }
       case 'deleteForMe':
         handleDelete(message, false);
         break;
@@ -1290,6 +1367,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         return next;
       }),
     call: (type) => void handleCall(type),
+    openThread: (m) => setThreadTarget(m),
   };
   const actions = useMemo<ChatThreadActions>(
     () => ({
@@ -1307,6 +1385,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       replayEffect: (m) => handlers.current?.replayEffect(m),
       hideTranslation: (id) => handlers.current?.hideTranslation(id),
       call: (type) => handlers.current?.call(type),
+      openThread: (m) => handlers.current?.openThread(m),
     }),
     [],
   );
@@ -1358,7 +1437,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const recordingUsers = recordingIds.map((id) => participantsById.get(id)).filter((u): u is User => !!u);
   const onlineCount = isGroup ? otherParticipants(conversation!, user._id).filter((p) => p.isOnline).length : 0;
   const memberCount = conversation?.participants.filter(Boolean).length ?? 0;
-  const presence = !isGroup ? presenceLabel(avatarUser) : null;
+  const isSelf = !!conversation?.isSelf;
+  const isClass = !!conversation?.classKey;
+  const presence = !isGroup && !isSelf ? presenceLabel(avatarUser, user) : null;
+  const showOnline = !isGroup && !isSelf && !!avatarUser?.isOnline && canSeePresence(avatarUser, user);
+  const streak = !isGroup && !isSelf && user.chatStreaksEnabled ? (conversation?.streak?.count ?? 0) : 0;
 
   const subtitle: React.ReactNode = recordingUsers.length ? (
     <span className="flex items-center gap-1.5 font-medium text-accent">
@@ -1370,9 +1453,22 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       <TypingDots />
       {isGroup ? typingLabel(typingUsers.map((u) => u.name)) : 'يكتب الآن…'}
     </span>
+  ) : rafedTyping ? (
+    <span className="flex items-center gap-1.5 font-medium text-accent">
+      <Sparkles className="h-3.5 w-3.5 animate-pulse" /> رافد يكتب…
+    </span>
+  ) : isSelf ? (
+    'ملاحظاتك وروابطك الخاصة — لا يراها أحد غيرك'
+  ) : isClass ? (
+    `دفعتك · ${memberCount} طالبًا`
   ) : isGroup ? (
     `${memberCount} عضوًا${onlineCount ? ` · ${onlineCount} متصل الآن` : ''}`
-  ) : avatarUser?.isOnline ? (
+  ) : streak >= 2 ? (
+    <span className="flex items-center gap-1 font-medium text-orange-500">
+      <Flame className="h-3.5 w-3.5" /> {streak} يومًا متتاليًا
+      {showOnline && <span className="ms-1 text-success">· متصل الآن</span>}
+    </span>
+  ) : showOnline ? (
     <span className="flex items-center gap-1.5 text-success">
       <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> متصل الآن
     </span>
@@ -1475,9 +1571,21 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               <ChatHeader
                 title={title}
                 avatarSrc={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)}
-                online={!isGroup && !!avatarUser?.isOnline}
+                online={showOnline}
                 subtitle={subtitle}
-                canCall={!isGroup && !!conversation}
+                canCall={!isGroup && !isSelf && !!conversation}
+                avatarIcon={
+                  isSelf ? (
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white">
+                      <Bookmark className="h-5 w-5" />
+                    </span>
+                  ) : isClass ? (
+                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-accent/15 text-accent">
+                      <GraduationCap className="h-5 w-5" />
+                    </span>
+                  ) : undefined
+                }
+                onVoiceRoom={isGroup ? () => setVoiceJoinSignal((n) => n + 1) : undefined}
                 onOpenInfo={() => setInfoOpen(true)}
                 onCall={(type) => void handleCall(type)}
                 onSearch={() => setSearchOpen((v) => !v)}
@@ -1518,6 +1626,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               />
             )}
           </AnimatePresence>
+
+          {isGroup && <GroupVoiceRoom conversationId={conversationId} joinSignal={voiceJoinSignal} />}
 
           {/* Thread */}
           <div className="relative flex min-h-0 flex-1 flex-col">
@@ -1647,6 +1757,23 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                           label={typingLabel(typingUsers.map((u) => u.name))}
                         />
                       )}
+                      {rafedTyping && (
+                        <motion.div
+                          key="rafed-typing"
+                          initial={{ opacity: 0, y: 10, scale: 0.92 }}
+                          animate={{ opacity: 1, y: 0, scale: 1 }}
+                          exit={{ opacity: 0, y: 6, scale: 0.92 }}
+                          className="mb-3 flex items-end gap-1.5"
+                          aria-live="polite"
+                        >
+                          <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white shadow-elev-1">
+                            <Sparkles className="h-4 w-4" />
+                          </span>
+                          <span className="flex items-center gap-2 rounded-[1.15rem] rounded-br-md bg-[rgb(var(--chat-in))] px-3.5 py-2.5 text-[12.5px] font-medium text-accent shadow-[0_1px_2px_rgb(0_0_0/0.1)]">
+                            <TypingDots /> رافد يكتب إجابته…
+                          </span>
+                        </motion.div>
+                      )}
                     </AnimatePresence>
                   </div>
                 )}
@@ -1744,6 +1871,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           />
 
           {/* Modals */}
+          <MessageThreadModal root={threadTarget} onClose={() => setThreadTarget(null)} />
+          <RemindMessageModal message={remindTarget} onClose={() => setRemindTarget(null)} />
+
           <ForwardModal
             open={!!forwardTargets}
             count={forwardTargets?.length ?? 1}

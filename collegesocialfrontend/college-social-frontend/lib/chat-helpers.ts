@@ -1,6 +1,6 @@
 import { hasFormatting, stripFormatting } from './chat-format';
 import { timeAgo } from './utils';
-import type { Conversation, Message, User } from './types';
+import type { ChatBot, Conversation, Message, User } from './types';
 
 // Filters out the current user, and drops any participant whose account was since deleted
 // (or, defensively, any entry that wasn't populated into a full User object).
@@ -11,12 +11,14 @@ export function otherParticipants(conversation: Conversation, currentUserId: str
 }
 
 export function conversationTitle(conversation: Conversation, currentUserId: string): string {
+  if (conversation.isSelf) return 'رسائلي المحفوظة';
   if (conversation.isGroup) return conversation.name ?? 'محادثة جماعية';
   const others = otherParticipants(conversation, currentUserId);
   return others[0]?.name ?? 'مستخدم غير معروف';
 }
 
 export function conversationAvatarUser(conversation: Conversation, currentUserId: string): User | undefined {
+  if (conversation.isSelf) return conversation.participants.find((p): p is User => !!p && p._id === currentUserId);
   if (conversation.isGroup) return undefined;
   return otherParticipants(conversation, currentUserId)[0];
 }
@@ -40,8 +42,12 @@ export function isGroupAdmin(conversation: Conversation, userId: string): boolea
   return !!conversation.admins?.includes(userId);
 }
 
-export function presenceLabel(user: User | undefined): string | null {
-  if (!user) return null;
+export function canSeePresence(target: User | undefined, viewer: User | null | undefined): boolean {
+  return !!target && !!viewer?.friends?.includes(target._id) && !viewer.blockedUsers?.includes(target._id);
+}
+
+export function presenceLabel(user: User | undefined, viewer: User | null | undefined): string | null {
+  if (!user || !canSeePresence(user, viewer)) return null;
   if (user.isOnline) return 'متصل الآن';
   if (user.lastSeenAt) return `آخر ظهور ${timeAgo(user.lastSeenAt)}`;
   return null;
@@ -80,6 +86,7 @@ const ATTACHMENT_PREVIEW: Record<string, string> = {
   audio: 'ملف صوتي 🎵',
   voice: 'رسالة صوتية 🎤',
   document: 'مستند 📄',
+  sticker: 'ملصق 🎨',
 };
 
 // Mirrors the backend's messagePreviewText (chat.constants.ts): text, else poll, else attachment.
@@ -88,6 +95,7 @@ export function messagePreview(message: {
   poll?: { question?: string | null } | null;
   attachments?: { type: string }[] | null;
   call?: { type: string; outcome: string } | null;
+  card?: { title: string } | null;
 }): string {
   if (message.call) {
     const missed = ['no_answer', 'canceled', 'busy'].includes(message.call.outcome);
@@ -97,6 +105,7 @@ export function messagePreview(message: {
   // One-line surfaces show the words, not the *markers* (a code block keeps its contents).
   const text = (hasFormatting(raw) ? stripFormatting(raw) : raw).replace(/\s+/g, ' ').trim();
   if (text) return text.slice(0, 120);
+  if (message.card?.title) return `🔗 ${message.card.title}`;
   if (message.poll?.question) return `📊 ${message.poll.question}`;
   const first = message.attachments?.[0];
   return first ? ATTACHMENT_PREVIEW[first.type] ?? 'مرفق' : '';
@@ -104,7 +113,7 @@ export function messagePreview(message: {
 
 // `@[Name](id)` -> `@Name` for plain-text surfaces (previews, clipboard, exports).
 export function stripMentionTokens(text: string): string {
-  return text.replace(/@\[([^\]]+)\]\(([0-9a-fA-F]{24})\)/g, '@$1');
+  return text.replace(/@\[([^\]]+)\]\(([0-9a-fA-F]{24}|rafed)\)/g, '@$1');
 }
 
 export function firstName(name?: string | null): string {
@@ -244,4 +253,12 @@ export function formatDuration(totalSeconds: number): string {
   const m = Math.floor((s % 3600) / 60);
   const sec = String(s % 60).padStart(2, '0');
   return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
+}
+
+/** Bot messages have no user account; keep their identity distinct from deleted accounts. */
+export function messageSenderName(message: { sender?: { name: string } | null; bot?: ChatBot | null }): string {
+  return message.bot === 'rafed' ? 'رافد' : message.bot === 'system' ? 'نظام الكلية' : message.sender?.name ?? 'مستخدم محذوف';
+}
+export function messageSenderKey(message: Message): string {
+  return message.bot ? `bot:${message.bot}` : message.sender?._id ?? 'deleted-user';
 }

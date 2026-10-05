@@ -1,14 +1,19 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import { messagePreview } from '@/lib/chat-helpers';
+import { chatApi, MESSAGE_PAGE_SIZE } from '@/lib/chat-api';
+import { createChatMessageCache } from '@/lib/chat-message-cache';
+import { preloadChatBackground } from '@/lib/chat-background';
 import type { Conversation, Message } from '@/lib/types';
 
 interface ChatContextValue {
+  messageCache: ReturnType<typeof createChatMessageCache>;
+  preloadConversation: (id: string) => void;
   conversations: Conversation[];
   loading: boolean;
   /** True when the last conversation-list fetch failed and we have nothing cached to show. */
@@ -28,6 +33,12 @@ const TYPING_TIMEOUT_MS = 2500;
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { socket } = useSocket();
   const { user } = useAuth();
+  // A new account gets a separate cache, including its in-flight requests.
+  const messageCache = useMemo(() => createChatMessageCache(chatApi.latest, MESSAGE_PAGE_SIZE), [user?._id]);
+  const preloadConversation = useCallback((id: string) => {
+    preloadChatBackground(id);
+    messageCache.preload(id);
+  }, [messageCache]);
   const pathname = usePathname();
   const [conversations, setConversations] = useState<Conversation[]>([]);
   const [loading, setLoading] = useState(true);
@@ -105,7 +116,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           lastMessagePreview: messagePreview(message) || conv.lastMessagePreview,
           lastMessageAt: message.createdAt ?? new Date().toISOString(),
           lastMessageId: message._id,
-          lastMessageSender: message.sender ? { _id: message.sender._id, name: message.sender.name } : conv.lastMessageSender,
+          lastMessageSender: message.sender ? { _id: message.sender._id, name: message.sender.name } : message.bot ? { _id: `bot:${message.bot}`, name: message.bot === 'rafed' ? 'رافد' : 'نظام الكلية' } : null,
           unreadCount: incrementUnread ? (conv.unreadCount ?? 0) + 1 : conv.unreadCount,
         });
         return next;
@@ -113,7 +124,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
 
     const onNewMessage = (message: Message) => {
-      if (!message?.conversation) return;
+      if (!message?.conversation || message.threadRoot) return;
       ensureKnown(message.conversation);
       // WhatsApp-style: raise the unread badge only for messages from someone else that land
       // in a conversation the user isn't currently viewing.
@@ -284,6 +295,8 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   return (
     <ChatContext.Provider
       value={{
+        messageCache,
+        preloadConversation,
         conversations,
         loading,
         error,

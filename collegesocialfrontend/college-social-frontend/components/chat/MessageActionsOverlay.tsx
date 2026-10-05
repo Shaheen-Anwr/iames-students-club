@@ -5,11 +5,13 @@ import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   BarChart3,
+  BellRing,
   CheckSquare,
   Copy,
   Forward,
   Info,
   Languages,
+  MessagesSquare,
   Pencil,
   Pin,
   PinOff,
@@ -18,6 +20,7 @@ import {
   SmilePlus,
   Star,
   StarOff,
+  Sticker,
   Trash2,
   X,
 } from 'lucide-react';
@@ -41,6 +44,9 @@ export type MessageActionKey =
   | 'select'
   | 'edit'
   | 'closePoll'
+  | 'remind'
+  | 'thread'
+  | 'saveSticker'
   | 'deleteForMe'
   | 'deleteForEveryone';
 
@@ -77,19 +83,32 @@ const GAP = 10;
 const MENU_W = 236;
 const ROW_H = 44;
 
-function buildItems(message: Message, isOwn: boolean, currentUserId: string, canPin: boolean, pinned: boolean): ActionItem[] {
+function buildItems(
+  message: Message,
+  isOwn: boolean,
+  currentUserId: string,
+  canPin: boolean,
+  pinned: boolean,
+  isGroup: boolean,
+): ActionItem[] {
   const placeholder = message._id.startsWith('tmp_');
   if (placeholder) return [{ key: 'deleteForMe', label: message.failed ? 'حذف الرسالة' : 'إلغاء الإرسال', icon: Trash2, danger: true }];
 
   const hasText = !!message.text?.trim() || !!message.poll;
   const starred = !!message.starredBy?.includes(currentUserId);
   const items: ActionItem[] = [{ key: 'reply', label: 'رد', icon: Reply }];
+  // A side discussion hanging off this message (groups; a thread reply can't start its own).
+  if (isGroup && !message.threadRoot) items.push({ key: 'thread', label: 'نقاش حول الرسالة', icon: MessagesSquare });
   if (hasText) items.push({ key: 'copy', label: 'نسخ', icon: Copy });
   items.push({ key: 'forward', label: 'إعادة توجيه', icon: Forward });
   if (canPin) items.push(pinned ? { key: 'unpin', label: 'إلغاء التثبيت', icon: PinOff } : { key: 'pin', label: 'تثبيت', icon: Pin });
   items.push(starred ? { key: 'star', label: 'إلغاء التمييز', icon: StarOff } : { key: 'star', label: 'تمييز بنجمة', icon: Star });
   if (message.text?.trim()) items.push({ key: 'translate', label: 'ترجمة', icon: Languages });
   if (message.reactions?.length) items.push({ key: 'reactions', label: 'التفاعلات', icon: SmilePlus });
+  items.push({ key: 'remind', label: 'ذكّرني', icon: BellRing });
+  if (!isOwn && message.attachments?.some((a) => a.type === 'sticker')) {
+    items.push({ key: 'saveSticker', label: 'حفظ في ملصقاتي', icon: Sticker });
+  }
   if (isOwn) items.push({ key: 'info', label: 'معلومات القراءة', icon: Info });
   items.push({ key: 'select', label: 'تحديد', icon: CheckSquare });
   if (isOwn && message.text?.trim() && !message.poll) items.push({ key: 'edit', label: 'تعديل', icon: Pencil });
@@ -156,7 +175,7 @@ function OverlayBody({
   const [viewport, setViewport] = useState({ w: window.innerWidth, h: window.innerHeight });
   const menuRef = useRef<HTMLDivElement>(null);
   const moreButtonRef = useRef<HTMLButtonElement>(null);
-  const items = buildItems(message, isOwn, currentUserId, canPin, pinned);
+  const items = buildItems(message, isOwn, currentUserId, canPin, pinned, isGroup);
   const placeholder = message._id.startsWith('tmp_');
   const myReaction = (message.reactions ?? []).find(
     (r) => (typeof r.user === 'string' ? r.user : r.user._id) === currentUserId,

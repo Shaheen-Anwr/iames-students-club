@@ -1,6 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useState } from 'react';
+import { assetUrl } from './utils';
+
+const useClientLayoutEffect = typeof window === 'undefined' ? useEffect : useLayoutEffect;
 
 export interface ChatBackground {
   type: 'preset' | 'custom';
@@ -133,7 +136,7 @@ const ACCENT_KEY = 'chatAccents';
 export function useChatAccent(conversationId: string) {
   const [accent, setAccentState] = useState<string | null>(null);
 
-  useEffect(() => {
+  useClientLayoutEffect(() => {
     try {
       const raw = localStorage.getItem(ACCENT_KEY);
       const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
@@ -184,7 +187,26 @@ export function chatBackgroundStyle(bg: ChatBackground | null): React.CSSPropert
     const preset = CHAT_BACKGROUND_PRESETS.find((p) => p.id === bg.value);
     return preset ? { background: preset.css, backgroundSize: preset.size, animation: preset.animation } : {};
   }
-  return { backgroundImage: `url(${bg.value})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+  return { backgroundImage: `url(${JSON.stringify(assetUrl(bg.value))})`, backgroundSize: 'cover', backgroundPosition: 'center' };
+}
+
+// Start downloading/decoding on navigation intent, before the keyed chat window mounts.
+// Retaining a few Image objects also keeps recently used wallpapers ready for revisits.
+const wallpaperImages = new Map<string, HTMLImageElement>();
+
+export function preloadChatBackground(conversationId: string) {
+  if (typeof window === 'undefined') return;
+  const bg = readAll()[conversationId];
+  if (bg?.type !== 'custom') return;
+  const url = assetUrl(bg.value);
+  if (!url || wallpaperImages.has(url)) return;
+  const image = new Image();
+  image.decoding = 'async';
+  image.onload = () => { void image.decode?.().catch(() => undefined); };
+  image.onerror = () => { wallpaperImages.delete(url); };
+  wallpaperImages.set(url, image);
+  image.src = url;
+  while (wallpaperImages.size > 8) wallpaperImages.delete(wallpaperImages.keys().next().value!);
 }
 
 // Per-conversation chat wallpaper, persisted client-side (mirrors the localStorage pattern used
@@ -193,8 +215,9 @@ export function chatBackgroundStyle(bg: ChatBackground | null): React.CSSPropert
 export function useChatBackground(conversationId: string) {
   const [background, setBackgroundState] = useState<ChatBackground | null>(null);
 
-  useEffect(() => {
+  useClientLayoutEffect(() => {
     setBackgroundState(readAll()[conversationId] ?? null);
+    preloadChatBackground(conversationId);
   }, [conversationId]);
 
   const setBackground = useCallback(
@@ -202,7 +225,11 @@ export function useChatBackground(conversationId: string) {
       const all = readAll();
       if (bg) all[conversationId] = bg;
       else delete all[conversationId];
-      writeAll(all);
+      try {
+        writeAll(all);
+      } catch {
+        // Storage may be unavailable; the selected wallpaper still applies for this visit.
+      }
       setBackgroundState(bg);
     },
     [conversationId],

@@ -9,6 +9,7 @@ import { Role } from '../common/enums/role.enum';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { NotificationsService } from '../notifications/notifications.service';
 import { PushService } from '../push/push.service';
+import { AppEventsService } from '../realtime/app-events.service';
 import { buildAnnouncementPushPayload } from '../push/push-payload.util';
 import { pushSuppressed } from '../common/utils/notification-prefs.util';
 
@@ -36,6 +37,7 @@ export class AnnouncementsService {
     private readonly notificationsService: NotificationsService,
     private readonly pushService: PushService,
     private readonly config: ConfigService,
+    private readonly appEvents: AppEventsService,
   ) {}
 
   async create(authorId: string, authorDepartment: Department | null, dto: CreateAnnouncementDto): Promise<AnnouncementDocument> {
@@ -59,6 +61,14 @@ export class AnnouncementsService {
     void this.broadcast(announcement, authorId).catch((err) =>
       this.logger.warn(`Announcement broadcast failed: ${(err as Error)?.message ?? err}`),
     );
+    // ...and into the matching class group chats (ChatClassGroupsService).
+    this.appEvents.emit('announcement.created', {
+      id: String(announcement._id),
+      title: announcement.title,
+      body: announcement.body,
+      department: announcement.department ?? null,
+      authorId,
+    });
 
     // Populate the author so the caller (and the optimistic insert on the client) can show the
     // announcer's name/photo without a refetch -- same populate list() uses.

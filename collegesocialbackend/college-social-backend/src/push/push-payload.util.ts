@@ -34,11 +34,15 @@ const LABELS: Record<NotificationType, string> = {
   // buildAnnouncementPushPayload(), which uses the announcement's own title. Present only so
   // this map stays exhaustive over NotificationType.
   system_announcement: '',
+  // A reminder the user set for themself -- the title is just this phrase (see buildPushPayload).
+  chat_reminder: 'تذكير برسالة',
+  thread_reply: 'ردّ في سلسلة',
 };
 
 // Mirrors notificationHref() in the frontend's NotificationBell.tsx, but returns an absolute
 // path (joined with frontendUrl by the caller) since a service worker can't run app routing code.
 function relativeHref(notification: NotificationDocument): string {
+  if (notification.link) return notification.link;
   switch (notification.type) {
     case 'chat_message':
       return notification.conversationId ? `/chat/${notification.conversationId}` : '/chat';
@@ -76,7 +80,7 @@ function relativeHref(notification: NotificationDocument): string {
 export function buildPushPayload(notification: NotificationDocument, frontendUrl: string): PushPayload {
   const actorName = (notification.actor as { name?: string } | null)?.name ?? 'شخص ما';
   return {
-    title: `${actorName} ${LABELS[notification.type]}`,
+    title: notification.type === 'chat_reminder' ? `⏰ ${LABELS.chat_reminder}` : `${actorName} ${LABELS[notification.type]}`,
     body: notification.preview ?? '',
     url: `${frontendUrl}${relativeHref(notification)}`,
     icon: `${frontendUrl}/icons/icon-192.png`,

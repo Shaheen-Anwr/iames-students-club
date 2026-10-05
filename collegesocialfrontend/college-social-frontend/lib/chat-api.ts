@@ -1,6 +1,10 @@
 import { api, ApiError } from './api';
 import type {
   Attachment,
+  ChatCard,
+  ChatReminder,
+  ChatQuizResult,
+  Conversation,
   ChatRewriteMode,
   ChatSummary,
   Message,
@@ -24,6 +28,15 @@ export interface ScheduleMessageInput {
 
 // Typed wrappers for the chat REST surface beyond basic history (see ChatController / ChatAiController).
 export const chatApi = {
+  self: () => api.post<Conversation>('/chat/conversations/self'),
+  reminders: () => api.get<ChatReminder[]>('/chat/reminders'),
+  remind: (messageId: string, at: string) => api.post<ChatReminder>(`/chat/messages/${messageId}/remind`, { at }),
+  cancelReminder: (id: string) => api.delete(`/chat/reminders/${id}`),
+  thread: (rootId: string) => api.get<{ root: Message; replies: Message[] }>(`/chat/messages/${rootId}/thread`),
+  quizResult: (messageId: string) => api.get<ChatQuizResult>(`/chat/messages/${messageId}/quiz-result`),
+  cardSuggestions: () => api.get<{ lectures: ChatCard[]; assignments: ChatCard[]; events: ChatCard[]; listings: ChatCard[] }>('/chat/cards/suggestions'),
+  shareCard: (conversationId: string, card: Pick<ChatCard, 'kind' | 'refId'>, text?: string) =>
+    api.post<Message>(`/chat/conversations/${conversationId}/cards`, { ...card, text }),
   latest: (conversationId: string) =>
     api.get<Message[]>(`/chat/conversations/${conversationId}/messages?limit=${MESSAGE_PAGE_SIZE}`),
 

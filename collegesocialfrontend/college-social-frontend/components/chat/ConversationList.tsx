@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Archive, BellOff, Loader2, MessageSquarePlus, Mic, Pin, Search, Star, Users, UsersRound, X } from 'lucide-react';
+import { Archive, BellOff, Bookmark, Flame, GraduationCap, Loader2, MessageSquarePlus, Mic, Pin, Search, Star, Users, UsersRound, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadError } from '@/components/ui/LoadError';
@@ -17,6 +17,7 @@ import { useChatDrafts } from '@/lib/chat-drafts';
 import { stripFormatting } from '@/lib/chat-format';
 import { useDebouncedValue } from '@/lib/use-debounced-value';
 import {
+  canSeePresence,
   conversationAvatarUser,
   conversationTitle,
   formatFullDate,
@@ -35,13 +36,16 @@ import { NewGroupChatModal } from './NewGroupChatModal';
 import { SwipeableRow } from './SwipeableRow';
 import { TypingDots } from './ChatChrome';
 import { CreateOrJoinGroupModal } from '@/components/groups/CreateOrJoinGroupModal';
+import { ChatHomeTools } from './ChatHomeTools';
+import { StatusTray } from './StatusTray';
 
-type Filter = 'all' | 'unread' | 'groups' | 'public';
+type Filter = 'all' | 'unread' | 'groups' | 'class' | 'public';
 
 const FILTERS: { key: Filter; label: string }[] = [
   { key: 'all', label: 'الكل' },
   { key: 'unread', label: 'غير مقروءة' },
   { key: 'groups', label: 'المجموعات' },
+  { key: 'class', label: 'دفعتي' },
   { key: 'public', label: 'عامة' },
 ];
 
@@ -79,7 +83,7 @@ function snippetAround(text: string, query: string, radius = 48): string {
 
 export function ConversationList() {
   const { user } = useAuth();
-  const { conversations, loading, error, refresh, typingConversationIds, recordingConversationIds } = useChat();
+  const { conversations, loading, error, refresh, preloadConversation, typingConversationIds, recordingConversationIds } = useChat();
   const { showToast } = useToast();
   const pathname = usePathname();
   const drafts = useChatDrafts();
@@ -115,8 +119,8 @@ export function ConversationList() {
 
   const byId = useMemo(() => new Map(conversations.map((c) => [c._id, c])), [conversations]);
 
-  const { pinned, regular, archived, unreadCount, groupsCount, publicCount } = useMemo(() => {
-    if (!user) return { pinned: [], regular: [], archived: [], unreadCount: 0, groupsCount: 0, publicCount: 0 };
+  const { pinned, regular, archived, unreadCount, groupsCount, classCount, publicCount } = useMemo(() => {
+    if (!user) return { pinned: [], regular: [], archived: [], unreadCount: 0, groupsCount: 0, classCount: 0, publicCount: 0 };
     const q = query.trim().toLowerCase();
     const matchesQuery = (c: Conversation) => {
       if (!q) return true;
@@ -127,7 +131,7 @@ export function ConversationList() {
     const active = conversations.filter((c) => !isArchived(c, user._id));
     const isPublicGroup = (c: Conversation) => c.isGroup && c.visibility === 'public';
     const matchesFilter = (c: Conversation) =>
-      filter === 'unread' ? (c.unreadCount ?? 0) > 0 : filter === 'groups' ? c.isGroup : filter === 'public' ? isPublicGroup(c) : true;
+      filter === 'unread' ? (c.unreadCount ?? 0) > 0 : filter === 'groups' ? c.isGroup : filter === 'class' ? !!c.classKey : filter === 'public' ? isPublicGroup(c) : true;
     const filtered = active.filter((c) => matchesFilter(c) && matchesQuery(c));
     return {
       pinned: filtered.filter((c) => isPinned(c, user._id)),
@@ -135,17 +139,18 @@ export function ConversationList() {
       archived: conversations.filter((c) => isArchived(c, user._id) && matchesQuery(c)),
       unreadCount: active.filter((c) => (c.unreadCount ?? 0) > 0).length,
       groupsCount: active.filter((c) => c.isGroup).length,
+      classCount: active.filter((c) => !!c.classKey).length,
       publicCount: active.filter(isPublicGroup).length,
     };
   }, [conversations, user, filter, query]);
 
-  // People with a 1:1 chat who are online right now -- Messenger's "active" row, one tap to open.
+  // Friends with a 1:1 chat who are online right now, one tap to open.
   const onlineNow = useMemo(() => {
     if (!user) return [];
     return conversations
-      .filter((c) => !c.isGroup && !isArchived(c, user._id))
+      .filter((c) => !c.isGroup && !c.isSelf && !isArchived(c, user._id))
       .map((c) => ({ conversation: c, person: conversationAvatarUser(c, user._id) }))
-      .filter((x): x is { conversation: Conversation; person: User } => !!x.person?.isOnline)
+      .filter((x): x is { conversation: Conversation; person: User } => !!x.person?.isOnline && canSeePresence(x.person, user))
       .slice(0, 24);
   }, [conversations, user]);
 
@@ -205,6 +210,8 @@ export function ConversationList() {
         </div>
       </div>
 
+      {!searching && !showArchived && <ChatHomeTools />}
+
       {/* Search: chats by name/member/preview + messages across every chat */}
       <div className="px-3 pb-2">
         <div className="relative">
@@ -230,6 +237,8 @@ export function ConversationList() {
         </div>
       </div>
 
+      {!searching && !showArchived && <StatusTray />}
+
       <AnimatePresence initial={false}>
         {!showArchived && !searching && onlineNow.length > 0 && (
           <motion.div
@@ -245,6 +254,9 @@ export function ConversationList() {
                 <Link
                   key={conversation._id}
                   href={`/chat/${conversation._id}`}
+                  onPointerEnter={() => preloadConversation(conversation._id)}
+                  onFocus={() => preloadConversation(conversation._id)}
+                  onTouchStart={() => preloadConversation(conversation._id)}
                   title={person.name}
                   className="flex w-[4.25rem] shrink-0 flex-col items-center gap-1 rounded-2xl px-1 py-1.5 transition-colors hover:bg-surface-2 active:scale-95"
                 >
@@ -281,7 +293,7 @@ export function ConversationList() {
       {!showArchived && !searching && (
         <div className="flex items-center gap-1.5 overflow-x-auto border-b border-border/60 px-3 pb-2.5 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {FILTERS.map((f) => {
-            const count = f.key === 'unread' ? unreadCount : f.key === 'groups' ? groupsCount : f.key === 'public' ? publicCount : 0;
+            const count = f.key === 'unread' ? unreadCount : f.key === 'groups' ? groupsCount : f.key === 'class' ? classCount : f.key === 'public' ? publicCount : 0;
             const active = filter === f.key;
             return (
               <button
@@ -349,11 +361,13 @@ export function ConversationList() {
                         ? 'لا توجد محادثات غير مقروءة'
                         : filter === 'groups'
                           ? 'لا توجد مجموعات بعد'
+                          : filter === 'class'
+                            ? 'مجموعة دفعتك تنتظرك'
                           : filter === 'public'
                             ? 'لا توجد مجموعات عامة بعد'
                             : 'لا توجد محادثات بعد'
                   }
-                  description={!showArchived && filter === 'all' ? 'ابدأ واحدة باستخدام الزر أعلاه.' : undefined}
+                  description={!showArchived && filter === 'class' ? 'حدّث الشعبة والسنة الدراسية في ملفك الشخصي لتنضم تلقائيًا إلى دفعتك.' : !showArchived && filter === 'all' ? 'ابدأ واحدة باستخدام الزر أعلاه.' : undefined}
                 />
               </div>
             ) : (
@@ -368,7 +382,7 @@ export function ConversationList() {
                   const unread = conversation.unreadCount ?? 0;
                   const isTyping = typingConversationIds.has(conversation._id);
                   const isRecording = recordingConversationIds.has(conversation._id);
-                  const online = !conversation.isGroup && !!avatarUser?.isOnline;
+                  const online = !conversation.isGroup && !conversation.isSelf && !!avatarUser?.isOnline && canSeePresence(avatarUser, user);
                   const draft = !active ? drafts[conversation._id]?.text : undefined;
                   const prefix = lastSenderPrefix(conversation, user._id);
                   const preview = conversation.lastMessagePreview
@@ -411,6 +425,9 @@ export function ConversationList() {
                       >
                         <Link
                           href={href}
+                          onPointerEnter={() => preloadConversation(conversation._id)}
+                          onFocus={() => preloadConversation(conversation._id)}
+                          onTouchStart={() => preloadConversation(conversation._id)}
                           aria-current={active ? 'page' : undefined}
                           className={cn(
                             'relative mx-1.5 my-0.5 flex min-h-[72px] items-center gap-3 rounded-2xl px-3 py-2.5 transition-colors hover:bg-surface-2/80',
@@ -418,13 +435,21 @@ export function ConversationList() {
                               'bg-accent/10 hover:bg-accent/10 before:absolute before:inset-y-3 before:start-0 before:w-1 before:rounded-full before:bg-accent',
                           )}
                         >
-                          <Avatar src={assetUrl(conversation.groupIcon ?? avatarUser?.photoUrl)} name={title} size="lg" online={online} />
+                          {conversation.isSelf ? (
+                            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-gradient-accent text-white"><Bookmark className="h-6 w-6" /></span>
+                          ) : conversation.classKey ? (
+                            <span className="flex h-12 w-12 shrink-0 items-center justify-center rounded-full bg-accent/10 text-accent"><GraduationCap className="h-6 w-6" /></span>
+                          ) : <Avatar src={assetUrl(conversation.groupIcon ?? avatarUser?.photoUrl)} name={title} size="lg" online={online} />}
                           <div className="min-w-0 flex-1">
                             <div className="flex items-center justify-between gap-2">
                               <p className={cn('flex min-w-0 items-center gap-1 text-[15px] text-foreground', unread > 0 ? 'font-bold' : 'font-semibold')}>
                                 <span dir="auto" className="truncate">
                                   {title}
                                 </span>
+                                {conversation.classKey && <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">دفعتك</span>}
+                                {user.chatStreaksEnabled && !conversation.isGroup && !conversation.isSelf && (conversation.streak?.count ?? 0) > 0 && (
+                                  <span title="أيام التواصل المتتالية" className="inline-flex shrink-0 items-center gap-0.5 text-xs text-orange-500"><Flame className="h-3.5 w-3.5" />{conversation.streak!.count}</span>
+                                )}
                                 {conversation.visibility === 'public' && (
                                   <span className="shrink-0 rounded-full bg-accent/10 px-1.5 py-0.5 text-[10px] font-medium text-accent">عامة</span>
                                 )}
@@ -512,6 +537,9 @@ export function ConversationList() {
                       <Link
                         key={hit._id}
                         href={`/chat/${hit.conversation}?m=${hit._id}&t=${encodeURIComponent(hit.createdAt)}`}
+                        onPointerEnter={() => preloadConversation(hit.conversation)}
+                        onFocus={() => preloadConversation(hit.conversation)}
+                        onTouchStart={() => preloadConversation(hit.conversation)}
                         onClick={() => setQuery('')}
                         className="mx-1.5 my-0.5 flex items-start gap-3 rounded-2xl px-3 py-2.5 transition-colors hover:bg-surface-2/80"
                       >

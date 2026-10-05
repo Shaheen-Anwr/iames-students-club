@@ -48,6 +48,9 @@ export interface UserStats {
   byDepartment: Record<string, number>;
 }
 
+// Personal sticker collection cap (UsersService.addSticker).
+const MAX_STICKERS = 60;
+
 @Injectable()
 export class UsersService {
   constructor(
@@ -452,6 +455,65 @@ export class UsersService {
     return this.getHomeLayout(userId);
   }
 
+  // --- Chat preferences (profile > الدردشة) ---
+
+  async getChatPrefs(userId: string): Promise<{ chatStreaksEnabled: boolean; eveningDigest: boolean }> {
+    const user = await this.userModel.findById(userId).select('chatStreaksEnabled eveningDigestOptOut').lean().exec();
+    return { chatStreaksEnabled: !!user?.chatStreaksEnabled, eveningDigest: !user?.eveningDigestOptOut };
+  }
+
+  async setChatPrefs(
+    userId: string,
+    patch: { chatStreaksEnabled?: boolean; eveningDigest?: boolean },
+  ): Promise<{ chatStreaksEnabled: boolean; eveningDigest: boolean }> {
+    const $set: Record<string, unknown> = {};
+    if (patch.chatStreaksEnabled !== undefined) $set.chatStreaksEnabled = patch.chatStreaksEnabled;
+    if (patch.eveningDigest !== undefined) $set.eveningDigestOptOut = !patch.eveningDigest;
+    if (Object.keys($set).length) await this.userModel.updateOne({ _id: userId }, { $set }).exec();
+    return this.getChatPrefs(userId);
+  }
+
+  // --- Personal stickers ---
+
+  async getStickers(userId: string): Promise<{ stickers: string[] }> {
+    const user = await this.userModel.findById(userId).select('stickers').lean().exec();
+    return { stickers: user?.stickers ?? [] };
+  }
+
+  // Newest first, deduplicated, capped at MAX_STICKERS. Only real image URLs: an uploaded asset
+  // (https / this server's /uploads) or one of the app's built-in stickers ("sticker:pack/name").
+  async addSticker(userId: string, url: string): Promise<{ stickers: string[] }> {
+    const clean = url.trim();
+    if (!/^(https?:\/\/|\/uploads\/|sticker:[a-z0-9-]+\/[a-z0-9-]+$)/i.test(clean)) {
+      throw new BadRequestException('رابط الملصق غير صالح');
+    }
+    await this.userModel
+      .updateOne({ _id: userId }, [
+        {
+          $set: {
+            stickers: {
+              $slice: [
+                {
+                  $concatArrays: [
+                    [clean],
+                    { $filter: { input: { $ifNull: ['$stickers', []] }, as: 's', cond: { $ne: ['$$s', clean] } } },
+                  ],
+                },
+                MAX_STICKERS,
+              ],
+            },
+          },
+        },
+      ])
+      .exec();
+    return this.getStickers(userId);
+  }
+
+  async removeSticker(userId: string, url: string): Promise<{ stickers: string[] }> {
+    await this.userModel.updateOne({ _id: userId }, { $pull: { stickers: url } }).exec();
+    return this.getStickers(userId);
+  }
+
   async updatePhoto(id: string, photoUrl: string): Promise<UserDocument> {
     const user = await this.userModel
       .findByIdAndUpdate(id, { photoUrl }, { new: true })
@@ -600,25 +662,45 @@ export class UsersService {
       .exec();
   }
 
-  // "Your classmates online right now" -- other users in the caller's شعبة with a live socket
-  // (isOnline is maintained by ChatGateway; SocketProvider connects app-wide, so it means "app
-  // open"). Falls back to college-wide for a caller with no شعبة set. Excludes the caller.
-  async onlineInDepartment(
-    userId: string,
-    department: string | null,
-    limit = 24,
-  ): Promise<Pick<UserDocument, '_id' | 'name' | 'photoUrl' | 'role'>[]> {
-    const filter: Record<string, unknown> = {
-      isOnline: true,
-      _id: { $ne: new Types.ObjectId(userId) },
+  // Presence belongs to accepted, mutual friends, regardless of their department. Exclude
+  // blocks in either direction so blocking a friend also hides their live activity.
+  private async presenceFriendsFilter(userId: string): Promise<Record<string, unknown> | null> {
+    const viewer = await this.userModel
+      .findById(userId)
+      .select('friends blockedUsers')
+      .lean<{ friends: Types.ObjectId[]; blockedUsers?: Types.ObjectId[] }>()
+      .exec();
+    const blocked = new Set((viewer?.blockedUsers ?? []).map(String));
+    const friends = (viewer?.friends ?? []).filter((id) => id.toString() !== userId && !blocked.has(id.toString()));
+    if (!friends.length) return null;
+    return {
+      _id: { $in: friends },
+      friends: new Types.ObjectId(userId),
+      blockedUsers: { $ne: new Types.ObjectId(userId) },
+      isActive: { $ne: false },
     };
-    if (department) filter.department = department;
+  }
+
+  // isOnline is maintained by ChatGateway; the app-wide socket means the app is open.
+  async onlineFriends(userId: string, limit = 24): Promise<Pick<UserDocument, '_id' | 'name' | 'photoUrl' | 'role'>[]> {
+    const filter = await this.presenceFriendsFilter(userId);
+    if (!filter) return [];
     return this.userModel
-      .find(filter)
+      .find({ ...filter, isOnline: true })
       .select('name photoUrl role')
       .sort({ lastSeenAt: -1 })
       .limit(Math.min(Math.max(limit, 1), 60))
       .exec();
+  }
+
+  async emitPresenceToFriends(userId: string, isOnline: boolean, lastSeenAt?: Date): Promise<void> {
+    const filter = await this.presenceFriendsFilter(userId);
+    if (!filter) return;
+    const friends = await this.userModel.find(filter).select('_id').lean().exec();
+    const payload = { userId, isOnline, ...(lastSeenAt ? { lastSeenAt } : {}) };
+    for (const friend of friends) {
+      this.realtimeEmitter.emitToUser(friend._id.toString(), 'presenceUpdate', payload);
+    }
   }
 
   async countAdmins(): Promise<number> {

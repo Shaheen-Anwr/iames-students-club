@@ -22,6 +22,17 @@ export class RealtimeEmitterService {
     this.server?.to(`conversation:${conversationId}`).emit(event, payload);
   }
 
+  // Puts a user's already-connected sockets into a conversation's room -- for someone added to a
+  // conversation server-side (e.g. auto-joined to their class group) while online, who'd otherwise
+  // only start receiving its live events after reconnecting.
+  joinUserToConversation(userId: string, conversationId: string) {
+    this.server?.in(`user:${userId}`).socketsJoin(`conversation:${conversationId}`);
+  }
+
+  leaveUserConversation(userId: string, conversationId: string) {
+    this.server?.in(`user:${userId}`).socketsLeave(`conversation:${conversationId}`);
+  }
+
   // Admin dashboard live signal (online count, activity feed) -- sockets join the 'admins' room
   // in ChatGateway.handleConnection when their JWT role is 'admin'.
   emitToAdmins(event: string, payload: unknown) {

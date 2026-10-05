@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { Avatar } from '@/components/ui/Avatar';
 import { useApiQuery } from '@/lib/query';
+import { useAuth } from '@/lib/auth-context';
 import { assetUrl } from '@/lib/utils';
 
 interface OnlineUser {
@@ -12,14 +13,19 @@ interface OnlineUser {
   role: string;
 }
 
-// "Your classmates online right now" -- a small social-presence nudge on the home screen.
+// "Your friends online right now" -- a small social-presence nudge on the home screen.
 // Renders nothing when nobody's online (never an empty widget). Refreshes every 30s.
 export function OnlineNow() {
+  const { user } = useAuth();
   // Path is validated against the generated OpenAPI paths (lib/api-typed) -- a renamed/removed
   // route is a compile error, not a runtime 404.
-  const { data: users = [] } = useApiQuery<'/users/online', OnlineUser[]>('/users/online?limit=20', {
+  const { data = [] } = useApiQuery<'/users/online', OnlineUser[]>('/users/online?limit=20', {
+    key: ['online-friends', user?._id],
+    enabled: !!user,
     refetchInterval: 30_000,
   });
+  // Also filter the cached response so removing/blocking a friend hides them immediately.
+  const users = data.filter((person) => user?.friends?.includes(person._id) && !user.blockedUsers?.includes(person._id));
 
   if (users.length === 0) return null;
 
@@ -28,7 +34,7 @@ export function OnlineNow() {
       <div className="flex items-center gap-2">
         <span className="h-2 w-2 shrink-0 animate-pulse rounded-full bg-success" />
         <p className="text-xs font-medium text-muted-foreground">
-          {users.length} من زملائك متصلون الآن
+          {users.length} من أصحابك متصلون الآن
         </p>
         <Link href="/rooms" className="ms-auto text-[11px] font-medium text-accent hover:underline">
           ادعُهم لغرفة مذاكرة

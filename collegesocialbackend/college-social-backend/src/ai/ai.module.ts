@@ -27,6 +27,13 @@ import { QaModule } from '../qa/qa.module';
 import { GroupsModule } from '../groups/groups.module';
 import { UsersModule } from '../users/users.module';
 import { AssignmentsModule } from '../assignments/assignments.module';
+import { PushModule } from '../push/push.module';
+import { User, UserSchema } from '../users/schemas/user.schema';
+import { DailyQuestion, DailyQuestionSchema } from './schemas/daily-question.schema';
+import { RafedChatService } from './rafed-chat.service';
+import { DailyQuestionService } from './daily-question.service';
+import { ChatEveningDigestService } from './chat-evening-digest.service';
+import { AiJobsController } from './ai-jobs.controller';
 
 @Module({
   imports: [
@@ -41,6 +48,8 @@ import { AssignmentsModule } from '../assignments/assignments.module';
       // imports AiModule for LectureIndexService.
       { name: Post.name, schema: PostSchema },
       { name: Comment.name, schema: CommentSchema },
+      { name: User.name, schema: UserSchema },
+      { name: DailyQuestion.name, schema: DailyQuestionSchema },
     ]),
     UploadModule,
     ScheduleModule,
@@ -49,12 +58,13 @@ import { AssignmentsModule } from '../assignments/assignments.module';
     QaModule,
     GroupsModule,
     UsersModule,
+    PushModule,
     // AssignmentsModule already imports AiModule (for LectureIndexService) -- forwardRef breaks
     // the cycle so AiToolsService can still reuse AssignmentsService's real business logic
     // (gamification points/badges, isPersonal handling) instead of duplicating it.
     forwardRef(() => AssignmentsModule),
   ],
-  controllers: [AiController, ChatAiController],
+  controllers: [AiController, ChatAiController, AiJobsController],
   providers: [
     LectureIndexService,
     LectureSearchService,
@@ -66,6 +76,9 @@ import { AssignmentsModule } from '../assignments/assignments.module';
     AiMemoryService,
     AiConversationsService,
     ChatAiService,
+    RafedChatService,
+    DailyQuestionService,
+    ChatEveningDigestService,
   ],
   exports: [LectureIndexService, AiConversationsService, AiService],
 })

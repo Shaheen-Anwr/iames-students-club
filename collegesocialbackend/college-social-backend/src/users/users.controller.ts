@@ -5,6 +5,7 @@ import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
 import { UsersService } from './users.service';
 import { UpdateUserDto } from './dto/update-user.dto';
 import { UpdateHomeLayoutDto } from './dto/update-home-layout.dto';
+import { StickerDto, UpdateChatPrefsDto } from './dto/chat-prefs.dto';
 import { GamificationService } from '../gamification/gamification.service';
 
 @UseGuards(JwtAuthGuard)
@@ -46,6 +47,33 @@ export class UsersController {
     return this.usersService.setHomeLayout(user.userId, dto);
   }
 
+  // GET/PATCH /api/users/me/chat-prefs -- chat streaks (opt-in) + the evening catch-up push.
+  @Get('me/chat-prefs')
+  async getChatPrefs(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.getChatPrefs(user.userId);
+  }
+
+  @Patch('me/chat-prefs')
+  async setChatPrefs(@CurrentUser() user: AuthenticatedUser, @Body() dto: UpdateChatPrefsDto) {
+    return this.usersService.setChatPrefs(user.userId, dto);
+  }
+
+  // GET/POST/DELETE /api/users/me/stickers -- the personal sticker collection.
+  @Get('me/stickers')
+  async getStickers(@CurrentUser() user: AuthenticatedUser) {
+    return this.usersService.getStickers(user.userId);
+  }
+
+  @Post('me/stickers')
+  async addSticker(@CurrentUser() user: AuthenticatedUser, @Body() dto: StickerDto) {
+    return this.usersService.addSticker(user.userId, dto.url);
+  }
+
+  @Delete('me/stickers')
+  async removeSticker(@CurrentUser() user: AuthenticatedUser, @Body() dto: StickerDto) {
+    return this.usersService.removeSticker(user.userId, dto.url);
+  }
+
   @Get('search')
   async search(@Query('q') q: string) {
     return this.usersService.search(q ?? '');
@@ -68,10 +96,10 @@ export class UsersController {
       : this.gamificationService.getLeaderboard(take, department);
   }
 
-  // GET /api/users/online -- classmates (same شعبة) with a live socket right now. Above @Get(':id').
+  // GET /api/users/online -- accepted friends with a live socket. Above @Get(':id').
   @Get('online')
   async online(@CurrentUser() user: AuthenticatedUser, @Query('limit') limit?: string) {
-    return this.usersService.onlineInDepartment(user.userId, user.department, Number(limit) || 24);
+    return this.usersService.onlineFriends(user.userId, Number(limit) || 24);
   }
 
   // GET /api/users/suggestions -- same reason as leaderboard above: must stay above @Get(':id').

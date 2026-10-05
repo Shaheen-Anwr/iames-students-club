@@ -10,6 +10,7 @@ import {
   ChevronUp,
   Copy,
   Forward,
+  Headphones,
   List,
   MoreVertical,
   Phone,
@@ -82,9 +83,15 @@ export function ChatHeader({
   onSearch,
   onSummary,
   menuItems,
+  avatarIcon,
+  onVoiceRoom,
 }: {
   title: string;
   avatarSrc?: string;
+  /** Replaces the photo avatar (saved messages, class group). */
+  avatarIcon?: React.ReactNode;
+  /** Groups: opens/joins the voice room. */
+  onVoiceRoom?: () => void;
   online: boolean;
   subtitle: React.ReactNode;
   canCall: boolean;
@@ -108,7 +115,7 @@ export function ChatHeader({
         onClick={onOpenInfo}
         className="flex min-w-0 flex-1 items-center gap-2.5 rounded-2xl px-1.5 py-1 text-start transition-colors hover:bg-surface-2/70"
       >
-        <Avatar src={avatarSrc} name={title} size="md" online={online} />
+        {avatarIcon ?? <Avatar src={avatarSrc} name={title} size="md" online={online} />}
         <div className="min-w-0 flex-1">
           <p dir="auto" className="truncate text-[15px] font-semibold leading-tight text-foreground">
             {title}
@@ -132,6 +139,11 @@ export function ChatHeader({
 
       <div className="flex shrink-0 items-center">
         {/* Calls stay one tap away on phones too; summary/search fold into the ⋯ menu there. */}
+        {onVoiceRoom && (
+          <IconAction label="الغرفة الصوتية" onClick={onVoiceRoom} className="text-foreground/80">
+            <Headphones className="h-[19px] w-[19px]" />
+          </IconAction>
+        )}
         {canCall && (
           <>
             <IconAction label="مكالمة فيديو" onClick={() => onCall('video')} className="text-foreground/80">

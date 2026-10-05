@@ -4,8 +4,9 @@ import { cn } from '@/lib/utils';
 // Matches how the backend encodes a resolved @mention inline in raw text -- see
 // college-social-backend/src/common/utils/tag-parser.util.ts. Captures the display name and the
 // user id separately so this never needs a populated `mentions` array to render correctly.
-const MENTION_RE = /@\[([^\]]+)\]\(([0-9a-fA-F]{24})\)/;
-const COMBINED_RE = /(@\[[^\]]+\]\([0-9a-fA-F]{24}\))|(#[a-zA-Z0-9_]+)|(https?:\/\/[^\s<>()]+)/g;
+// The id is a user's, or "rafed" for the AI assistant (rendered as a plain chip, no profile link).
+const MENTION_RE = /@\[([^\]]+)\]\(([0-9a-fA-F]{24}|rafed)\)/;
+const COMBINED_RE = /(@\[[^\]]+\]\((?:[0-9a-fA-F]{24}|rafed)\))|(#[a-zA-Z0-9_]+)|(https?:\/\/[^\s<>()]+)/g;
 
 function escapeRegExp(value: string): string {
   return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -59,9 +60,15 @@ export function TaggedText({
       if (mention) {
         const [, name, id] = mention;
         nodes.push(
-          <Link key={key++} href={`/profile/${id}`} className={cn('font-medium hover:underline', linkTone)}>
-            @{name}
-          </Link>,
+          id === 'rafed' ? (
+            <span key={key++} className={cn('font-semibold', linkTone)}>
+              @{name}
+            </span>
+          ) : (
+            <Link key={key++} href={`/profile/${id}`} className={cn('font-medium hover:underline', linkTone)}>
+              @{name}
+            </Link>
+          ),
         );
       }
     } else if (match[2]) {

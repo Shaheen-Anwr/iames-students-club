@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { localDayKey, previousDayKey } from '../chat.constants';
 
 export type ConversationDocument = HydratedDocument<Conversation>;
 
@@ -40,6 +41,23 @@ export class PinnedMessageEntry {
 }
 
 export const PinnedMessageEntrySchema = SchemaFactory.createForClass(PinnedMessageEntry);
+
+// Two-person "chat streak" (DMs only): consecutive days on which BOTH people sent a message. See
+// advanceStreak() in chat.constants.ts. `lastSent` maps userId -> the last day (YYYY-MM-DD, app
+// timezone) they sent something; `day` is the last day that counted toward the streak.
+@Schema({ _id: false })
+export class ChatStreak {
+  @Prop({ default: 0 })
+  count: number;
+
+  @Prop({ type: String, default: null })
+  day: string | null;
+
+  @Prop({ type: Object, default: {} })
+  lastSent: Record<string, string>;
+}
+
+export const ChatStreakSchema = SchemaFactory.createForClass(ChatStreak);
 
 @Schema({ timestamps: true })
 export class Conversation {
@@ -129,6 +147,32 @@ export class Conversation {
   // Seconds after which new messages auto-delete for everyone; 0/null = disabled.
   @Prop({ type: Number, default: 0 })
   disappearingSeconds: number;
+
+  // --- Special conversation kinds ---
+
+  // Class group ("دفعة"): "<department>:<academicYear>". Members are kept in sync automatically
+  // (ChatClassGroupsService) -- nobody creates, joins or leaves one by hand. null otherwise.
+  @Prop({ type: String, default: null })
+  classKey: string | null;
+
+  // "رسائلي المحفوظة": a conversation whose only participant is its owner (notes to self).
+  @Prop({ default: false })
+  isSelf: boolean;
+
+  @Prop({ type: ChatStreakSchema, default: null })
+  streak: ChatStreak | null;
 }
 
 export const ConversationSchema = SchemaFactory.createForClass(Conversation);
+ConversationSchema.set('toJSON', {
+  transform: (_doc, value) => {
+    if (value.streak && (!value.streak.day || value.streak.day < previousDayKey(localDayKey(new Date())))) {
+      value.streak.count = 0;
+    }
+    return value;
+  },
+});
+// One class group per شعبة + year, even if two first-requests race to create it.
+ConversationSchema.index({ classKey: 1 }, { unique: true, partialFilterExpression: { classKey: { $type: 'string' } } });
+// One "saved messages" conversation per user.
+ConversationSchema.index({ isSelf: 1, participants: 1 }, { unique: true, partialFilterExpression: { isSelf: true } });

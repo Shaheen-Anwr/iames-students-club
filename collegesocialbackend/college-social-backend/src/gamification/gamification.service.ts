@@ -97,6 +97,7 @@ const RECAP_BUCKET: Record<string, keyof Pick<WeeklyRecap, 'posts' | 'comments' 
   reply_added: 'comments',
   reaction_given: 'reactions',
   quiz_attempted: 'quizzes',
+  daily_question: 'quizzes',
   assignment_completed: 'assignments',
 };
 

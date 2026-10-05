@@ -14,12 +14,16 @@ import {
 import { Type } from 'class-transformer';
 import { MESSAGE_EFFECTS, POLL_LIMITS, type MessageEffect } from '../chat.constants';
 
+// Item kinds a client may share as a card (the 'status' card is only ever built server-side, by a
+// status reply).
+export const SHAREABLE_CARD_KINDS = ['post', 'assignment', 'event', 'listing'] as const;
+
 export class AttachmentDto {
   @IsString()
   url: string;
 
-  @IsIn(['image', 'video', 'audio', 'voice', 'document'])
-  type: 'image' | 'video' | 'audio' | 'voice' | 'document';
+  @IsIn(['image', 'video', 'audio', 'voice', 'document', 'sticker'])
+  type: 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker';
 
   @IsOptional()
   @IsString()
@@ -63,6 +67,16 @@ export class PollDto {
   multiple?: boolean;
 }
 
+// A platform item to share as a card. Only the reference travels; ChatCardsService builds the
+// card's title/subtitle/link from the real document (and checks the sender may see it).
+export class CardRefDto {
+  @IsIn(SHAREABLE_CARD_KINDS)
+  kind: (typeof SHAREABLE_CARD_KINDS)[number];
+
+  @IsMongoId()
+  refId: string;
+}
+
 export class CreateMessageDto {
   @IsMongoId()
   conversationId: string;
@@ -95,4 +109,14 @@ export class CreateMessageDto {
   @IsOptional()
   @IsBoolean()
   silent?: boolean;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => CardRefDto)
+  card?: CardRefDto;
+
+  // Post this message as a reply inside that message's thread (group chats).
+  @IsOptional()
+  @IsMongoId()
+  threadRoot?: string;
 }

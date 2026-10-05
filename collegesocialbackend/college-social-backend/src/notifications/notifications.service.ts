@@ -28,6 +28,8 @@ interface CreateNotificationInput {
   reelId?: string | null;
   questionId?: string | null;
   preview?: string | null;
+  /** Explicit click target, for destinations no id above can express (e.g. one chat message). */
+  link?: string | null;
 }
 
 @Injectable()
@@ -54,6 +56,7 @@ export class NotificationsService {
       reelId: input.reelId ?? null,
       questionId: input.questionId ?? null,
       preview: input.preview ?? null,
+      link: input.link ?? null,
     }).save();
 
     const populated = await notification.populate('actor', 'name role photoUrl');

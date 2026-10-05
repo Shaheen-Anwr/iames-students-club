@@ -1,17 +1,28 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { CALL_OUTCOMES, MESSAGE_EFFECTS, type CallKind, type CallOutcome, type MessageEffect } from '../chat.constants';
+import {
+  CALL_OUTCOMES,
+  CARD_KINDS,
+  CHAT_BOTS,
+  MESSAGE_EFFECTS,
+  type CallKind,
+  type CallOutcome,
+  type CardKind,
+  type ChatBot,
+  type MessageEffect,
+} from '../chat.constants';
 
 export type MessageDocument = HydratedDocument<Message>;
 
-export type AttachmentType = 'image' | 'video' | 'audio' | 'voice' | 'document';
+// 'sticker' = an image sent as a sticker: rendered bubble-less, larger than an emoji.
+export type AttachmentType = 'image' | 'video' | 'audio' | 'voice' | 'document' | 'sticker';
 
 @Schema({ _id: false })
 export class Attachment {
   @Prop({ required: true })
   url: string;
 
-  @Prop({ required: true, enum: ['image', 'video', 'audio', 'voice', 'document'] })
+  @Prop({ required: true, enum: ['image', 'video', 'audio', 'voice', 'document', 'sticker'] })
   type: AttachmentType;
 
   @Prop({ type: String, default: null })
@@ -70,6 +81,25 @@ export class PollOption {
 
 export const PollOptionSchema = SchemaFactory.createForClass(PollOption);
 
+// Quiz mode for a poll (the class group's daily question): one option is correct, a vote is
+// final, and the answer + explanation are revealed to each voter once they've picked.
+@Schema({ _id: false })
+export class PollQuiz {
+  @Prop({ required: true })
+  correctOptionId: string;
+
+  @Prop({ default: '' })
+  explanation: string;
+}
+
+export const PollQuizSchema = SchemaFactory.createForClass(PollQuiz);
+// Answers remain available to server-side scoring, but never travel in normal REST/socket
+// message payloads (including newly-created documents and populated reply previews).
+// A non-empty marker (an empty object would be minimized away) so clients still know it's a quiz.
+PollQuizSchema.set('toJSON', {
+  transform: () => ({ answerHidden: true }),
+});
+
 @Schema({ _id: false })
 export class Poll {
   @Prop({ required: true, trim: true })
@@ -85,9 +115,44 @@ export class Poll {
   // Set by the poll's creator: voting is frozen, results stay visible.
   @Prop({ default: false })
   closed: boolean;
+
+  // null = an ordinary poll.
+  @Prop({ type: PollQuizSchema, default: null })
+  quiz: PollQuiz | null;
 }
 
 export const PollSchema = SchemaFactory.createForClass(Poll);
+
+// A platform item shared into the chat (lecture/post, assignment, event, marketplace listing, a
+// status reply). A snapshot taken at send time by ChatCardsService from the real document -- never
+// client-supplied text -- plus the in-app link; opening it re-checks access on the target page.
+@Schema({ _id: false })
+export class MessageCard {
+  @Prop({ type: String, enum: [...CARD_KINDS], required: true })
+  kind: CardKind;
+
+  @Prop({ required: true })
+  refId: string;
+
+  @Prop({ required: true, trim: true })
+  title: string;
+
+  @Prop({ type: String, default: null })
+  subtitle: string | null;
+
+  @Prop({ type: String, default: null })
+  imageUrl: string | null;
+
+  @Prop({ required: true })
+  href: string;
+
+  // Kind-specific extras the card renders live (e.g. a countdown): assignment dueAt, event startsAt,
+  // listing price/status, lecture courseCode. Small and flat on purpose.
+  @Prop({ type: Object, default: null })
+  meta: Record<string, string | number | boolean | null> | null;
+}
+
+export const MessageCardSchema = SchemaFactory.createForClass(MessageCard);
 
 // When one participant received / read one message -- the timestamped twin of the plain
 // `deliveredTo` / `readBy` id arrays, which stay the source of truth for tick state.
@@ -127,8 +192,14 @@ export class Message {
   @Prop({ type: Types.ObjectId, ref: 'Conversation', required: true, index: true })
   conversation: Types.ObjectId;
 
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
-  sender: Types.ObjectId;
+  // null only for bot messages (see `bot`) -- and, as before, when the sender's account is gone.
+  @Prop({ type: Types.ObjectId, ref: 'User', default: null })
+  sender: Types.ObjectId | null;
+
+  // Set on messages with no human sender: 'rafed' (the AI assistant) or 'system' (class-group
+  // posts). Bot messages are always notification-silent.
+  @Prop({ type: String, enum: [...CHAT_BOTS], default: null })
+  bot: ChatBot | null;
 
   @Prop({ required: false, default: '', trim: true })
   text: string;
@@ -200,10 +271,35 @@ export class Message {
   // Set only on call-log messages (text empty).
   @Prop({ type: CallLogSchema, default: null })
   call: CallLog | null;
+
+  @Prop({ type: MessageCardSchema, default: null })
+  card: MessageCard | null;
+
+  // --- Threads (group chats) ---
+  // A reply posted in a message's thread: kept out of the main timeline, unread counts and the
+  // chat-list preview; shown in the thread panel instead. null for every ordinary message.
+  @Prop({ type: Types.ObjectId, ref: 'Message', default: null })
+  threadRoot: Types.ObjectId | null;
+
+  // On a thread's ROOT message only: how many replies, when the last one landed, and the most
+  // recent repliers (for the "N ردود" chip's avatars; capped at 3).
+  @Prop({ default: 0 })
+  threadCount: number;
+
+  @Prop({ type: Date, default: null })
+  threadLastAt: Date | null;
+
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  threadParticipants: Types.ObjectId[];
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ conversation: 1, createdAt: -1 });
+// A thread's replies, in order (sparse-ish: the partial filter keeps ordinary messages out).
+MessageSchema.index(
+  { threadRoot: 1, createdAt: 1 },
+  { partialFilterExpression: { threadRoot: { $type: 'objectId' } } },
+);
 // One log message per call, even if the caller's client reports twice (retry, second tab).
 MessageSchema.index(
   { 'call.callId': 1 },

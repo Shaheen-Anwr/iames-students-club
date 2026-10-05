@@ -35,6 +35,7 @@ import {
   TrendSeries,
 } from '../common/utils/daily-counts.util';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
+import { AppEventsService } from '../realtime/app-events.service';
 import { UsersService } from '../users/users.service';
 import { extractMentionIds, parseHashtags } from '../common/utils/tag-parser.util';
 import { Role } from '../common/enums/role.enum';
@@ -75,6 +76,7 @@ export class PostsService {
     private readonly realtimeEmitter: RealtimeEmitterService,
     private readonly usersService: UsersService,
     private readonly storageService: StorageService,
+    private readonly appEvents: AppEventsService,
   ) {}
 
   // Shared by posts/comments: pulls @mention tokens out of raw text and keeps only ids that both
@@ -186,6 +188,22 @@ export class PostsService {
       courseCode: post.courseCode,
       department: post.department,
     });
+
+    // A lecture (PDF/slides or video) posted for one شعبة + year lands in that class group's chat.
+    if (
+      (post.attachmentType === PostAttachmentType.LECTURE || post.attachmentType === PostAttachmentType.VIDEO) &&
+      scope !== PostScope.PRIVATE &&
+      scope !== PostScope.FRIENDS
+    ) {
+      this.appEvents.emit('lecture.posted', {
+        id: post.id,
+        title: caption.split('\n').find((line) => line.trim())?.trim() || post.attachmentOriginalName || 'محاضرة جديدة',
+        courseCode: post.courseCode ?? null,
+        department: post.department ?? null,
+        academicYear: post.academicYear ?? null,
+        authorId,
+      });
+    }
 
     // Independent post-save side effects -- mention notifications, gamification points, and the
     // "first post" badge check -- none of these need each other's result (the badge check chains

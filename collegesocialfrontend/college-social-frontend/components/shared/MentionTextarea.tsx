@@ -13,8 +13,12 @@ const BASE_TEXTAREA_CLASS =
   'w-full resize-none rounded-lg border border-border bg-surface-2 px-3 py-2 text-base text-foreground placeholder:text-muted-foreground md:text-sm transition-colors focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/20';
 
 // The inline token the backend parses back out (see tag-parser.util.ts) and TaggedText renders as
-// a clean "@Name" chip: `@[Display Name](24-hex-user-id)`.
-const TOKEN_RE = /@\[([^\]]+)\]\(([0-9a-fA-F]{24})\)/g;
+// a clean "@Name" chip: `@[Display Name](24-hex-user-id)` -- or, for the AI assistant, the literal
+// id "rafed" (never a user; the backend answers it instead of notifying anyone).
+const TOKEN_RE = /@\[([^\]]+)\]\(([0-9a-fA-F]{24}|rafed)\)/g;
+
+// A row in the @-picker: a real user, or an extra entry (e.g. the AI assistant) with its own icon.
+type Suggestion = User & { subtitle?: string; icon?: React.ReactNode };
 
 // A resolved mention as it sits in the *visible* text: the substring [start, end) reads "@<name>".
 type Mention = { id: string; name: string; start: number; end: number };
@@ -92,18 +96,21 @@ export function MentionTextarea({
   className,
   inputRef,
   suggestionsPlacement = 'bottom',
+  extraSuggestions,
   ...rest
 }: TextareaHTMLAttributes<HTMLTextAreaElement> & {
   /** Optional handle on the underlying <textarea> (autosize, selection, focus). */
   inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
   /** Where the @-suggestion list opens -- 'top' for inputs docked at the bottom of the screen. */
   suggestionsPlacement?: 'top' | 'bottom';
+  /** Non-user entries offered first when they match the query (e.g. the AI assistant). */
+  extraSuggestions?: Suggestion[];
 }) {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [triggerStart, setTriggerStart] = useState<number | null>(null);
-  const [suggestions, setSuggestions] = useState<User[]>([]);
+  const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeIndex, setActiveIndex] = useState(0);
   const [pendingCaret, setPendingCaret] = useState<number | null>(null);
 
@@ -125,13 +132,17 @@ export function MentionTextarea({
     const handle = setTimeout(() => {
       api
         .get<User[]>(`/users/search?q=${encodeURIComponent(query)}`)
+        .catch(() => [] as User[])
         .then((users) => {
-          setSuggestions(users);
+          const q = query.trim().toLowerCase();
+          const extras = (extraSuggestions ?? []).filter((u) => !q || u.name.toLowerCase().includes(q));
+          setSuggestions([...extras, ...users]);
           setActiveIndex(0);
-        })
-        .catch(() => setSuggestions([]));
+        });
     }, 200);
     return () => clearTimeout(handle);
+    // extraSuggestions is a stable constant at every call site.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [open, query]);
 
   // Re-assemble the markup and bubble it as a synthetic change, so callers keep receiving the
@@ -146,7 +157,8 @@ export function MentionTextarea({
   function detectTrigger(el: HTMLTextAreaElement) {
     const cursor = el.selectionStart ?? el.value.length;
     const beforeCursor = el.value.slice(0, cursor);
-    const match = /(?:^|\s)@(\w*)$/.exec(beforeCursor);
+    // Letters of any script -- Arabic names included.
+    const match = /(?:^|\s)@([\p{L}\p{N}_]*)$/u.exec(beforeCursor);
     if (match) {
       setTriggerStart(cursor - match[1].length - 1);
       setQuery(match[1]);
@@ -246,10 +258,16 @@ export function MentionTextarea({
                 i === activeIndex ? 'bg-surface-2' : 'hover:bg-surface-2',
               )}
             >
-              <Avatar src={assetUrl(user.photoUrl)} name={user.name} size="xs" />
+              {user.icon ? (
+                user.icon
+              ) : (
+                <Avatar src={assetUrl(user.photoUrl)} name={user.name} size="xs" />
+              )}
               <div className="min-w-0 flex-1">
                 <p className="truncate text-sm font-medium text-foreground">{user.name}</p>
-                <p className="truncate text-xs text-muted-foreground">{user.collegeId}</p>
+                <p className="truncate text-xs text-muted-foreground">
+                  {user.subtitle ?? user.collegeId}
+                </p>
               </div>
             </button>
           ))}
