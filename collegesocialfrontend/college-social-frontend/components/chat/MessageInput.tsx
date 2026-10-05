@@ -532,8 +532,9 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   ];
 
   return (
-    <div className="relative border-t border-border/70 bg-surface/90 backdrop-blur-xl" onPaste={handlePaste}>
-      <div className="relative mx-auto w-full max-w-3xl px-2.5 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pt-2.5">
+    // No bar: the pill and buttons float on the chat wallpaper, each on its own raised glass.
+    <div className="relative" onPaste={handlePaste}>
+      <div className="relative mx-auto w-full max-w-3xl px-2.5 pb-[calc(0.5rem+var(--safe-bottom))] pt-1 sm:px-4">
         {/* Context strips */}
         <AnimatePresence initial={false}>
           {editingMessage && (
@@ -544,7 +545,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-2.5 rounded-xl bg-accent/10 px-3 py-2 text-sm">
+              <div className="mb-2 flex items-center gap-2.5 rounded-2xl bg-surface/95 px-3 py-2 text-sm shadow-elev-2 ring-1 ring-accent/30 backdrop-blur-xl">
                 <Pencil className="h-4 w-4 shrink-0 text-accent" />
                 <div className="min-w-0 flex-1">
                   <p className="text-xs font-semibold text-accent">تعديل الرسالة</p>
@@ -567,7 +568,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               exit={{ opacity: 0, height: 0 }}
               className="overflow-hidden"
             >
-              <div className="mb-2 flex items-center gap-2.5 overflow-hidden rounded-xl bg-surface-2/80 text-sm">
+              <div className="mb-2 flex items-center gap-2.5 overflow-hidden rounded-2xl bg-surface/95 text-sm shadow-elev-2 ring-1 ring-border/50 backdrop-blur-xl">
                 <span className="w-1 self-stretch bg-accent" />
                 <Reply className="h-4 w-4 shrink-0 text-accent" />
                 <div className="min-w-0 flex-1 py-2">
@@ -600,7 +601,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               </span>
               {smart.status === 'loading'
                 ? [64, 92, 76].map((w, i) => (
-                    <span key={i} className="h-8 shrink-0 animate-pulse rounded-full bg-accent/10" style={{ width: w }} />
+                    <span key={i} className="h-8 shrink-0 animate-pulse rounded-full bg-surface/80 ring-1 ring-accent/20" style={{ width: w }} />
                   ))
                 : smart.status === 'error'
                   ? <span className="shrink-0 text-xs text-danger">{smart.error}</span>
@@ -619,7 +620,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                             requestAnimationFrame(() => textareaRef.current?.focus());
                           }}
                           dir="auto"
-                          className="shrink-0 rounded-full border border-accent/30 bg-accent/[0.07] px-3 py-1.5 text-sm text-foreground transition-colors hover:bg-accent/15"
+                          className="shrink-0 rounded-full border border-accent/30 bg-surface/95 px-3 py-1.5 text-sm text-foreground shadow-elev-1 backdrop-blur transition-colors hover:bg-accent/15"
                         >
                           {reply}
                         </motion.button>
@@ -640,7 +641,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         {(armed.silent || armed.effect || armed.schedule || undoText !== null || scheduledCount > 0) && (
           <div className="mb-2 flex flex-wrap items-center gap-1.5">
             {armed.schedule && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent">
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-xs font-medium text-accent shadow-sm ring-1 ring-accent/25 backdrop-blur">
                 <CalendarClock className="h-3.5 w-3.5" /> ستختار وقت الإرسال
                 <button type="button" aria-label="إلغاء" onClick={() => setArmed((a) => ({ ...a, schedule: false }))}>
                   <X className="h-3 w-3" />
@@ -648,7 +649,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               </span>
             )}
             {armed.silent && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent">
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-xs font-medium text-accent shadow-sm ring-1 ring-accent/25 backdrop-blur">
                 <BellOff className="h-3.5 w-3.5" /> بدون صوت
                 <button type="button" aria-label="إلغاء" onClick={() => setArmed((a) => ({ ...a, silent: false }))}>
                   <X className="h-3 w-3" />
@@ -656,7 +657,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               </span>
             )}
             {armed.effect && (
-              <span className="inline-flex items-center gap-1 rounded-full bg-accent/10 px-2.5 py-1 text-xs font-medium text-accent">
+              <span className="inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-xs font-medium text-accent shadow-sm ring-1 ring-accent/25 backdrop-blur">
                 {EFFECT_META[armed.effect].emoji} مع تأثير {EFFECT_META[armed.effect].label}
                 <button type="button" aria-label="إلغاء" onClick={() => setArmed((a) => ({ ...a, effect: undefined }))}>
                   <X className="h-3 w-3" />
@@ -670,7 +671,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                   editText(undoText);
                   setUndoText(null);
                 }}
-                className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-3"
+                className="inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-xs font-medium text-foreground shadow-sm ring-1 ring-border/60 backdrop-blur hover:bg-surface-2"
               >
                 <Undo2 className="h-3.5 w-3.5" /> تراجع عن إعادة الصياغة
               </button>
@@ -679,7 +680,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               <button
                 type="button"
                 onClick={onOpenScheduled}
-                className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-muted-foreground hover:text-foreground"
+                className="inline-flex items-center gap-1 rounded-full bg-surface/95 px-2.5 py-1 text-xs font-medium text-muted-foreground shadow-sm ring-1 ring-border/60 backdrop-blur hover:text-foreground"
               >
                 <CalendarClock className="h-3.5 w-3.5" />
                 {scheduledCount === 1 ? 'رسالة مجدولة' : `${scheduledCount} رسائل مجدولة`}
@@ -729,7 +730,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                 type="button"
                 onClick={() => mediaInputRef.current?.click()}
                 aria-label="إضافة المزيد"
-                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-border text-muted-foreground transition-colors hover:border-accent hover:text-accent"
+                className="flex h-16 w-16 shrink-0 items-center justify-center rounded-xl border-2 border-dashed border-border bg-surface/80 text-muted-foreground transition-colors hover:border-accent hover:text-accent"
               >
                 <Plus className="h-5 w-5" />
               </button>
@@ -738,7 +739,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         )}
 
         {progress && (
-          <div className="mb-2 rounded-xl bg-surface-2/80 px-3 py-2">
+          <div className="mb-2 rounded-2xl bg-surface/95 px-3 py-2 shadow-elev-1 ring-1 ring-border/50 backdrop-blur-xl">
             <div className="mb-1 flex items-center justify-between text-xs font-medium text-muted-foreground">
               <span>{progress.label}</span>
               <span dir="ltr">{progress.pct}%</span>
@@ -834,8 +835,8 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                 aria-expanded={attachOpen}
                 disabled={!!editingMessage}
                 className={cn(
-                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-full text-muted-foreground transition-all hover:bg-surface-2 hover:text-accent active:scale-95 disabled:opacity-40',
-                  attachOpen && 'bg-accent/10 text-accent',
+                  'flex h-11 w-11 shrink-0 items-center justify-center rounded-full bg-surface/95 text-muted-foreground shadow-elev-2 ring-1 ring-border/50 backdrop-blur-xl transition-all hover:text-accent active:scale-95 disabled:opacity-40',
+                  attachOpen && 'text-accent ring-accent/40',
                 )}
               >
                 <Plus className={cn('h-[22px] w-[22px] transition-transform duration-200', attachOpen && 'rotate-45')} />
@@ -866,7 +867,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
             </div>
 
             {/* Input pill */}
-            <div className="relative flex min-w-0 flex-1 items-end rounded-[1.4rem] bg-surface-2/80 ring-1 ring-border/60 transition-all focus-within:bg-surface focus-within:shadow-elev-1 focus-within:ring-2 focus-within:ring-accent/40">
+            <div className="relative flex min-w-0 flex-1 items-end rounded-[1.4rem] bg-surface/95 shadow-elev-2 ring-1 ring-border/50 backdrop-blur-xl transition-shadow focus-within:ring-2 focus-within:ring-accent/40">
               <div className="relative">
                 <button
                   ref={emojiButtonRef}

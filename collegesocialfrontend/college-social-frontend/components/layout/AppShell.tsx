@@ -49,13 +49,19 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         تخطَّ إلى المحتوى
       </a>
-      <TopNavbar />
-      <SetDepartmentBanner />
+      {/* Phones: an open conversation is full-screen -- its own header is the top bar (with the
+          back button), like a native messenger. */}
+      <div className={inChatThread ? 'hidden md:contents' : 'contents'}>
+        <TopNavbar />
+        <SetDepartmentBanner />
+      </div>
       <main
         id="main-content"
         className={cn(
           'flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden scrollbar-none md:pb-0',
-          showMobileNav ? 'pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : keyboardOpen ? 'pb-0' : 'pb-[env(safe-area-inset-bottom)]',
+          // Without the tab bar: the keyboard covers the bottom edge, or (open conversation) the
+          // composer pads for the home indicator itself.
+          showMobileNav ? 'pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : inChatThread || keyboardOpen ? 'pb-0' : 'pb-[env(safe-area-inset-bottom)]',
         )}
       >
         {children}

@@ -283,9 +283,10 @@ function OverlayBody({
         </motion.div>
       )}
 
-      {/* The lifted bubble */}
+      {/* The lifted bubble. Clipped vertically only (a tall message is cut at maxHeight), so the
+          bubble's tail can still poke out sideways. */}
       <motion.div
-        className="absolute overflow-hidden"
+        className="absolute [clip-path:inset(0_-16px)]"
         style={{ top, left: previewLeft, width: previewW, maxHeight: previewH }}
         initial={{ y: rect.top - top, scale: 1 }}
         animate={{ y: 0, scale: 1.02 }}

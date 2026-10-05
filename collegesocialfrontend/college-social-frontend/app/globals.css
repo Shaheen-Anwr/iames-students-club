@@ -86,9 +86,26 @@
     /* Custom-property shim so JS (AiFab drag clamping) can read the iOS safe-area inset via
        getComputedStyle -- env() itself isn't readable from script. */
     --safe-area-inset-bottom: env(safe-area-inset-bottom, 0px);
+    /* Bottom safe-area for bars that sit on the bottom edge -- zero while the on-screen keyboard
+       is up (it covers the home indicator; lib/use-visual-viewport.ts sets data-keyboard). */
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+    /* Chat canvas (.chat-wallpaper): a step deeper than surface-2 so white incoming bubbles
+       lift off it, plus the doodle tile's tint and strength. */
+    --chat-wall: 232 234 244;
+    --chat-doodle: 20 21 33;
+    --chat-doodle-alpha: 0.07;
+    /* Incoming bubble fill (BubbleCard + BubbleTail must match). */
+    --chat-in: 255 255 255;
   }
 
   .dark {
+    /* Near the ground colour, so incoming bubbles (surface) read as raised above it. */
+    --chat-wall: 14 15 23;
+    --chat-doodle: 234 235 243;
+    --chat-doodle-alpha: 0.05;
+    --chat-in: 30 32 46;
+
     /* Dark theme -- deep indigo-charcoal, never pure black (kills OLED smearing / halation and
        lets surfaces sit above the ground without going flat grey). bg -> surface -> surface-2
        -> surface-3 step up in even ~8-luminance increments so layering reads without heavy
@@ -150,6 +167,10 @@
 
   html.dark {
     color-scheme: dark;
+  }
+
+  html[data-keyboard='open'] {
+    --safe-bottom: 0px;
   }
 
   body {
@@ -235,6 +256,29 @@
       radial-gradient(58% 50% at 12% 0%, rgb(var(--accent) / 0.14), transparent 72%),
       radial-gradient(52% 46% at 100% 8%, rgb(var(--accent-2) / 0.08), transparent 70%),
       radial-gradient(60% 55% at 88% 100%, rgb(var(--accent) / 0.08), transparent 75%);
+  }
+
+  /* The default chat canvas: the wall colour, two soft accent blooms (they follow a chat's own
+     accent override), and the study-doodle tile. The tile (public/chat-doodle.svg) is used as a
+     MASK over a token colour, so one asset tints itself for light/dark. `isolation` keeps the
+     pseudo-element under the content without needing z-index on every child. */
+  .chat-wallpaper {
+    position: relative;
+    isolation: isolate;
+    background-color: rgb(var(--chat-wall));
+    background-image:
+      radial-gradient(75% 45% at 100% 0%, rgb(var(--accent) / 0.1), transparent 70%),
+      radial-gradient(65% 40% at 0% 100%, rgb(var(--accent) / 0.08), transparent 70%);
+  }
+  .chat-wallpaper::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    pointer-events: none;
+    background-color: rgb(var(--chat-doodle) / var(--chat-doodle-alpha));
+    -webkit-mask: url('/chat-doodle.svg') 0 0 / 360px 360px repeat;
+    mask: url('/chat-doodle.svg') 0 0 / 360px 360px repeat;
   }
 
   /* Warm celebratory gradient -- indigo folding into amber. For hero panels, streak/badge

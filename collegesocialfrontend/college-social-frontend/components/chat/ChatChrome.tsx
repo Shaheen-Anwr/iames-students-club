@@ -29,6 +29,7 @@ import { cldOptimize } from '@/lib/images';
 import { formatFullDate, formatListTime, messagePreview, stripMentionTokens } from '@/lib/chat-helpers';
 import { assetUrl, cn } from '@/lib/utils';
 import type { Message, PinnedMessage, User } from '@/lib/types';
+import { BubbleTail } from './BubbleTail';
 
 export function TypingDots({ className }: { className?: string }) {
   return (
@@ -94,7 +95,7 @@ export function ChatHeader({
   menuItems: DropdownItem[];
 }) {
   return (
-    <div className="mx-auto flex w-full max-w-3xl items-center gap-1 px-1.5 py-1.5 sm:gap-1.5 sm:px-3 sm:py-2">
+    <div className="flex w-full items-center gap-0.5 px-1.5 py-1.5 sm:gap-1 sm:px-3 sm:py-2">
       <Link
         href="/chat"
         aria-label="رجوع إلى المحادثات"
@@ -129,21 +130,22 @@ export function ChatHeader({
         </div>
       </button>
 
-      <div className="hidden shrink-0 items-center sm:flex">
+      <div className="flex shrink-0 items-center">
+        {/* Calls stay one tap away on phones too; summary/search fold into the ⋯ menu there. */}
         {canCall && (
           <>
-            <IconAction label="مكالمة صوتية" onClick={() => onCall('audio')}>
-              <Phone className="h-[18px] w-[18px]" />
+            <IconAction label="مكالمة فيديو" onClick={() => onCall('video')} className="text-foreground/80">
+              <Video className="h-[20px] w-[20px]" />
             </IconAction>
-            <IconAction label="مكالمة فيديو" onClick={() => onCall('video')}>
-              <Video className="h-[19px] w-[19px]" />
+            <IconAction label="مكالمة صوتية" onClick={() => onCall('audio')} className="text-foreground/80">
+              <Phone className="h-[18px] w-[18px]" />
             </IconAction>
           </>
         )}
-        <IconAction label="ملخص ذكي" onClick={onSummary} className="text-accent">
+        <IconAction label="ملخص ذكي" onClick={onSummary} className="hidden text-accent sm:flex">
           <Sparkles className="h-[18px] w-[18px]" />
         </IconAction>
-        <IconAction label="بحث في المحادثة (Ctrl+F)" onClick={onSearch}>
+        <IconAction label="بحث في المحادثة (Ctrl+F)" onClick={onSearch} className="hidden sm:flex">
           <Search className="h-[18px] w-[18px]" />
         </IconAction>
       </div>
@@ -188,7 +190,7 @@ export function SelectionBar({
     <motion.div
       initial={{ opacity: 0, y: -8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="mx-auto flex w-full max-w-3xl items-center gap-1 px-1.5 py-1.5 sm:px-3 sm:py-2"
+      className="flex w-full items-center gap-1 px-1.5 py-1.5 sm:px-3 sm:py-2"
     >
       <IconAction label="إلغاء التحديد" onClick={onClose}>
         <X className="h-5 w-5" />
@@ -244,7 +246,7 @@ export function PinnedBanner({
       exit={{ height: 0, opacity: 0 }}
       className="overflow-hidden border-b border-border/60 bg-surface/80 backdrop-blur-xl"
     >
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-2.5 px-3 py-1.5 sm:px-4">
+      <div className="flex w-full items-center gap-2.5 px-3 py-1.5 sm:px-4">
         <div className="flex h-9 w-[3px] shrink-0 flex-col gap-[2px]" aria-hidden>
           {pins.map((p, i) => (
             <span key={p.message._id} className={cn('flex-1 rounded-full transition-colors', i === index ? 'bg-accent' : 'bg-accent/25')} />
@@ -322,7 +324,7 @@ export function ChatSearchBar({
       exit={{ height: 0, opacity: 0 }}
       className="overflow-hidden border-b border-border/60 bg-surface/90 backdrop-blur-xl"
     >
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-1 px-2 py-1.5 sm:px-3">
+      <div className="flex w-full items-center gap-1 px-2 py-1.5 sm:px-3">
         <div className="relative min-w-0 flex-1">
           <Search className="pointer-events-none absolute start-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
           <input
@@ -426,9 +428,12 @@ export function TypingBubble({ users, label }: { users: User[]; label: string })
           </span>
         )}
       </div>
-      <div className="flex items-center gap-2 rounded-[1.15rem] rounded-br-md bg-surface px-3.5 py-2.5 text-muted-foreground shadow-sm ring-1 ring-border/60">
-        <TypingDots />
-        {users.length > 1 && <span className="text-[11px]">{label}</span>}
+      <div className="relative">
+        <BubbleTail isOwn={false} />
+        <div className="relative flex items-center gap-2 rounded-[1.15rem] rounded-br-none bg-[rgb(var(--chat-in))] px-3.5 py-2.5 text-muted-foreground shadow-[0_1px_2px_rgb(0_0_0/0.1)]">
+          <TypingDots />
+          {users.length > 1 && <span className="text-[11px]">{label}</span>}
+        </div>
       </div>
     </motion.div>
   );

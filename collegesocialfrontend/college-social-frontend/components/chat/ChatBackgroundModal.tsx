@@ -92,10 +92,14 @@ export function ChatBackgroundModal({
                 onChange(null);
                 onClose();
               }}
-              className="flex aspect-square flex-col items-center justify-center gap-1 rounded-xl2 border-2 border-dashed border-border bg-surface-2 text-muted-foreground transition-colors hover:border-accent"
+              className="chat-wallpaper relative flex aspect-square items-end overflow-hidden rounded-xl2 border-2 border-border transition-colors hover:border-accent"
             >
-              {!background && <Check className="h-4 w-4 text-accent" />}
-              <span className="text-[11px]">الافتراضية</span>
+              {!background && (
+                <span className="absolute end-1.5 top-1.5 flex h-5 w-5 items-center justify-center rounded-full bg-accent text-white">
+                  <Check className="h-3 w-3" />
+                </span>
+              )}
+              <span className="w-full truncate bg-black/40 px-1.5 py-1 text-[11px] text-white">الافتراضية</span>
             </button>
             {CHAT_BACKGROUND_PRESETS.map((preset) => {
               const selected = background?.type === 'preset' && background.value === preset.id;

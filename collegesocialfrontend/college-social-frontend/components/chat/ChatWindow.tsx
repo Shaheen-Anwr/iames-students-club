@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
-import { AnimatePresence } from 'framer-motion';
+import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bell,
   BellOff,
@@ -228,6 +228,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const prevLastId = useRef<string | null>(null);
   const pendingRead = useRef(false);
   const dragDepth = useRef(0);
+  // Messages newer than this arrived while the thread was open -- they get the entrance animation.
+  const openedAt = useRef(Date.now());
+  // Server id -> the optimistic placeholder id it replaced, so a sent message keeps its row key
+  // (and its entrance animation runs to the end instead of the row remounting mid-spring).
+  const sentRowKeys = useRef(new Map<string, string>());
   // Unread count captured the first time this conversation renders, before ChatProvider zeroes it.
   const unreadAtOpenRef = useRef<{ captured: boolean; count: number }>({ captured: false, count: 0 });
 
@@ -420,6 +425,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             if (dropped || !m.pending || !sameContent(m, message)) return true;
             dropped = true;
             clearPendingTimer(m._id);
+            sentRowKeys.current.set(message._id, m._id);
             return false;
           });
         }
@@ -1415,9 +1421,11 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   return (
     <ChatThreadActionsContext.Provider value={actions}>
       <ChatThreadInfoContext.Provider value={threadInfo}>
+        {/* The wallpaper spans the whole window, so the glass header and the floating composer
+            sit on the same canvas as the messages. A chosen preset/photo replaces the default. */}
         <div
-          className="relative flex h-full min-h-0 flex-col bg-surface"
-          style={chatAccentVars(accent)}
+          className={cn('relative flex h-full min-h-0 flex-col', !background && 'chat-wallpaper')}
+          style={{ ...chatAccentVars(accent), ...chatBackgroundStyle(background) }}
           onKeyDown={handleRootKeyDown}
           onDragEnter={(e) => {
             if (!draggingFiles(e) || blockedByMe) return;
@@ -1442,7 +1450,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
           }}
         >
           {/* Header (glass) / selection bar */}
-          <div className="relative z-30 border-b border-border/70 bg-surface/80 shadow-[0_1px_0_rgb(var(--border)/0.4)] backdrop-blur-xl">
+          {/* On phones this is the top edge of the screen (the app bar is hidden in a thread), so it
+              also clears the status bar / notch of the installed PWA. */}
+          <div className="relative z-30 border-b border-border/50 bg-surface/75 pt-[env(safe-area-inset-top)] backdrop-blur-xl backdrop-saturate-150 md:pt-0">
             {selectionMode ? (
               <SelectionBar
                 count={selectedMessages.length}
@@ -1514,8 +1524,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             <div
               ref={scrollRef}
               onScroll={handleScroll}
-              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-surface-2 px-3 pb-3 pt-2 scrollbar-thin [overflow-anchor:none] sm:px-6"
-              style={chatBackgroundStyle(background)}
+              // The bottom edge fades out instead of cutting bubbles off above the floating composer.
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden px-3 pb-3 pt-2 scrollbar-thin [-webkit-mask-image:linear-gradient(to_top,transparent,#000_14px)] [mask-image:linear-gradient(to_top,transparent,#000_14px)] [overflow-anchor:none] sm:px-6"
             >
               <div ref={contentRef} className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
                 {loadError && messages.length === 0 ? (
@@ -1578,33 +1588,54 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                         const message = row.message;
                         const isOwn = message.sender?._id === user._id;
                         const hasReactions = !!message.reactions?.length;
-                        return (
-                          <div
-                            key={row.id}
-                            ref={(el) => {
-                              messageRefs.current[message._id] = el;
-                            }}
-                            className={cn(row.flags.lastInGroup ? 'mb-3' : 'mb-1', hasReactions && 'mb-3')}
+                        // Only what's sent or arrives while the thread is open springs in (from its
+                        // sender's corner); the initial load and older pages just appear.
+                        const sentKey = sentRowKeys.current.get(message._id);
+                        const fresh =
+                          isPlaceholderId(message._id) ||
+                          !!sentKey ||
+                          (!isOwn && new Date(message.createdAt).getTime() > openedAt.current);
+                        const rowProps = {
+                          ref: (el: HTMLDivElement | null) => {
+                            messageRefs.current[message._id] = el;
+                          },
+                          className: cn(row.flags.lastInGroup ? 'mb-3' : 'mb-1', hasReactions && 'mb-3'),
+                        };
+                        const bubble = (
+                          <MessageBubble
+                            message={message}
+                            isOwn={isOwn}
+                            isGroup={isGroup}
+                            showAvatar={row.flags.lastInGroup}
+                            showName={row.flags.showName}
+                            firstInGroup={row.flags.firstInGroup}
+                            lastInGroup={row.flags.lastInGroup}
+                            deletedCount={row.deletedCount}
+                            status={isOwn ? statusOf(message) : 'sent'}
+                            currentUserId={user._id}
+                            selectionMode={selectionMode}
+                            selected={selectedSet.has(message._id)}
+                            highlightKey={highlight?.id === message._id ? highlight.key : undefined}
+                            searchTerm={activeSearchTerm}
+                            translation={translations[message._id]}
+                            readerIds={readHeads.get(message._id)}
+                            pinned={pinnedIds.has(message._id)}
+                          />
+                        );
+                        return fresh ? (
+                          <motion.div
+                            key={sentKey ?? row.id}
+                            {...rowProps}
+                            initial={{ opacity: 0, y: 14, scale: 0.96 }}
+                            animate={{ opacity: 1, y: 0, scale: 1 }}
+                            transition={{ type: 'spring', stiffness: 520, damping: 34, mass: 0.7 }}
+                            style={{ transformOrigin: isOwn ? '0% 100%' : '100% 100%' }}
                           >
-                            <MessageBubble
-                              message={message}
-                              isOwn={isOwn}
-                              isGroup={isGroup}
-                              showAvatar={row.flags.lastInGroup}
-                              showName={row.flags.showName}
-                              firstInGroup={row.flags.firstInGroup}
-                              lastInGroup={row.flags.lastInGroup}
-                              deletedCount={row.deletedCount}
-                              status={isOwn ? statusOf(message) : 'sent'}
-                              currentUserId={user._id}
-                              selectionMode={selectionMode}
-                              selected={selectedSet.has(message._id)}
-                              highlightKey={highlight?.id === message._id ? highlight.key : undefined}
-                              searchTerm={activeSearchTerm}
-                              translation={translations[message._id]}
-                              readerIds={readHeads.get(message._id)}
-                              pinned={pinnedIds.has(message._id)}
-                            />
+                            {bubble}
+                          </motion.div>
+                        ) : (
+                          <div key={row.id} {...rowProps}>
+                            {bubble}
                           </div>
                         );
                       })}
@@ -1654,7 +1685,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
           {/* Composer */}
           {blockedByMe ? (
-            <div className="border-t border-border/70 bg-surface">
+            <div className="border-t border-border/50 bg-surface/80 backdrop-blur-xl">
               <div className="mx-auto flex w-full max-w-3xl items-center justify-center gap-2 px-4 py-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom))] text-center text-sm text-muted-foreground">
                 <ShieldOff className="h-4 w-4 shrink-0" />
                 لقد قمت بحظر هذا المستخدم.

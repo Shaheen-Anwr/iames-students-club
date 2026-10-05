@@ -7,11 +7,26 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+// date-fns's Arabic locale puts duals in the nominative ("منذ دقيقتان"); after «منذ» / «بعد»
+// Arabic needs the genitive ("منذ دقيقتين").
+const AR_DUAL_GENITIVE: Record<string, string> = {
+  ثانيتان: 'ثانيتين',
+  دقيقتان: 'دقيقتين',
+  ساعتان: 'ساعتين',
+  يومان: 'يومين',
+  أسبوعان: 'أسبوعين',
+  شهران: 'شهرين',
+  سنتان: 'سنتين',
+  عامان: 'عامين',
+};
+const AR_DUAL_RE = new RegExp(Object.keys(AR_DUAL_GENITIVE).join('|'), 'g');
+
+/** "منذ ٣ دقائق" / "منذ دقيقتين" -- relative time in Arabic, grammatical duals included. */
 export function timeAgo(date?: string | Date | null) {
   if (!date) return '';
   const d = new Date(date);
   if (isNaN(d.getTime())) return '';
-  return formatDistanceToNowStrict(d, { addSuffix: true, locale: ar });
+  return formatDistanceToNowStrict(d, { addSuffix: true, locale: ar }).replace(AR_DUAL_RE, (m) => AR_DUAL_GENITIVE[m]);
 }
 
 export function initials(name?: string | null): string {

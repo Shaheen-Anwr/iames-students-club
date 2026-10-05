@@ -56,6 +56,7 @@ import { FormattedText } from './FormattedText';
 import { PollBubble } from './PollBubble';
 import { DocumentAttachment, ImageAlbum, VideoAttachment } from './MessageAttachments';
 import { useChatActions, useChatInfo } from './ChatThreadContext';
+import { BubbleTail } from './BubbleTail';
 
 export interface TranslationState {
   status: 'loading' | 'done' | 'error';
@@ -220,7 +221,7 @@ function ReplyQuote({ reply, isOwn, onJump }: { reply: ReplyPreview; isOwn: bool
 function TranslationBlock({ translation, isOwn, messageId }: { translation: TranslationState; isOwn: boolean; messageId: string }) {
   const actions = useChatActions();
   return (
-    <div className={cn('mx-1 mb-1 rounded-xl px-2.5 py-1.5 text-[14px]', isOwn ? 'bg-black/15' : 'bg-surface-2')}>
+    <div className={cn('mx-1 mb-1 rounded-xl px-2.5 py-1.5 text-[14px]', isOwn ? 'bg-black/15' : 'bg-foreground/[0.05]')}>
       <div className={cn('mb-0.5 flex items-center gap-1.5 text-[11px] font-medium', isOwn ? 'text-white/80' : 'text-accent')}>
         <Languages className="h-3 w-3" />
         {translation.status === 'loading'
@@ -420,7 +421,7 @@ function VoiceTranscript({ message, index, isOwn }: { message: Message; index: n
   return (
     <div
       onClick={(e) => e.stopPropagation()}
-      className={cn('mx-1 mb-1 rounded-xl px-2.5 py-1.5 text-[13.5px] leading-relaxed', isOwn ? 'bg-black/15' : 'bg-surface-2')}
+      className={cn('mx-1 mb-1 rounded-xl px-2.5 py-1.5 text-[13.5px] leading-relaxed', isOwn ? 'bg-black/15' : 'bg-foreground/[0.05]')}
     >
       <div className={cn('mb-0.5 flex items-center gap-1.5 text-[11px] font-medium', isOwn ? 'text-white/80' : 'text-accent')}>
         <Captions className="h-3 w-3" /> النص
@@ -609,7 +610,7 @@ function BubbleCard({
         >
           {text.trim()}
         </span>
-        <span className="rounded-full bg-surface/85 px-2 py-1 shadow-sm backdrop-blur-sm">
+        <span className="rounded-full bg-[rgb(var(--chat-in)/0.85)] px-1.5 py-0.5 shadow-sm backdrop-blur-sm">
           <Meta message={message} isOwn={isOwn} status={status} pinned={pinned} starred={starred} muted />
         </span>
       </div>
@@ -617,99 +618,105 @@ function BubbleCard({
   }
 
   return (
-    <div
-      className={cn(
-        'relative w-fit max-w-full overflow-hidden rounded-[1.15rem] shadow-sm',
-        isOwn ? 'bg-gradient-accent text-white' : 'bg-surface text-foreground ring-1 ring-border/60',
-        lastInGroup && (isOwn ? 'rounded-bl-md' : 'rounded-br-md'),
-        !firstInGroup && (isOwn ? 'rounded-tl-md' : 'rounded-tr-md'),
-        message.pending && 'opacity-90',
-      )}
-    >
-      {showName && (
-        <p className={cn('truncate px-2.5 pt-1.5 text-[12.5px] font-semibold', senderColor(message.sender?._id))}>
-          {message.sender?.name ?? 'مستخدم محذوف'}
-        </p>
-      )}
+    <div className={cn('relative w-fit max-w-full', message.pending && 'opacity-90')}>
+      {lastInGroup && <BubbleTail isOwn={isOwn} />}
+      <div
+        className={cn(
+          'relative max-w-full overflow-hidden rounded-[1.15rem]',
+          // Own: a vertical sheen (the tail matches its bottom stop). Incoming: --chat-in, lifted off
+          // the wallpaper by a soft shadow rather than an outline (an outline would seam the tail).
+          isOwn
+            ? 'bg-[linear-gradient(180deg,rgb(var(--accent-grad-from)),rgb(var(--accent-grad-to)))] text-white shadow-[0_1px_2px_rgb(0_0_0/0.12)]'
+            : 'bg-[rgb(var(--chat-in))] text-foreground shadow-[0_1px_2px_rgb(0_0_0/0.1)]',
+          lastInGroup && (isOwn ? 'rounded-bl-none' : 'rounded-br-none'),
+          !firstInGroup && (isOwn ? 'rounded-tl-md' : 'rounded-tr-md'),
+        )}
+      >
+        {showName && (
+          <p className={cn('truncate px-2.5 pt-1.5 text-[12.5px] font-semibold', senderColor(message.sender?._id))}>
+            {message.sender?.name ?? 'مستخدم محذوف'}
+          </p>
+        )}
 
-      {message.forwarded && (
-        <p className={cn('flex items-center gap-1 px-2.5 pt-1.5 text-[11.5px] italic', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
-          <Forward className="h-3 w-3" /> تمت إعادة توجيهها
-        </p>
-      )}
+        {message.forwarded && (
+          <p className={cn('flex items-center gap-1 px-2.5 pt-1.5 text-[11.5px] italic', isOwn ? 'text-white/75' : 'text-muted-foreground')}>
+            <Forward className="h-3 w-3" /> تمت إعادة توجيهها
+          </p>
+        )}
 
-      {message.replyTo && (
-        <ReplyQuote
-          reply={message.replyTo}
-          isOwn={isOwn}
-          onJump={() => {
-            if (swallow()) return;
-            actions.jumpTo(message.replyTo!._id);
-          }}
-        />
-      )}
-
-      {images.length > 0 && (
-        <div className="p-1">
-          <ImageAlbum
-            images={images}
-            onOpen={(i) => {
+        {message.replyTo && (
+          <ReplyQuote
+            reply={message.replyTo}
+            isOwn={isOwn}
+            onJump={() => {
               if (swallow()) return;
-              actions.openImage(message, i);
+              actions.jumpTo(message.replyTo!._id);
             }}
-            overlay={mediaOnly ? meta(true) : undefined}
           />
-        </div>
-      )}
+        )}
 
-      {videos.map(({ a, index }) => (
-        <div key={`v-${index}`} className="p-1">
-          <VideoAttachment attachment={a} />
-        </div>
-      ))}
+        {images.length > 0 && (
+          <div className="p-1">
+            <ImageAlbum
+              images={images}
+              onOpen={(i) => {
+                if (swallow()) return;
+                actions.openImage(message, i);
+              }}
+              overlay={mediaOnly ? meta(true) : undefined}
+            />
+          </div>
+        )}
 
-      {audios.map(({ a, index }) => (
-        <div key={`a-${index}`} className="px-1 pt-1" onClick={(e) => e.stopPropagation()}>
-          <VoiceMessagePlayer src={assetUrl(a.url) ?? ''} isOwn={isOwn} duration={a.duration} bare />
-          <VoiceTranscript message={message} index={index} isOwn={isOwn} />
-        </div>
-      ))}
+        {videos.map(({ a, index }) => (
+          <div key={`v-${index}`} className="p-1">
+            <VideoAttachment attachment={a} />
+          </div>
+        ))}
 
-      {docs.map(({ a, index }) => (
-        <div key={`d-${index}`} className="p-1">
-          <DocumentRow messageId={message._id} attachment={a} index={index} isOwn={isOwn} swallow={swallow} />
-        </div>
-      ))}
+        {audios.map(({ a, index }) => (
+          <div key={`a-${index}`} className="px-1 pt-1" onClick={(e) => e.stopPropagation()}>
+            <VoiceMessagePlayer src={assetUrl(a.url) ?? ''} isOwn={isOwn} duration={a.duration} bare />
+            <VoiceTranscript message={message} index={index} isOwn={isOwn} />
+          </div>
+        ))}
 
-      {message.poll && <PollBubble message={message} isOwn={isOwn} />}
+        {docs.map(({ a, index }) => (
+          <div key={`d-${index}`} className="p-1">
+            <DocumentRow messageId={message._id} attachment={a} index={index} isOwn={isOwn} swallow={swallow} />
+          </div>
+        ))}
 
-      {hasText && (
-        <div
-          dir="auto"
-          className="relative whitespace-pre-wrap break-words px-2.5 pb-1.5 pt-1 text-[15px] leading-relaxed [overflow-wrap:anywhere]"
-        >
-          <FormattedText text={text} highlight={searchTerm} inverted={isOwn} />
-          {metaInText && (
-            <>
-              {/* Invisible twin of the timestamp reserves room on the last line (WhatsApp's trick). */}
-              <span aria-hidden className="invisible ms-2 inline-block align-baseline">
-                {meta()}
-              </span>
-              <span className="absolute bottom-1.5 end-2.5">{meta()}</span>
-            </>
-          )}
-        </div>
-      )}
+        {message.poll && <PollBubble message={message} isOwn={isOwn} />}
 
-      {previewUrl && (
-        <div className="px-1 pb-0.5" onClick={(e) => e.stopPropagation()}>
-          <LinkPreviewCard url={previewUrl} isOwn={isOwn} />
-        </div>
-      )}
+        {hasText && (
+          <div
+            dir="auto"
+            className="relative whitespace-pre-wrap break-words px-2.5 pb-1.5 pt-1 text-[15px] leading-relaxed [overflow-wrap:anywhere]"
+          >
+            <FormattedText text={text} highlight={searchTerm} inverted={isOwn} />
+            {metaInText && (
+              <>
+                {/* Invisible twin of the timestamp reserves room on the last line (WhatsApp's trick). */}
+                <span aria-hidden className="invisible ms-2 inline-block align-baseline">
+                  {meta()}
+                </span>
+                <span className="absolute bottom-1.5 end-2.5">{meta()}</span>
+              </>
+            )}
+          </div>
+        )}
 
-      {translation && <TranslationBlock translation={translation} isOwn={isOwn} messageId={message._id} />}
+        {previewUrl && (
+          <div className="px-1 pb-0.5" onClick={(e) => e.stopPropagation()}>
+            <LinkPreviewCard url={previewUrl} isOwn={isOwn} />
+          </div>
+        )}
 
-      {!metaInText && !mediaOnly && <div className="flex justify-end px-2.5 pb-1.5 pt-0.5">{meta()}</div>}
+        {translation && <TranslationBlock translation={translation} isOwn={isOwn} messageId={message._id} />}
+
+        {!metaInText && !mediaOnly && <div className="flex justify-end px-2.5 pb-1.5 pt-0.5">{meta()}</div>}
+      </div>
     </div>
   );
 }

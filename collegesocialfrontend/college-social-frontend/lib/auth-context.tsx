@@ -1,7 +1,7 @@
 'use client';
 
 import { createContext, useCallback, useContext, useEffect, useState } from 'react';
-import { api, clearToken, setToken } from './api';
+import { api, ApiError, clearToken, setToken } from './api';
 import { useToast } from './toast-context';
 import { AnalyticsEvent, track } from './analytics';
 import { BADGE_META, type BadgeId, type Role, type User } from './types';
@@ -103,10 +103,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setUser(me);
       writeUserCache(me);
       notifyNewBadges(me, showToast);
-    } catch {
-      clearToken();
-      clearUserCache();
-      setUser(null);
+    } catch (err) {
+      // Only a definite auth failure ends the session. A network error or a 5xx -- the PWA
+      // opened offline, flaky mobile data, a cold backend, or this request being cut off by the
+      // service worker's update reload -- says nothing about the session: keep the token and the
+      // cached user, and let the next refresh decide.
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        clearToken();
+        clearUserCache();
+        setUser(null);
+      }
     } finally {
       setLoading(false);
     }
@@ -115,7 +121,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     // Instant shell: paint from the last-known snapshot so a returning visitor never sits on the
     // full-screen spinner while /users/me is in flight. The revalidation below still runs and
-    // reconciles -- it will log the user out if the session has genuinely expired.
+    // reconciles -- it will log the user out if the session has genuinely expired (401/403).
     const cached = readUserCache();
     if (cached) {
       setUser(cached);

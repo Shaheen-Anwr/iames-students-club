@@ -142,7 +142,7 @@ export function DocumentAttachment({
       disabled={loading}
       className={cn(
         'flex w-[min(72vw,18rem)] items-center gap-3 rounded-[0.9rem] p-2.5 text-start transition-colors disabled:opacity-70',
-        isOwn ? 'bg-black/15 hover:bg-black/20' : 'bg-surface-2 hover:bg-surface-3',
+        isOwn ? 'bg-black/15 hover:bg-black/20' : 'bg-foreground/[0.05] hover:bg-foreground/[0.08]',
       )}
     >
       <span

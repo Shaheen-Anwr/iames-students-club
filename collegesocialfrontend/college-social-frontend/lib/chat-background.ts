@@ -33,7 +33,14 @@ const DOODLE_SVG =
   '</g></svg>';
 const DOODLE_URL = `url("data:image/svg+xml,${encodeURIComponent(DOODLE_SVG)}")`;
 
+// No preset (null) means the default `.chat-wallpaper` canvas from app/globals.css.
 export const CHAT_BACKGROUND_PRESETS: ChatBackgroundPreset[] = [
+  {
+    // The flat look, for anyone who'd rather not have the doodle wallpaper. Follows the theme.
+    id: 'plain',
+    label: 'سادة',
+    css: 'rgb(var(--surface-2))',
+  },
   {
     id: 'notebook',
     label: 'دفتر ملاحظات',

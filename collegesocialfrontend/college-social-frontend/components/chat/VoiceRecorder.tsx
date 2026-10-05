@@ -229,7 +229,7 @@ export function VoiceRecorder({
     <motion.div
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
-      className="flex items-center gap-1.5 rounded-[1.6rem] bg-surface-2/90 p-1.5 ring-1 ring-danger/25"
+      className="flex items-center gap-1.5 rounded-[1.6rem] bg-surface/95 p-1.5 shadow-elev-2 ring-1 ring-danger/25 backdrop-blur-xl"
     >
       <button
         type="button"

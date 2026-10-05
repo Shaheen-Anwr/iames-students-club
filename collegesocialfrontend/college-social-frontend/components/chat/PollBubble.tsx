@@ -83,7 +83,7 @@ export function PollBubble({ message, isOwn }: { message: Message; isOwn: boolea
               className={cn(
                 'relative flex w-full items-center gap-2 overflow-hidden rounded-xl px-2.5 py-2 text-start text-sm transition-transform',
                 !locked && 'active:scale-[0.98]',
-                isOwn ? 'bg-white/[0.12] hover:bg-white/[0.18]' : 'bg-surface-2 hover:bg-surface-3',
+                isOwn ? 'bg-white/[0.12] hover:bg-white/[0.18]' : 'bg-foreground/[0.05] hover:bg-foreground/[0.08]',
                 locked && 'cursor-default',
               )}
             >

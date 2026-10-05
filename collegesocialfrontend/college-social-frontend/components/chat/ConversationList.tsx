@@ -28,7 +28,7 @@ import {
   stripMentionTokens,
 } from '@/lib/chat-helpers';
 import { assetUrl, cn } from '@/lib/utils';
-import type { Conversation, Message } from '@/lib/types';
+import type { Conversation, Message, User } from '@/lib/types';
 import { useChat } from './ChatProvider';
 import { NewChatModal } from './NewChatModal';
 import { NewGroupChatModal } from './NewGroupChatModal';
@@ -139,6 +139,16 @@ export function ConversationList() {
     };
   }, [conversations, user, filter, query]);
 
+  // People with a 1:1 chat who are online right now -- Messenger's "active" row, one tap to open.
+  const onlineNow = useMemo(() => {
+    if (!user) return [];
+    return conversations
+      .filter((c) => !c.isGroup && !isArchived(c, user._id))
+      .map((c) => ({ conversation: c, person: conversationAvatarUser(c, user._id) }))
+      .filter((x): x is { conversation: Conversation; person: User } => !!x.person?.isOnline)
+      .slice(0, 24);
+  }, [conversations, user]);
+
   if (!user) return null;
 
   const list = showArchived ? archived : [...pinned, ...regular];
@@ -219,6 +229,39 @@ export function ConversationList() {
           )}
         </div>
       </div>
+
+      <AnimatePresence initial={false}>
+        {!showArchived && !searching && onlineNow.length > 0 && (
+          <motion.div
+            key="online-now"
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            className="overflow-hidden"
+          >
+            <p className="px-4 pb-1 text-[11px] font-semibold text-muted-foreground">متصل الآن</p>
+            <div className="flex gap-0.5 overflow-x-auto px-2 pb-2 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+              {onlineNow.map(({ conversation, person }) => (
+                <Link
+                  key={conversation._id}
+                  href={`/chat/${conversation._id}`}
+                  title={person.name}
+                  className="flex w-[4.25rem] shrink-0 flex-col items-center gap-1 rounded-2xl px-1 py-1.5 transition-colors hover:bg-surface-2 active:scale-95"
+                >
+                  <span className="rounded-full bg-gradient-accent p-[2px] shadow-elev-1">
+                    <span className="block rounded-full bg-surface p-[2px]">
+                      <Avatar src={assetUrl(person.photoUrl)} name={person.name} size="md" online />
+                    </span>
+                  </span>
+                  <span dir="auto" className="w-full truncate text-center text-[11px] font-medium text-foreground">
+                    {person.name.split(/\s+/)[0]}
+                  </span>
+                </Link>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {archived.length > 0 && !searching && (
         <button

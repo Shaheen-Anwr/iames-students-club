@@ -11,7 +11,8 @@ const KEYBOARD_THRESHOLD_PX = 150;
  * document up -- the top bar slides off-screen and fixed bottom bars float over the keyboard.
  *
  * Writes the visible height to `--app-height` on <html> (the shell sizes itself from it), resets
- * any document scroll the browser introduced, and reports whether the keyboard is open.
+ * any document scroll the browser introduced, and reports whether the keyboard is open (also as
+ * `data-keyboard="open"` on <html>).
  */
 export function useVisualViewport(): { keyboardOpen: boolean } {
   const [keyboardOpen, setKeyboardOpen] = useState(false);
@@ -26,7 +27,12 @@ export function useVisualViewport(): { keyboardOpen: boolean } {
       cancelAnimationFrame(frame);
       frame = requestAnimationFrame(() => {
         root.style.setProperty('--app-height', `${Math.round(vv.height)}px`);
-        setKeyboardOpen(window.innerHeight - vv.height > KEYBOARD_THRESHOLD_PX);
+        const open = window.innerHeight - vv.height > KEYBOARD_THRESHOLD_PX;
+        setKeyboardOpen(open);
+        // CSS hook: the keyboard covers the home indicator, so bottom bars drop their safe-area
+        // padding while it's up (see --safe-bottom in globals.css).
+        if (open) root.dataset.keyboard = 'open';
+        else delete root.dataset.keyboard;
         // The shell is overflow-hidden; any document scroll here was the browser panning the
         // page to reveal the focused input. Undo it so the header stays put.
         if (window.scrollY !== 0) window.scrollTo(0, 0);
@@ -41,6 +47,7 @@ export function useVisualViewport(): { keyboardOpen: boolean } {
       vv.removeEventListener('resize', update);
       vv.removeEventListener('scroll', update);
       root.style.removeProperty('--app-height');
+      delete root.dataset.keyboard;
     };
   }, []);
 

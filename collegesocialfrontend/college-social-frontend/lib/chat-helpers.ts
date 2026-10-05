@@ -1,6 +1,5 @@
-import { formatDistanceToNowStrict } from 'date-fns';
-import { ar } from 'date-fns/locale';
 import { hasFormatting, stripFormatting } from './chat-format';
+import { timeAgo } from './utils';
 import type { Conversation, Message, User } from './types';
 
 // Filters out the current user, and drops any participant whose account was since deleted
@@ -44,7 +43,7 @@ export function isGroupAdmin(conversation: Conversation, userId: string): boolea
 export function presenceLabel(user: User | undefined): string | null {
   if (!user) return null;
   if (user.isOnline) return 'متصل الآن';
-  if (user.lastSeenAt) return `آخر ظهور ${formatDistanceToNowStrict(new Date(user.lastSeenAt), { addSuffix: true, locale: ar })}`;
+  if (user.lastSeenAt) return `آخر ظهور ${timeAgo(user.lastSeenAt)}`;
   return null;
 }
 
