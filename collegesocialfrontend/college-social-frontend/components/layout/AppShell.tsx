@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
+import { cn } from '@/lib/utils';
+import { useVisualViewport } from '@/lib/use-visual-viewport';
 import { useAuth } from '@/lib/auth-context';
 import { Spinner } from '@/components/ui/Spinner';
 import { SetDepartmentBanner } from './SetDepartmentBanner';
@@ -14,6 +16,12 @@ import { StreakFreezeToast } from '@/components/gamification/StreakFreezeToast';
 export function AppShell({ children }: { children: React.ReactNode }) {
   const { user, loading } = useAuth();
   const router = useRouter();
+  const pathname = usePathname();
+  const { keyboardOpen } = useVisualViewport();
+  // An open conversation owns the whole screen (its composer sits where the tab bar would), and
+  // the tab bar must never float above the on-screen keyboard.
+  const inChatThread = /^\/chat\/[^/]+/.test(pathname ?? '') && !pathname?.startsWith('/chat/starred');
+  const showMobileNav = !keyboardOpen && !inChatThread;
 
   useEffect(() => {
     if (!loading && !user) router.replace('/login');
@@ -32,7 +40,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-background">
+    <div className="flex h-[var(--app-height,100dvh)] flex-col overflow-hidden bg-background">
       {/* Keyboard/screen-reader shortcut past the nav straight to the page content. Visually
           hidden until focused. */}
       <a
@@ -45,11 +53,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <SetDepartmentBanner />
       <main
         id="main-content"
-        className="flex min-h-0 flex-1 flex-col  overflow-y-auto overflow-x-hidden scrollbar-none pb-[calc(4.5rem+env(safe-area-inset-bottom))] md:pb-0"
+        className={cn(
+          'flex min-h-0 flex-1 flex-col overflow-y-auto overflow-x-hidden scrollbar-none md:pb-0',
+          showMobileNav ? 'pb-[calc(4.5rem+env(safe-area-inset-bottom))]' : keyboardOpen ? 'pb-0' : 'pb-[env(safe-area-inset-bottom)]',
+        )}
       >
         {children}
       </main>
-      <MobileNav />
+      {showMobileNav && <MobileNav />}
       <AiFab />
       <OnboardingFlow />
       <StreakFreezeToast />

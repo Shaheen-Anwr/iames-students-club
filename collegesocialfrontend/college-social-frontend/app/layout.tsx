@@ -85,6 +85,8 @@ export const viewport: Viewport = {
   width: 'device-width',
   initialScale: 1,
   viewportFit: 'cover',
+  // Android Chrome: the keyboard shrinks the layout viewport instead of overlaying the page.
+  interactiveWidget: 'resizes-content',
   themeColor: '#141520',
 };
 

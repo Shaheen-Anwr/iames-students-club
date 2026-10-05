@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { Component, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   ChevronDown,
@@ -55,6 +55,14 @@ function endReasonText(reason: CallEndReason | null, call: CallState): string {
     default:
       return 'تعذّر الاتصال';
   }
+}
+
+// `call` turns null the moment a call is dismissed, but <AnimatePresence> keeps rendering the
+// exiting screen for its fade-out -- keep showing the last call instead of dereferencing null.
+function useLatestCall(call: CallState | null): CallState {
+  const last = useRef(call);
+  if (call) last.current = call;
+  return last.current as CallState;
 }
 
 function useElapsed(since: number | null): number {
@@ -339,7 +347,7 @@ function FullCall() {
     callAgain,
     resumeAudio,
   } = useCall();
-  const c = call!;
+  const c = useLatestCall(call);
   const elapsedLive = useElapsed(c.status === 'connected' || c.status === 'reconnecting' ? c.connectedAt : null);
   // Freeze the duration at hang-up for the "ended" screen.
   const lastElapsed = useRef(0);
@@ -625,7 +633,7 @@ function FullCall() {
 // Minimized: a draggable floating card so the call keeps going while you use the app.
 function MiniCall() {
   const { call, remoteStream, remoteVersion, remote, local, toggleMic, endCall, setMinimized } = useCall();
-  const c = call!;
+  const c = useLatestCall(call);
   const elapsed = useElapsed(c.connectedAt);
   const boundsRef = useRef<HTMLDivElement>(null);
   const live = c.status === 'connected' || c.status === 'reconnecting';
@@ -700,7 +708,32 @@ function MiniCall() {
   );
 }
 
+// A bug in the call UI must never take the whole app down with it.
+class CallErrorBoundary extends Component<{ children: React.ReactNode; onError: () => void }, { failed: boolean }> {
+  state = { failed: false };
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+  componentDidCatch(error: unknown) {
+    console.error('[call] overlay crashed', error);
+    this.props.onError();
+  }
+  render() {
+    return this.state.failed ? null : this.props.children;
+  }
+}
+
 export function CallOverlay() {
+  const { call, endCall } = useCall();
+  // Keyed per call: a crashed overlay stays hidden for that call only; the next call starts fresh.
+  return (
+    <CallErrorBoundary key={call?.callId ?? 'idle'} onError={endCall}>
+      <CallOverlayInner />
+    </CallErrorBoundary>
+  );
+}
+
+function CallOverlayInner() {
   const { call } = useCall();
   return (
     <AnimatePresence>
