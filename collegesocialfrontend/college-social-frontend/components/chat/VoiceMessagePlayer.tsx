@@ -62,13 +62,30 @@ function Bars({ peaks, className }: { peaks: number[]; className: string }) {
   );
 }
 
-export function VoiceMessagePlayer({ src, isOwn, duration }: { src: string; isOwn: boolean; duration?: number | null }) {
+// Only one voice note plays at a time across the whole page -- starting another pauses this one.
+let activeAudio: HTMLAudioElement | null = null;
+
+const SPEEDS = [1, 1.5, 2] as const;
+
+export function VoiceMessagePlayer({
+  src,
+  isOwn,
+  duration,
+  bare = false,
+}: {
+  src: string;
+  isOwn: boolean;
+  duration?: number | null;
+  /** Inside a bubble that already paints its own background (the unified chat bubble). */
+  bare?: boolean;
+}) {
   const audioRef = useRef<HTMLAudioElement>(null);
   const barsRef = useRef<HTMLDivElement>(null);
   const [playing, setPlaying] = useState(false);
   const [progress, setProgress] = useState(0);
   const [total, setTotal] = useState(duration ?? 0);
   const [peaks, setPeaks] = useState<number[] | null>(null);
+  const [speedIndex, setSpeedIndex] = useState(0);
 
   useEffect(() => {
     let cancelled = false;
@@ -91,53 +108,82 @@ export function VoiceMessagePlayer({ src, isOwn, duration }: { src: string; isOw
       setPlaying(false);
       setProgress(0);
     };
+    // Mirror the element's real state (it can be paused from outside -- another note starting).
+    const onPlay = () => setPlaying(true);
+    const onPause = () => setPlaying(false);
     audio.addEventListener('timeupdate', onTimeUpdate);
     audio.addEventListener('loadedmetadata', onLoadedMetadata);
     audio.addEventListener('ended', onEnded);
+    audio.addEventListener('play', onPlay);
+    audio.addEventListener('pause', onPause);
     return () => {
       audio.removeEventListener('timeupdate', onTimeUpdate);
       audio.removeEventListener('loadedmetadata', onLoadedMetadata);
       audio.removeEventListener('ended', onEnded);
+      audio.removeEventListener('play', onPlay);
+      audio.removeEventListener('pause', onPause);
+      if (activeAudio === audio) activeAudio = null;
     };
   }, []);
 
   function toggle() {
     const audio = audioRef.current;
     if (!audio) return;
-    if (playing) {
+    if (!audio.paused) {
       audio.pause();
-    } else {
-      audio.play();
+      return;
     }
-    setPlaying(!playing);
+    if (activeAudio && activeAudio !== audio) activeAudio.pause();
+    activeAudio = audio;
+    audio.playbackRate = SPEEDS[speedIndex];
+    void audio.play().catch(() => setPlaying(false));
   }
 
+  function cycleSpeed() {
+    const next = (speedIndex + 1) % SPEEDS.length;
+    setSpeedIndex(next);
+    if (audioRef.current) audioRef.current.playbackRate = SPEEDS[next];
+  }
+
+  // The bars are a flex row, so under RTL the waveform (and its progress fill) runs right-to-left;
+  // measure the click from the matching edge or a tap near "the start" would seek to the end.
   function seekToClientX(clientX: number) {
     const audio = audioRef.current;
     const bars = barsRef.current;
     if (!audio || !bars || !total) return;
     const rect = bars.getBoundingClientRect();
-    const fraction = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const rtl = getComputedStyle(bars).direction === 'rtl';
+    const offset = rtl ? rect.right - clientX : clientX - rect.left;
+    const fraction = Math.min(1, Math.max(0, offset / rect.width));
     const value = fraction * total;
     audio.currentTime = value;
     setProgress(value);
   }
 
   const fraction = total > 0 ? Math.min(1, progress / total) : 0;
+  const speed = SPEEDS[speedIndex];
 
   return (
-    <div className={cn('flex w-64 items-center gap-2.5 rounded-2xl px-3 py-2.5', isOwn ? 'bg-gradient-accent text-white' : 'bg-surface-2/70 text-foreground')}>
+    <div
+      className={cn(
+        'flex items-center gap-2.5',
+        bare ? 'w-60 px-1.5 py-1' : 'w-64 rounded-2xl px-3 py-2.5',
+        !bare && (isOwn ? 'bg-gradient-accent text-white' : 'bg-surface-2/70 text-foreground'),
+      )}
+    >
       <audio ref={audioRef} src={src} preload="metadata" className="hidden" />
       <button
+        type="button"
         onClick={toggle}
+        aria-label={playing ? 'إيقاف مؤقت' : 'تشغيل'}
         className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105',
-          isOwn ? 'bg-white/20' : 'bg-accent/15 text-accent',
+          'flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-95',
+          isOwn ? 'bg-white/20 text-white' : 'bg-accent/15 text-accent',
         )}
       >
         {playing ? <Pause className="h-4 w-4" /> : <Play className="h-4 w-4 translate-x-0.5" />}
       </button>
-      <div className="flex-1">
+      <div className="min-w-0 flex-1">
         <div
           ref={barsRef}
           onClick={(e) => seekToClientX(e.clientX)}
@@ -154,9 +200,24 @@ export function VoiceMessagePlayer({ src, isOwn, duration }: { src: string; isOw
             <div className="h-7 w-full animate-pulse rounded-full bg-current opacity-30" />
           )}
         </div>
-        <span className={cn('text-[11px]', isOwn ? 'text-white/80' : 'text-muted-foreground')}>
-          {formatTime(playing || progress > 0 ? progress : total)}
-        </span>
+        <div className="mt-0.5 flex items-center justify-between">
+          <span className={cn('text-[11px] tabular-nums', isOwn ? 'text-white/80' : 'text-muted-foreground')}>
+            {formatTime(playing || progress > 0 ? progress : total)}
+          </span>
+          {(playing || speed !== 1) && (
+            <button
+              type="button"
+              onClick={cycleSpeed}
+              aria-label="سرعة التشغيل"
+              className={cn(
+                'rounded-full px-1.5 text-[10px] font-bold tabular-nums transition-colors',
+                isOwn ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-accent/10 text-accent hover:bg-accent/20',
+              )}
+            >
+              {speed}×
+            </button>
+          )}
+        </div>
       </div>
     </div>
   );

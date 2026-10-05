@@ -1,4 +1,4 @@
-import { Logger } from '@nestjs/common';
+import { Logger, UseFilters } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import {
   ConnectedSocket,
@@ -24,6 +24,7 @@ import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { UsersService } from '../users/users.service';
 import { Role } from '../common/enums/role.enum';
 import { corsOriginValidator } from '../common/cors-origin';
+import { WsHttpExceptionFilter } from './ws-exception.filter';
 
 interface AuthedSocket extends Socket {
   data: {
@@ -67,6 +68,8 @@ interface CallSignalPayload {
     skipMiddlewares: true,
   },
 })
+// Service errors (HttpException) reach the client's 'exception' listener with their real message.
+@UseFilters(new WsHttpExceptionFilter())
 export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, OnGatewayInit {
   @WebSocketServer()
   server: Server;
@@ -261,11 +264,46 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       dto.text ?? '',
       dto.attachments,
       dto.replyTo,
+      { poll: dto.poll, effect: dto.effect, silent: dto.silent },
     );
 
     // Broadcast to everyone in the room, including the sender (so all their tabs update)
     this.server.to(`conversation:${dto.conversationId}`).emit('newMessage', message);
     return { event: 'messageSent', messageId: message.id };
+  }
+
+  // Pin / unpin a message for everyone in its conversation (see ChatService.setMessagePinned for
+  // who may). The whole, freshly built pin list is broadcast so every client just replaces its own.
+  @SubscribeMessage('pinMessage')
+  async onPinMessage(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { messageId: string; pin?: boolean }) {
+    if (this.rateLimited(client, 'pinMessage', 10, 10_000)) {
+      throw new WsException('تمهّل قليلاً قبل تثبيت رسائل أخرى.');
+    }
+    const pin = dto?.pin !== false;
+    const { conversationId, pins } = await this.chatService.setMessagePinned(dto?.messageId, client.data.userId, pin);
+    this.server.to(`conversation:${conversationId}`).emit('pinsUpdated', {
+      conversationId,
+      pins,
+      messageId: dto.messageId,
+      pinned: pin,
+      actorId: client.data.userId,
+    });
+    return { event: 'pinsUpdated', conversationId };
+  }
+
+  @SubscribeMessage('votePoll')
+  async onVotePoll(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { messageId: string; optionIds: string[] }) {
+    if (this.rateLimited(client, 'votePoll', 20, 10_000)) return { event: 'messageUpdated' };
+    const message = await this.chatService.votePoll(dto?.messageId, client.data.userId, dto?.optionIds);
+    this.server.to(`conversation:${message.conversation.toString()}`).emit('messageUpdated', message);
+    return { event: 'messageUpdated', messageId: message.id };
+  }
+
+  @SubscribeMessage('closePoll')
+  async onClosePoll(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { messageId: string }) {
+    const message = await this.chatService.closePoll(dto?.messageId, client.data.userId);
+    this.server.to(`conversation:${message.conversation.toString()}`).emit('messageUpdated', message);
+    return { event: 'messageUpdated', messageId: message.id };
   }
 
   @SubscribeMessage('typing')
@@ -324,15 +362,17 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     return { event: 'messageReacted', messageId: message.id };
   }
 
+  // Forwards one message (`messageId`) or a multi-select batch (`messageIds`, kept in order).
   @SubscribeMessage('forwardMessage')
   async onForwardMessage(
     @ConnectedSocket() client: AuthedSocket,
-    @MessageBody() dto: { messageId: string } & ForwardMessageDto,
+    @MessageBody() dto: { messageId?: string; messageIds?: string[] } & ForwardMessageDto,
   ) {
     if (this.rateLimited(client, 'forwardMessage', 10, 20_000)) {
       throw new WsException('أنت تعيد التوجيه بسرعة كبيرة. تمهّل قليلاً.');
     }
-    const messages = await this.chatService.forwardMessage(dto.messageId, client.data.userId, dto.conversationIds);
+    const ids = Array.isArray(dto?.messageIds) && dto.messageIds.length ? dto.messageIds : dto?.messageId ? [dto.messageId] : [];
+    const messages = await this.chatService.forwardMessages(ids, client.data.userId, dto?.conversationIds ?? []);
     messages.forEach((message) => {
       this.server.to(`conversation:${message.conversation.toString()}`).emit('newMessage', message);
     });

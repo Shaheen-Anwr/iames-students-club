@@ -1,13 +1,18 @@
 import {
+  ArrayMaxSize,
+  ArrayMinSize,
   IsArray,
+  IsBoolean,
   IsIn,
   IsMongoId,
   IsNumber,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateNested,
 } from 'class-validator';
 import { Type } from 'class-transformer';
+import { MESSAGE_EFFECTS, POLL_LIMITS, type MessageEffect } from '../chat.constants';
 
 export class AttachmentDto {
   @IsString()
@@ -39,6 +44,25 @@ export class AttachmentDto {
   chunkCount?: number;
 }
 
+// A poll as composed by the sender. ChatService re-normalizes it (trim, dedupe, clip) via
+// normalizePollInput, so these decorators are the coarse outer guard, not the only one.
+export class PollDto {
+  @IsString()
+  @MaxLength(POLL_LIMITS.questionMax)
+  question: string;
+
+  @IsArray()
+  @ArrayMinSize(POLL_LIMITS.minOptions)
+  @ArrayMaxSize(POLL_LIMITS.maxOptions)
+  @IsString({ each: true })
+  @MaxLength(POLL_LIMITS.optionMax, { each: true })
+  options: string[];
+
+  @IsOptional()
+  @IsBoolean()
+  multiple?: boolean;
+}
+
 export class CreateMessageDto {
   @IsMongoId()
   conversationId: string;
@@ -56,4 +80,19 @@ export class CreateMessageDto {
   @IsOptional()
   @IsMongoId()
   replyTo?: string;
+
+  @IsOptional()
+  @ValidateNested()
+  @Type(() => PollDto)
+  poll?: PollDto;
+
+  // "Send with effect" -- the recipients' clients play this celebration when it lands.
+  @IsOptional()
+  @IsIn(MESSAGE_EFFECTS)
+  effect?: MessageEffect;
+
+  // "Send without sound" -- the message is delivered as usual but nobody gets a notification.
+  @IsOptional()
+  @IsBoolean()
+  silent?: boolean;
 }

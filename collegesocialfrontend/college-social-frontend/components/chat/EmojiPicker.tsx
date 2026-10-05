@@ -108,7 +108,7 @@ const EMOJI_GROUPS: { key: string; label: string; icon: string; emojis: string[]
   },
 ];
 
-const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
+export const QUICK_REACTIONS = ['👍', '❤️', '😂', '😮', '😢', '🙏', '🔥', '🎉'];
 
 interface EmojiPickerProps {
   open: boolean;

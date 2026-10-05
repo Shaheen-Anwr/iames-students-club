@@ -1,123 +1,249 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
-import Link from 'next/link';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { AnimatePresence } from 'framer-motion';
 import {
-  ArrowDown,
-  ArrowRight,
-  Image as ImageIcon,
+  Bell,
+  BellOff,
+  CalendarClock,
+  CheckSquare,
+  Download,
+  Info,
+  Loader2,
   MessageCircle,
-  MoreVertical,
+  Palette,
   Phone,
   Search,
   ShieldOff,
+  Sparkles,
   Video,
-  X,
 } from 'lucide-react';
-import { Avatar } from '@/components/ui/Avatar';
-import { Dropdown } from '@/components/ui/Dropdown';
 import { RoleBadge } from '@/components/ui/Badge';
 import { Spinner } from '@/components/ui/Spinner';
 import { LoadError } from '@/components/ui/LoadError';
-import { Input } from '@/components/ui/Input';
-import { api } from '@/lib/api';
+import { Modal } from '@/components/ui/Modal';
+import { Button } from '@/components/ui/Button';
+import type { DropdownItem } from '@/components/ui/Dropdown';
+import { api, ApiError } from '@/lib/api';
+import { chatApi, MESSAGE_PAGE_SIZE } from '@/lib/chat-api';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
-import { conversationAvatarUser, conversationTitle, presenceLabel } from '@/lib/chat-helpers';
-import { assetUrl, cn } from '@/lib/utils';
+import { useToast } from '@/lib/toast-context';
+import { saveBlob } from '@/lib/download';
+import { claimEffectPlay, playChatEffect } from '@/lib/chat-effects';
 import { buildChatRows } from '@/lib/chat-grouping';
+import {
+  canPinInConversation,
+  conversationAvatarUser,
+  conversationTitle,
+  formatClock,
+  formatFullDate,
+  isMuted,
+  messagePreview,
+  otherParticipants,
+  presenceLabel,
+  stripMentionTokens,
+  tickStatus,
+  translationTarget,
+  typingLabel,
+} from '@/lib/chat-helpers';
+import { assetUrl, cn } from '@/lib/utils';
 import { AnalyticsEvent, track } from '@/lib/analytics';
 import { chatAccentVars, chatBackgroundStyle, useChatAccent, useChatBackground } from '@/lib/chat-background';
-import type { Attachment, Message, User, Conversation } from '@/lib/types';
+import type { Message, MessageEffect, PinnedMessage, ReplyPreview, ScheduledChatMessage, User } from '@/lib/types';
 import { useChat } from './ChatProvider';
 import { useCall } from './CallProvider';
-import { MessageBubble } from './MessageBubble';
-import { MessageInput } from './MessageInput';
+import { MessageBubble, type TranslationState } from './MessageBubble';
+import { MessageInput, type MessageInputHandle, type SendPayload } from './MessageInput';
 import { DayDivider, UnreadDivider } from './DayDivider';
 import { ForwardModal } from './ForwardModal';
 import { GroupInfoPanel } from './GroupInfoPanel';
 import { ChatBackgroundModal } from './ChatBackgroundModal';
 import { ImagePreviewModal } from './ImagePreviewModal';
+import { ChatEffects } from './ChatEffects';
+import { AiSummaryModal } from './AiSummaryModal';
+import { MessageActionsOverlay, type MessageActionKey, type OverlayTarget } from './MessageActionsOverlay';
+import {
+  CreatePollModal,
+  MessageInfoModal,
+  PollVotesModal,
+  ReactionsModal,
+  ScheduledMessagesModal,
+} from './ChatModals';
+import {
+  CatchUpChip,
+  ChatHeader,
+  ChatSearchBar,
+  DropOverlay,
+  JumpButtons,
+  PinnedBanner,
+  SelectionBar,
+  TypingBubble,
+  TypingDots,
+} from './ChatChrome';
+import { ChatThreadActionsContext, ChatThreadInfoContext, type ChatThreadActions } from './ChatThreadContext';
 
-let typingTimeout: ReturnType<typeof setTimeout> | null = null;
+const SEND_TIMEOUT_MS = 12_000;
+// Offer the AI "catch me up" chip when you open a chat with at least this many unread messages.
+const CATCH_UP_THRESHOLD = 8;
+// Read heads get noisy (and costly) in huge public groups -- skip them past this size.
+const READ_HEADS_MAX_PARTICIPANTS = 60;
+
+const isPlaceholderId = (id: string) => id.startsWith('tmp_');
+
+function byCreatedAt(a: Message, b: Message) {
+  return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+}
+
+// Same message content? -- how an optimistic placeholder is matched to its server echo.
+function sameContent(a: Message, b: Message) {
+  return (
+    (a.text ?? '') === (b.text ?? '') &&
+    (a.attachments?.length ?? 0) === (b.attachments?.length ?? 0) &&
+    (a.poll?.question ?? null) === (b.poll?.question ?? null)
+  );
+}
+
+// Older page(s) in front of what's loaded, de-duplicated by id.
+function prependOlder(older: Message[], current: Message[]): Message[] {
+  const known = new Set(current.map((m) => m._id));
+  const fresh = older.filter((m) => !known.has(m._id));
+  return fresh.length ? [...fresh, ...current] : current;
+}
+
+// Reconnect catch-up: fold a freshly fetched page into the thread (updates + new arrivals), and
+// drop any optimistic placeholder whose real message turned up in it.
+function mergeLatest(current: Message[], latest: Message[], myId: string): Message[] {
+  const byId = new Map(current.filter((m) => !m.pending && !m.failed).map((m) => [m._id, m]));
+  for (const m of latest) byId.set(m._id, m);
+  const settled = [...byId.values()].sort(byCreatedAt);
+  const placeholders = current.filter(
+    (p) => (p.pending || p.failed) && !settled.some((m) => m.sender?._id === myId && sameContent(m, p)),
+  );
+  return [...settled, ...placeholders];
+}
+
+function toReplyPreview(m: Message): ReplyPreview {
+  return {
+    _id: m._id,
+    text: m.text,
+    sender: m.sender ? { _id: m.sender._id, name: m.sender.name } : null,
+    attachments: m.attachments,
+    deletedForEveryone: m.deletedForEveryone,
+    poll: m.poll ? { question: m.poll.question } : null,
+  };
+}
 
 export function ChatWindow({ conversationId }: { conversationId: string }) {
   const { user, updateLocalUser } = useAuth();
   const { socket } = useSocket();
   const { findConversation, refresh } = useChat();
   const { startCall } = useCall();
+  const { showToast } = useToast();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const conversation = findConversation(conversationId);
+  const userId = user?._id ?? '';
+
+  // ---------------------------------------------------------------------------------------------
+  // State
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [typing, setTyping] = useState(false);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+
+  const [typingIds, setTypingIds] = useState<string[]>([]);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
-  const [forwardTarget, setForwardTarget] = useState<Message | null>(null);
-  const [infoOpen, setInfoOpen] = useState(false);
+  const [forwardTargets, setForwardTargets] = useState<Message[] | null>(null);
+
+  const [overlay, setOverlay] = useState<OverlayTarget | null>(null);
+  const [selection, setSelection] = useState<string[] | null>(null);
+  const [deleteSelectionOpen, setDeleteSelectionOpen] = useState(false);
+
   const [searchOpen, setSearchOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<Message[]>([]);
+  const [searchIndex, setSearchIndex] = useState(0);
+  const [searchLoading, setSearchLoading] = useState(false);
+
+  const [highlight, setHighlight] = useState<{ id: string; key: number } | null>(null);
+  const [translations, setTranslations] = useState<Record<string, TranslationState>>({});
+
+  const [pins, setPins] = useState<PinnedMessage[]>([]);
+  const [pinIndex, setPinIndex] = useState(0);
+  const [scheduled, setScheduled] = useState<ScheduledChatMessage[]>([]);
+  const [scheduledLoading, setScheduledLoading] = useState(false);
+  const [scheduledOpen, setScheduledOpen] = useState(false);
+
+  const [infoOpen, setInfoOpen] = useState(false);
   const [backgroundModalOpen, setBackgroundModalOpen] = useState(false);
-  const [imagePreview, setImagePreview] = useState<{
-    url: string;
-    name: string;
-    message: Message;
-    isOwn: boolean;
-  } | null>(null);
-  const bottomRef = useRef<HTMLDivElement>(null);
-  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
-  const scrollRef = useRef<HTMLDivElement>(null);
-  // Unread count captured the first time this conversation renders, before ChatProvider zeroes it
-  // -- used to place the "unread messages" divider.
-  const unreadAtOpenRef = useRef<{ id: string; count: number }>({ id: '', count: 0 });
+  const [pollModalOpen, setPollModalOpen] = useState(false);
+  const [summaryOpen, setSummaryOpen] = useState(false);
+  const [catchUpDismissed, setCatchUpDismissed] = useState(false);
+  const [messageInfoTarget, setMessageInfoTarget] = useState<Message | null>(null);
+  const [reactionsTarget, setReactionsTarget] = useState<Message | null>(null);
+  const [pollVotesTarget, setPollVotesTarget] = useState<Message | null>(null);
+  const [imagePreview, setImagePreview] = useState<{ message: Message; index: number } | null>(null);
+
   const [atBottom, setAtBottom] = useState(true);
+  const [showJump, setShowJump] = useState(false);
   const [newCount, setNewCount] = useState(0);
-  // Optimistic sends: temp id -> "mark as failed" timer, cleared when the server echoes back.
-  const pendingTimers = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const [mentionIds, setMentionIds] = useState<string[]>([]);
+  const [dragActive, setDragActive] = useState(false);
+
   const { background, setBackground } = useChatBackground(conversationId);
   const { accent, setAccent } = useChatAccent(conversationId);
 
-  // ========== ULTRA BRUTE‑FORCE PHOTO CORRECTION ==========
-  const correctSenderPhoto = (msg: Message, conv: Conversation): Message => {
-    if (!msg.sender) return msg;
-    const participant = conv.participants.find((p) => p?._id === msg.sender?._id);
-    if (participant && participant.photoUrl) {
-      msg.sender.photoUrl = participant.photoUrl;
-    }
-    if (user && msg.sender._id === user._id && user.photoUrl) {
-      msg.sender.photoUrl = user.photoUrl;
-    }
-    if (!msg.sender.photoUrl) {
-      msg.sender.photoUrl = '';
-    }
-    return msg;
-  };
+  // ---------------------------------------------------------------------------------------------
+  // Refs (latest values for socket handlers / async flows)
 
-  // Keep the latest conversation object reachable from effects that must NOT re-run when it
-  // merely changes identity -- the conversations array is rebuilt on every presence/typing ping.
-  const conversationRef = useRef(conversation);
-  useEffect(() => {
-    conversationRef.current = conversation;
-  }, [conversation]);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const contentRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const unreadDividerRef = useRef<HTMLDivElement>(null);
+  const dateInputRef = useRef<HTMLInputElement>(null);
+  const composerRef = useRef<MessageInputHandle>(null);
+  const messageRefs = useRef<Record<string, HTMLDivElement | null>>({});
+  const messagesRef = useRef<Message[]>(messages);
+  messagesRef.current = messages;
+  const atBottomRef = useRef(true);
+  const hasMoreRef = useRef(false);
+  hasMoreRef.current = hasMore;
+  const loadingOlderRef = useRef(false);
+  const pendingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const typingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const typingEmit = useRef<{ last: number; stop: ReturnType<typeof setTimeout> | null }>({ last: 0, stop: null });
+  const scrollRestore = useRef<{ height: number; top: number } | null>(null);
+  const pendingJump = useRef<string | null>(null);
+  const didInitialScroll = useRef(false);
+  const prevLastId = useRef<string | null>(null);
+  const pendingRead = useRef(false);
+  const dragDepth = useRef(0);
+  // Unread count captured the first time this conversation renders, before ChatProvider zeroes it.
+  const unreadAtOpenRef = useRef<{ captured: boolean; count: number }>({ captured: false, count: 0 });
 
-  // ========== LOAD MESSAGES ==========
-  // Depends on conversationId ONLY. It used to also depend on `conversation`, so every presence
-  // update (which rebuilds the conversations array, giving `conversation` a new reference)
-  // refetched the whole thread and flashed it behind a spinner -- "old messages disappearing".
+  if (conversation && !unreadAtOpenRef.current.captured) {
+    unreadAtOpenRef.current = { captured: true, count: conversation.unreadCount ?? 0 };
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Loading
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setLoadError(false);
-    api
-      .get<Message[]>(`/chat/conversations/${conversationId}/messages?limit=50`)
+    chatApi
+      .latest(conversationId)
       .then((data) => {
         if (cancelled) return;
-        const conv = conversationRef.current;
-        const corrected = conv ? data.map((msg) => correctSenderPhoto(msg, conv)) : data;
-        setMessages(corrected.reverse());
+        setMessages(data.slice().reverse());
+        setHasMore(data.length >= MESSAGE_PAGE_SIZE);
         setLoading(false);
       })
       .catch(() => {
@@ -130,344 +256,903 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
   }, [conversationId, reloadKey]);
 
-  // Re-apply sender-photo corrections in place when the conversation object updates
-  // (participant avatar changed, list finally loaded) -- without refetching or clearing the thread.
-  useEffect(() => {
-    if (!conversation) return;
-    setMessages((prev) => prev.map((msg) => correctSenderPhoto(msg, conversation)));
-  }, [conversation]);
-
-  // Landed on a conversation that isn't in the cached list yet (a brand-new thread opened
-  // straight from a notification)? Pull the list once so the header, participants and the
-  // socket room-join resolve, instead of getting stuck on a spinner forever.
-  const refreshedForMissing = useRef(false);
-  useEffect(() => {
-    refreshedForMissing.current = false;
+  const refreshPins = useCallback(async () => {
+    try {
+      setPins(await chatApi.pins(conversationId));
+    } catch {
+      /* banner is optional */
+    }
   }, [conversationId]);
+
+  const refreshScheduled = useCallback(async () => {
+    setScheduledLoading(true);
+    try {
+      setScheduled(await chatApi.scheduled(conversationId));
+    } catch {
+      /* chip is optional */
+    } finally {
+      setScheduledLoading(false);
+    }
+  }, [conversationId]);
+
+  useEffect(() => {
+    void refreshPins();
+    void refreshScheduled();
+  }, [refreshPins, refreshScheduled]);
+
+  // Landed on a conversation that isn't in the cached list yet (a brand-new thread opened straight
+  // from a notification)? Pull the list once so the header and participants resolve.
+  const refreshedForMissing = useRef(false);
   useEffect(() => {
     if (!loading && !conversation && !refreshedForMissing.current) {
       refreshedForMissing.current = true;
-      refresh();
+      void refresh();
     }
   }, [loading, conversation, refresh]);
 
-  // ========== SOCKET EVENTS ==========
+  // Don't leave optimistic-send fail-timers or typing timers running after leaving.
   useEffect(() => {
-    if (!socket || !conversation) return;
-    socket.emit('joinConversation', conversationId);
+    const sendTimers = pendingTimers.current;
+    const typers = typingTimers.current;
+    const typingState = typingEmit.current;
+    return () => {
+      sendTimers.forEach((t) => clearTimeout(t));
+      sendTimers.clear();
+      typers.forEach((t) => clearTimeout(t));
+      typers.clear();
+      if (typingState.stop) clearTimeout(typingState.stop);
+    };
+  }, []);
+
+  const loadOlder = useCallback(async () => {
+    const oldest = messagesRef.current.find((m) => !isPlaceholderId(m._id));
+    if (!oldest || loadingOlderRef.current || !hasMoreRef.current) return;
+    loadingOlderRef.current = true;
+    setLoadingOlder(true);
+    try {
+      const older = await chatApi.older(conversationId, oldest._id);
+      const el = scrollRef.current;
+      if (el) scrollRestore.current = { height: el.scrollHeight, top: el.scrollTop };
+      setMessages((prev) => prependOlder(older.slice().reverse(), prev));
+      setHasMore(older.length >= MESSAGE_PAGE_SIZE);
+    } catch {
+      /* the user can scroll up again to retry */
+    } finally {
+      loadingOlderRef.current = false;
+      setLoadingOlder(false);
+    }
+  }, [conversationId]);
+
+  // ---------------------------------------------------------------------------------------------
+  // Read receipts only while the tab is actually visible (a backgrounded tab mustn't "read").
+
+  const markRead = useCallback(() => {
+    if (!socket) return;
+    if (typeof document !== 'undefined' && document.visibilityState !== 'visible') {
+      pendingRead.current = true;
+      return;
+    }
+    pendingRead.current = false;
     socket.emit('markRead', conversationId);
-    socket.emit('markDelivered', conversationId);
+  }, [socket, conversationId]);
+
+  useEffect(() => {
+    const onVisible = () => {
+      if (document.visibilityState === 'visible' && pendingRead.current) markRead();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [markRead]);
+
+  // ---------------------------------------------------------------------------------------------
+  // Socket
+
+  const clearPendingTimer = (id: string) => {
+    const t = pendingTimers.current.get(id);
+    if (t) clearTimeout(t);
+    pendingTimers.current.delete(id);
+  };
+
+  useEffect(() => {
+    if (!socket || !userId) return;
+    const join = () => {
+      socket.emit('joinConversation', conversationId);
+      socket.emit('markDelivered', conversationId);
+      markRead();
+    };
+    join();
+
+    const removeTyping = (id: string) => {
+      const t = typingTimers.current.get(id);
+      if (t) clearTimeout(t);
+      typingTimers.current.delete(id);
+      setTypingIds((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : prev));
+    };
+    const addTyping = (id: string) => {
+      setTypingIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      const t = typingTimers.current.get(id);
+      if (t) clearTimeout(t);
+      typingTimers.current.set(id, setTimeout(() => removeTyping(id), 4000));
+    };
+
+    // Reconnected after a drop: re-join and fold in anything missed meanwhile.
+    const onConnect = () => {
+      join();
+      chatApi
+        .latest(conversationId)
+        .then((data) => setMessages((prev) => mergeLatest(prev, data.slice().reverse(), userId)))
+        .catch(() => undefined);
+    };
 
     const onNewMessage = (message: Message) => {
       if (message.conversation !== conversationId) return;
-      const corrected = correctSenderPhoto(message, conversation);
-      const mine = corrected.sender?._id === user?._id;
+      const mine = message.sender?._id === userId;
       setMessages((prev) => {
-        if (prev.some((m) => m._id === corrected._id)) return prev;
+        if (prev.some((m) => m._id === message._id)) return prev;
         let next = prev;
         if (mine) {
-          // Replace the matching optimistic placeholder with the real, server-issued message.
+          // Swap the matching optimistic placeholder for the real, server-issued message.
           let dropped = false;
           next = prev.filter((m) => {
-            if (dropped || !m.pending) return true;
-            const match =
-              m.text === corrected.text ||
-              (!corrected.text && (m.attachments?.length ?? 0) > 0);
-            if (!match) return true;
+            if (dropped || !m.pending || !sameContent(m, message)) return true;
             dropped = true;
-            const t = pendingTimers.current.get(m._id);
-            if (t) clearTimeout(t);
-            pendingTimers.current.delete(m._id);
+            clearPendingTimer(m._id);
             return false;
           });
         }
-        return [...next, corrected];
+        return [...next, message];
       });
-      if (!mine) {
-        socket.emit('markRead', conversationId);
-        socket.emit('markDelivered', conversationId);
+      if (mine) {
+        // Already celebrated locally at send time -- don't replay it for the echo.
+        if (message.effect) claimEffectPlay(message._id);
+        return;
+      }
+      if (message.sender?._id) removeTyping(message.sender._id);
+      socket.emit('markDelivered', conversationId);
+      markRead();
+      if (message.effect && claimEffectPlay(message._id)) playChatEffect(message.effect);
+      if (message.mentions?.includes(userId) && !atBottomRef.current) {
+        setMentionIds((ids) => (ids.includes(message._id) ? ids : [...ids, message._id]));
       }
     };
 
-    const onMessageEdited = (message: Message) => {
+    const replaceMessage = (message: Message) => {
       if (message.conversation !== conversationId) return;
-      const corrected = correctSenderPhoto(message, conversation);
-      setMessages((prev) => prev.map((m) => (m._id === corrected._id ? corrected : m)));
+      setMessages((prev) => prev.map((m) => (m._id === message._id ? message : m)));
     };
 
-    const onMessageDeleted = (payload: any) => {
-      if (!payload || !payload.message) return;
-      if (payload.message.conversation !== conversationId) return;
+    const onMessageDeleted = (payload: { message?: Message; forEveryone?: boolean }) => {
+      const message = payload?.message;
+      if (!message || message.conversation !== conversationId) return;
       if (payload.forEveryone) {
-        const corrected = correctSenderPhoto(payload.message, conversation);
-        setMessages((prev) => prev.map((m) => (m._id === corrected._id ? corrected : m)));
+        replaceMessage(message);
+        setPins((prev) => prev.filter((p) => p.message._id !== message._id));
       } else {
-        setMessages((prev) => prev.filter((m) => m._id !== payload.message._id));
+        setMessages((prev) => prev.filter((m) => m._id !== message._id));
       }
-    };
-
-    const onMessageReacted = (message: Message) => {
-      if (message.conversation !== conversationId) return;
-      const corrected = correctSenderPhoto(message, conversation);
-      setMessages((prev) => prev.map((m) => (m._id === corrected._id ? corrected : m)));
     };
 
     const onMessagesRead = (payload: { conversationId: string; userId: string; messageIds: string[] }) => {
       if (payload.conversationId !== conversationId) return;
+      const ids = new Set(payload.messageIds);
       setMessages((prev) =>
         prev.map((m) =>
-          payload.messageIds.includes(m._id) ? { ...m, readBy: [...new Set([...(m.readBy ?? []), payload.userId])] } : m,
+          ids.has(m._id) && !m.readBy?.includes(payload.userId)
+            ? {
+                ...m,
+                readBy: [...(m.readBy ?? []), payload.userId],
+                deliveredTo: [...new Set([...(m.deliveredTo ?? []), payload.userId])],
+              }
+            : m,
         ),
       );
     };
 
     const onMessagesDelivered = (payload: { conversationId: string; userId: string; messageIds: string[] }) => {
       if (payload.conversationId !== conversationId) return;
+      const ids = new Set(payload.messageIds);
       setMessages((prev) =>
         prev.map((m) =>
-          payload.messageIds.includes(m._id)
-            ? { ...m, deliveredTo: [...new Set([...(m.deliveredTo ?? []), payload.userId])] }
+          ids.has(m._id) && !m.deliveredTo?.includes(payload.userId)
+            ? { ...m, deliveredTo: [...(m.deliveredTo ?? []), payload.userId] }
             : m,
         ),
       );
     };
 
     const onTyping = (payload: { conversationId: string; userId: string }) => {
-      if (payload.conversationId !== conversationId || payload.userId === user?._id) return;
-      setTyping(true);
-      if (typingTimeout) clearTimeout(typingTimeout);
-      typingTimeout = setTimeout(() => setTyping(false), 2000);
+      if (payload.conversationId !== conversationId || payload.userId === userId) return;
+      addTyping(payload.userId);
     };
-
     const onStopTyping = (payload: { conversationId: string; userId: string }) => {
-      if (payload.conversationId !== conversationId || payload.userId === user?._id) return;
-      setTyping(false);
+      if (payload.conversationId !== conversationId || payload.userId === userId) return;
+      removeTyping(payload.userId);
     };
 
+    const onPinsUpdated = (payload: { conversationId: string; pins: PinnedMessage[]; actorId: string; pinned: boolean }) => {
+      if (payload.conversationId !== conversationId) return;
+      setPins(payload.pins);
+      setPinIndex(0);
+      if (payload.actorId === userId) showToast(payload.pinned ? 'تم تثبيت الرسالة.' : 'تم إلغاء التثبيت.');
+    };
+
+    const onScheduledUpdated = (payload: { conversation?: string; status?: string; error?: string | null }) => {
+      if (payload?.conversation !== conversationId) return;
+      void refreshScheduled();
+      if (payload.status === 'failed') showToast(payload.error || 'تعذّر إرسال رسالة مجدولة.', 'error');
+    };
+
+    socket.on('connect', onConnect);
     socket.on('newMessage', onNewMessage);
-    socket.on('messageEdited', onMessageEdited);
+    socket.on('messageEdited', replaceMessage);
+    socket.on('messageReacted', replaceMessage);
+    socket.on('messageUpdated', replaceMessage);
     socket.on('messageDeleted', onMessageDeleted);
-    socket.on('messageReacted', onMessageReacted);
     socket.on('messagesRead', onMessagesRead);
     socket.on('messagesDelivered', onMessagesDelivered);
     socket.on('userTyping', onTyping);
     socket.on('userStopTyping', onStopTyping);
-
+    socket.on('pinsUpdated', onPinsUpdated);
+    socket.on('scheduledUpdated', onScheduledUpdated);
     return () => {
+      socket.off('connect', onConnect);
       socket.off('newMessage', onNewMessage);
-      socket.off('messageEdited', onMessageEdited);
+      socket.off('messageEdited', replaceMessage);
+      socket.off('messageReacted', replaceMessage);
+      socket.off('messageUpdated', replaceMessage);
       socket.off('messageDeleted', onMessageDeleted);
-      socket.off('messageReacted', onMessageReacted);
       socket.off('messagesRead', onMessagesRead);
       socket.off('messagesDelivered', onMessagesDelivered);
       socket.off('userTyping', onTyping);
       socket.off('userStopTyping', onStopTyping);
+      socket.off('pinsUpdated', onPinsUpdated);
+      socket.off('scheduledUpdated', onScheduledUpdated);
     };
-  }, [socket, conversationId, user, conversation]);
+  }, [socket, conversationId, userId, markRead, refreshScheduled, showToast]);
 
-  // ========== SCROLL / "NEW MESSAGES" PILL ==========
-  // WhatsApp behaviour: keep the newest message in view while the user is already at the
-  // bottom (or just sent one themselves). If they've scrolled up to read history, don't yank
-  // them down -- count the arrivals and show a "N new messages" pill instead; only jump when
-  // they tap it (or scroll back down on their own).
-  const didInitialScroll = useRef(false);
-  const prevCountRef = useRef(0);
+  // ---------------------------------------------------------------------------------------------
+  // Scrolling
 
-  const scrollToBottom = (behavior: ScrollBehavior = 'smooth') => {
-    bottomRef.current?.scrollIntoView({ behavior });
+  // Re-derive "pinned to the bottom" from the DOM after a programmatic scroll -- scroll events for
+  // it arrive later, and the stick-to-bottom observer must not act on a stale value meanwhile.
+  const syncBottomState = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
+    atBottomRef.current = bottom;
+    setAtBottom(bottom);
+  }, []);
+
+  const scrollToBottom = useCallback((behavior: ScrollBehavior = 'smooth') => {
+    bottomRef.current?.scrollIntoView({ behavior, block: 'end' });
+    atBottomRef.current = true;
+    setAtBottom(true);
     setNewCount(0);
-  };
+    setMentionIds([]);
+  }, []);
+
+  const scrollToMessage = useCallback(
+    (id: string, behavior: ScrollBehavior = 'smooth') => {
+      const el = messageRefs.current[id];
+      if (!el) return false;
+      el.scrollIntoView({ behavior, block: 'center' });
+      if (behavior === 'auto') syncBottomState();
+      else atBottomRef.current = false; // leaving the bottom; scroll events settle the real value
+      setHighlight({ id, key: Date.now() });
+      return true;
+    },
+    [syncBottomState],
+  );
 
   const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
-    const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 120;
-    setAtBottom(bottom);
-    if (bottom) setNewCount(0);
+    const distance = el.scrollHeight - el.scrollTop - el.clientHeight;
+    const bottom = distance < 120;
+    if (bottom !== atBottomRef.current) {
+      atBottomRef.current = bottom;
+      setAtBottom(bottom);
+    }
+    setShowJump(distance > 360);
+    if (bottom) {
+      setNewCount(0);
+      setMentionIds((ids) => (ids.length ? [] : ids));
+    }
+    if (el.scrollTop < 320) void loadOlder();
   };
 
+  // While pinned to the bottom, stay pinned when content grows underneath (images decoding,
+  // link previews, a reaction row appearing) -- otherwise the newest message slides out of view.
   useEffect(() => {
-    didInitialScroll.current = false;
-    prevCountRef.current = 0;
-    setNewCount(0);
-    setAtBottom(true);
-  }, [conversationId]);
+    const content = contentRef.current;
+    const el = scrollRef.current;
+    if (!content || !el || typeof ResizeObserver === 'undefined') return;
+    const observer = new ResizeObserver(() => {
+      if (atBottomRef.current && !scrollRestore.current) el.scrollTop = el.scrollHeight;
+    });
+    observer.observe(content);
+    return () => observer.disconnect();
+  }, [loading]);
 
-  // Don't leave optimistic-send fail-timers running after leaving / switching a thread.
-  useEffect(() => {
-    const timers = pendingTimers.current;
-    return () => {
-      timers.forEach((t) => clearTimeout(t));
-      timers.clear();
-    };
-  }, [conversationId]);
+  // ---------------------------------------------------------------------------------------------
+  // Derived thread data
 
-  useEffect(() => {
-    if (loading || searchOpen) return;
+  const unreadCountAtOpen = unreadAtOpenRef.current.count;
+  const firstUnreadId = useMemo(() => {
+    const count = unreadCountAtOpen;
+    if (!count) return null;
+    let seen = 0;
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].sender?._id === userId) continue;
+      if (++seen === count) return messages[i]._id;
+    }
+    return messages.find((m) => m.sender?._id !== userId)?._id ?? null;
+    // Anchored to the count captured at open; recomputed as history pages in.
+  }, [messages, userId, unreadCountAtOpen]);
 
-    const prev = prevCountRef.current;
-    prevCountRef.current = messages.length;
+  const chatRows = useMemo(
+    () => buildChatRows(messages, userId, !!conversation?.isGroup, firstUnreadId),
+    [messages, userId, conversation?.isGroup, firstUnreadId],
+  );
 
-    // First paint of a thread -> jump straight to the newest message, no animation.
+  const participants = conversation?.participants;
+  const participantsById = useMemo(() => {
+    const map = new Map<string, User>();
+    (participants ?? []).forEach((p) => p && map.set(p._id, p));
+    if (user) map.set(user._id, user);
+    return map;
+  }, [participants, user]);
+
+  // Messenger-style read heads: each other participant's avatar sits under the newest message
+  // they've read -- unless they've posted since (that already implies they read everything).
+  const readHeads = useMemo(() => {
+    const map = new Map<string, string>();
+    if (!conversation || !userId) return map;
+    const others = otherParticipants(conversation, userId);
+    if (!others.length || others.length > READ_HEADS_MAX_PARTICIPANTS) return map;
+    const byMessage = new Map<string, string[]>();
+    for (const p of others) {
+      let lastRead = -1;
+      let lastOwn = -1;
+      for (let i = messages.length - 1; i >= 0; i--) {
+        const m = messages[i];
+        if (m.pending || m.failed || m.deletedForEveryone) continue;
+        if (m.sender?._id === p._id) {
+          if (lastOwn === -1) lastOwn = i;
+        } else if (lastRead === -1 && m.readBy?.includes(p._id)) {
+          lastRead = i;
+        }
+        if (lastRead !== -1 && lastOwn !== -1) break;
+      }
+      if (lastRead !== -1 && lastRead > lastOwn) {
+        const id = messages[lastRead]._id;
+        byMessage.set(id, [...(byMessage.get(id) ?? []), p._id]);
+      }
+    }
+    byMessage.forEach((ids, id) => map.set(id, ids.join(',')));
+    return map;
+  }, [messages, conversation, userId]);
+
+  const pinnedIds = useMemo(() => new Set(pins.map((p) => p.message._id)), [pins]);
+  const selectedSet = useMemo(() => new Set(selection ?? []), [selection]);
+  const selectedMessages = useMemo(
+    () => (selection ? messages.filter((m) => selectedSet.has(m._id)) : []),
+    [messages, selection, selectedSet],
+  );
+  const activeSearchTerm = searchOpen && searchQuery.trim().length > 0 ? searchQuery.trim() : undefined;
+
+  // ---------------------------------------------------------------------------------------------
+  // Jumping (search hits, pins, replies, deep links, dates)
+
+  const jumpToMessage = useCallback(
+    async (id: string, createdAt?: string) => {
+      if (scrollToMessage(id)) return;
+      const oldest = messagesRef.current.find((m) => !isPlaceholderId(m._id));
+      try {
+        let older: Message[] = [];
+        let exhausted = false;
+        if (createdAt) {
+          older = await chatApi.since(conversationId, createdAt, oldest?._id);
+        } else {
+          // Reply quotes carry no timestamp: walk back page by page (bounded).
+          let cursor = oldest?._id;
+          for (let i = 0; i < 12 && cursor; i++) {
+            const page = await chatApi.older(conversationId, cursor);
+            older.push(...page);
+            if (page.some((m) => m._id === id)) break;
+            if (page.length < MESSAGE_PAGE_SIZE) {
+              exhausted = true;
+              break;
+            }
+            cursor = page[page.length - 1]._id;
+          }
+        }
+        if (!older.some((m) => m._id === id)) {
+          showToast('تعذّر العثور على الرسالة — ربما حُذفت.', 'error');
+          return;
+        }
+        pendingJump.current = id;
+        if (exhausted) setHasMore(false);
+        setMessages((prev) => prependOlder(older.slice().reverse(), prev));
+      } catch {
+        showToast('تعذّر الانتقال إلى الرسالة.', 'error');
+      }
+    },
+    [conversationId, scrollToMessage, showToast],
+  );
+
+  const jumpToDate = useCallback(
+    async (value: string) => {
+      if (!value) return;
+      const start = new Date(`${value}T00:00:00`);
+      if (Number.isNaN(start.getTime())) return;
+      const loaded = messagesRef.current.filter((m) => !isPlaceholderId(m._id));
+      const oldest = loaded[0];
+      if (oldest && new Date(oldest.createdAt) <= start) {
+        const target = loaded.find((m) => new Date(m.createdAt) >= start);
+        if (target) scrollToMessage(target._id);
+        else showToast('لا توجد رسائل بعد هذا التاريخ.');
+        return;
+      }
+      try {
+        const older = await chatApi.since(conversationId, start.toISOString(), oldest?._id);
+        const target = older[older.length - 1] ?? oldest;
+        if (!target) {
+          showToast('لا توجد رسائل في هذا التاريخ.');
+          return;
+        }
+        if (!older.length) {
+          scrollToMessage(target._id);
+          return;
+        }
+        pendingJump.current = target._id;
+        setMessages((prev) => prependOlder(older.slice().reverse(), prev));
+      } catch {
+        showToast('تعذّر الانتقال إلى التاريخ.', 'error');
+      }
+    },
+    [conversationId, scrollToMessage, showToast],
+  );
+
+  // Layout pass after every thread change: restore position after prepending history, perform a
+  // pending jump, place the initial view, and follow (or count) new arrivals at the bottom.
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    if (el && scrollRestore.current) {
+      el.scrollTop = el.scrollHeight - scrollRestore.current.height + scrollRestore.current.top;
+      scrollRestore.current = null;
+    }
+    if (loading) return;
+
+    if (pendingJump.current) {
+      const id = pendingJump.current;
+      pendingJump.current = null;
+      scrollToMessage(id, 'auto');
+    }
+
+    const last = messages[messages.length - 1];
+    const previousLast = prevLastId.current;
+    prevLastId.current = last?._id ?? null;
+
     if (!didInitialScroll.current) {
-      bottomRef.current?.scrollIntoView({ behavior: 'auto' });
       didInitialScroll.current = true;
+      const target = searchParams?.get('m');
+      if (target) {
+        void jumpToMessage(target, searchParams?.get('t') ?? undefined);
+        router.replace(`/chat/${conversationId}`, { scroll: false });
+        return;
+      }
+      if (unreadDividerRef.current && unreadAtOpenRef.current.count >= 4) {
+        // Open at the first unread message (WhatsApp-style) rather than the very bottom.
+        unreadDividerRef.current.scrollIntoView({ block: 'start' });
+        if (el) el.scrollTop = Math.max(0, el.scrollTop - 12);
+        syncBottomState();
+        return;
+      }
+      bottomRef.current?.scrollIntoView({ block: 'end' });
       return;
     }
 
-    const added = messages.length - prev;
-    if (added <= 0) return; // edit / reaction / delete / read-receipt -- not a new message
-
-    const lastFromMe = messages[messages.length - 1]?.sender?._id === user?._id;
-    if (lastFromMe || atBottom) {
-      scrollToBottom('smooth');
-    } else {
-      setNewCount((n) => n + added);
-    }
+    if (!last || last._id === previousLast) return;
+    const previousIndex = previousLast ? messages.findIndex((m) => m._id === previousLast) : -1;
+    const added = previousIndex === -1 ? 1 : messages.length - 1 - previousIndex;
+    if (added <= 0) return;
+    const lastFromMe = last.sender?._id === userId;
+    if (lastFromMe || atBottomRef.current) scrollToBottom('smooth');
+    else setNewCount((n) => n + added);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [messages, loading, searchOpen, atBottom, user?._id]);
+  }, [messages, loading]);
 
-  // ========== SEARCH ==========
+  // A deep link (?m=<id>&t=<iso>) while this chat is already open -- e.g. a search hit from the list.
+  const deepLink = searchParams?.get('m');
   useEffect(() => {
-    if (!searchQuery.trim()) {
+    if (!deepLink || !didInitialScroll.current || loading) return;
+    void jumpToMessage(deepLink, searchParams?.get('t') ?? undefined);
+    router.replace(`/chat/${conversationId}`, { scroll: false });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [deepLink]);
+
+  // Keep the typing bubble in view when it appears while you're at the bottom.
+  useEffect(() => {
+    if (typingIds.length && atBottomRef.current) scrollToBottom('smooth');
+  }, [typingIds.length, scrollToBottom]);
+
+  // ---------------------------------------------------------------------------------------------
+  // In-conversation search
+
+  useEffect(() => {
+    const q = searchQuery.trim();
+    if (!searchOpen || !q) {
       setSearchResults([]);
+      setSearchLoading(false);
       return;
     }
+    setSearchLoading(true);
+    let cancelled = false;
     const handle = setTimeout(async () => {
-      const results = await api.get<Message[]>(
-        `/chat/conversations/${conversationId}/search?q=${encodeURIComponent(searchQuery.trim())}`,
-      );
-      setSearchResults(results);
-    }, 300);
-    return () => clearTimeout(handle);
-  }, [searchQuery, conversationId]);
+      try {
+        const results = await chatApi.searchIn(conversationId, q);
+        if (cancelled) return;
+        setSearchResults(results);
+        setSearchIndex(0);
+        if (results[0]) void jumpToMessage(results[0]._id, results[0].createdAt);
+      } catch {
+        if (!cancelled) setSearchResults([]);
+      } finally {
+        if (!cancelled) setSearchLoading(false);
+      }
+    }, 320);
+    return () => {
+      cancelled = true;
+      clearTimeout(handle);
+    };
+  }, [searchQuery, searchOpen, conversationId, jumpToMessage]);
 
-  // ========== HANDLERS ==========
-  // Optimistic send: the message shows instantly with a "sending" clock, then either the server
-  // echoes it back (onNewMessage swaps in the real one) or the fail-timer flips it to a
-  // tap-to-retry state. No server change needed -- reconciliation matches on sender + text.
-  const SEND_TIMEOUT_MS = 12_000;
+  function stepSearch(delta: 1 | -1) {
+    if (!searchResults.length) return;
+    const next = Math.min(searchResults.length - 1, Math.max(0, searchIndex + delta));
+    setSearchIndex(next);
+    const hit = searchResults[next];
+    if (hit) void jumpToMessage(hit._id, hit.createdAt);
+  }
+
+  function closeSearch() {
+    setSearchOpen(false);
+    setSearchQuery('');
+    setSearchResults([]);
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Sending
 
   function armFailTimer(tempId: string) {
-    const t = setTimeout(() => {
-      pendingTimers.current.delete(tempId);
-      setMessages((prev) =>
-        prev.map((m) => (m._id === tempId ? { ...m, pending: false, failed: true } : m)),
-      );
-    }, SEND_TIMEOUT_MS);
-    pendingTimers.current.set(tempId, t);
-  }
-
-  function trackSend(hasAttachment: boolean) {
-    // Engagement signal — type only, never the text.
-    track(AnalyticsEvent.MessageSent, {
-      conversation_type:
-        conversation?.visibility === 'public' ? 'group_public' : conversation?.isGroup ? 'group' : 'dm',
-      has_attachment: hasAttachment,
-    });
-  }
-
-  function emitSend(
-    payload: { text: string; attachments?: Attachment[]; replyTo?: string },
-    tempId: string,
-  ) {
-    if (!socket) return;
-    socket.emit('sendMessage', { conversationId, ...payload });
-    socket.emit('stopTyping', conversationId);
-    trackSend(!!payload.attachments?.length);
-    armFailTimer(tempId);
-  }
-
-  function markFailed(tempId: string) {
-    const t = pendingTimers.current.get(tempId);
-    if (t) clearTimeout(t);
-    pendingTimers.current.delete(tempId);
-    setMessages((prev) =>
-      prev.map((m) => (m._id === tempId ? { ...m, pending: false, failed: true } : m)),
+    clearPendingTimer(tempId);
+    pendingTimers.current.set(
+      tempId,
+      setTimeout(() => {
+        pendingTimers.current.delete(tempId);
+        setMessages((prev) => prev.map((m) => (m._id === tempId ? { ...m, pending: false, failed: true } : m)));
+      }, SEND_TIMEOUT_MS),
     );
   }
 
-  function handleSend(text: string, attachments?: Attachment[], replyTo?: string) {
-    if (!socket || !user) return;
+  function stopTypingNow() {
+    if (typingEmit.current.stop) clearTimeout(typingEmit.current.stop);
+    typingEmit.current.stop = null;
+    if (typingEmit.current.last) {
+      typingEmit.current.last = 0;
+      socket?.emit('stopTyping', conversationId);
+    }
+  }
+
+  // Throttled: at most one "typing" ping per 2.5s while keys are flying, and an automatic
+  // "stopped" 3s after the last keystroke (the server rate-limits floods anyway).
+  function handleTyping() {
+    if (!socket) return;
+    const now = Date.now();
+    if (now - typingEmit.current.last > 2500) {
+      typingEmit.current.last = now;
+      socket.emit('typing', conversationId);
+    }
+    if (typingEmit.current.stop) clearTimeout(typingEmit.current.stop);
+    typingEmit.current.stop = setTimeout(stopTypingNow, 3000);
+  }
+
+  function emitSend(
+    payload: {
+      text: string;
+      attachments?: Message['attachments'];
+      replyTo?: string;
+      poll?: { question: string; options: string[]; multiple: boolean };
+      effect?: MessageEffect | null;
+      silent?: boolean;
+    },
+    tempId: string,
+  ) {
+    if (!socket) return;
+    socket.emit('sendMessage', {
+      conversationId,
+      text: payload.text,
+      ...(payload.attachments?.length ? { attachments: payload.attachments } : {}),
+      ...(payload.replyTo ? { replyTo: payload.replyTo } : {}),
+      ...(payload.poll ? { poll: payload.poll } : {}),
+      ...(payload.effect ? { effect: payload.effect } : {}),
+      ...(payload.silent ? { silent: true } : {}),
+    });
+    stopTypingNow();
+    track(AnalyticsEvent.MessageSent, {
+      conversation_type: conversation?.visibility === 'public' ? 'group_public' : conversation?.isGroup ? 'group' : 'dm',
+      has_attachment: !!payload.attachments?.length,
+    });
+    armFailTimer(tempId);
+  }
+
+  async function handleSend(payload: SendPayload): Promise<boolean> {
+    if (!user) return false;
+    const replyTo = replyingTo?._id;
+
+    if (payload.scheduleAt) {
+      try {
+        await chatApi.schedule(conversationId, {
+          text: payload.text,
+          attachments: payload.attachments,
+          replyTo,
+          effect: payload.effect ?? undefined,
+          silent: payload.silent,
+          sendAt: payload.scheduleAt,
+        });
+        showToast(`ستُرسل ${formatFullDate(payload.scheduleAt)}`);
+        setReplyingTo(null);
+        void refreshScheduled();
+        return true;
+      } catch (err) {
+        showToast(err instanceof ApiError ? err.message : 'تعذّرت جدولة الرسالة.', 'error');
+        return false;
+      }
+    }
+
+    if (!socket) {
+      showToast('لا يوجد اتصال الآن — حاول بعد لحظات.', 'error');
+      return false;
+    }
     const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
     const optimistic: Message = {
       _id: tempId,
       conversation: conversationId,
       sender: user,
-      text,
-      attachments,
+      text: payload.text,
+      attachments: payload.attachments,
+      replyTo: replyingTo ? toReplyPreview(replyingTo) : null,
+      effect: payload.effect ?? null,
       readBy: [],
       createdAt: new Date().toISOString(),
       pending: true,
+      sendOptions: { silent: payload.silent, effect: payload.effect ?? null, replyTo },
     };
     setMessages((prev) => [...prev, optimistic]);
-    emitSend({ text, attachments, replyTo }, tempId);
+    emitSend({ text: payload.text, attachments: payload.attachments, replyTo, effect: payload.effect, silent: payload.silent }, tempId);
+    if (payload.effect) playChatEffect(payload.effect);
+    setReplyingTo(null);
+    return true;
+  }
+
+  function handleCreatePoll(poll: { question: string; options: string[]; multiple: boolean }) {
+    if (!user || !socket) return;
+    const tempId = `tmp_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    setMessages((prev) => [
+      ...prev,
+      {
+        _id: tempId,
+        conversation: conversationId,
+        sender: user,
+        text: '',
+        poll: {
+          question: poll.question,
+          multiple: poll.multiple,
+          closed: false,
+          options: poll.options.map((text, i) => ({ id: `o${i + 1}`, text, voters: [] })),
+        },
+        readBy: [],
+        createdAt: new Date().toISOString(),
+        pending: true,
+      },
+    ]);
+    emitSend({ text: '', poll }, tempId);
   }
 
   function handleRetry(message: Message) {
     if (!message.failed) return;
-    setMessages((prev) =>
-      prev.map((m) => (m._id === message._id ? { ...m, failed: false, pending: true } : m)),
+    setMessages((prev) => prev.map((m) => (m._id === message._id ? { ...m, failed: false, pending: true } : m)));
+    emitSend(
+      {
+        text: message.text,
+        attachments: message.attachments,
+        replyTo: message.sendOptions?.replyTo,
+        poll: message.poll
+          ? { question: message.poll.question, options: message.poll.options.map((o) => o.text), multiple: message.poll.multiple }
+          : undefined,
+        effect: message.sendOptions?.effect,
+        silent: message.sendOptions?.silent,
+      },
+      message._id,
     );
-    emitSend({ text: message.text, attachments: message.attachments }, message._id);
   }
 
-  function handleTyping() {
-    socket?.emit('typing', conversationId);
-  }
-
-  function handleStopTyping() {
-    socket?.emit('stopTyping', conversationId);
-  }
-
-  // An optimistic message has no server id yet -- edit/react/star/delete would 404, so ignore them.
-  const isPlaceholder = (id: string) => id.startsWith('tmp_');
+  // ---------------------------------------------------------------------------------------------
+  // Message actions
 
   function handleReact(message: Message, emoji: string) {
-    if (isPlaceholder(message._id)) return;
+    if (isPlaceholderId(message._id)) return;
     socket?.emit('reactToMessage', { messageId: message._id, emoji });
   }
 
   function handleSubmitEdit(messageId: string, text: string) {
-    if (isPlaceholder(messageId)) return;
+    if (isPlaceholderId(messageId)) return;
     socket?.emit('editMessage', { messageId, text });
     setEditingMessage(null);
   }
 
-  async function handleDelete(message: Message, forEveryone: boolean) {
-    if (isPlaceholder(message._id)) {
-      // Purely local: just drop the placeholder and cancel its fail-timer.
-      const t = pendingTimers.current.get(message._id);
-      if (t) clearTimeout(t);
-      pendingTimers.current.delete(message._id);
+  function handleDelete(message: Message, forEveryone: boolean) {
+    if (isPlaceholderId(message._id)) {
+      clearPendingTimer(message._id);
       setMessages((prev) => prev.filter((m) => m._id !== message._id));
       return;
     }
     socket?.emit('deleteMessage', { messageId: message._id, forEveryone });
   }
 
-  async function handleForwardConfirm(conversationIds: string[]) {
-    if (!forwardTarget) return;
-    socket?.emit('forwardMessage', { messageId: forwardTarget._id, conversationIds });
-    setForwardTarget(null);
-  }
-
-  async function handleToggleStar(message: Message) {
-    if (isPlaceholder(message._id)) return;
-    const isStarred = message.starredBy?.includes(user!._id);
-    const updated = isStarred
-      ? await api.delete<Message>(`/chat/messages/${message._id}/star`)
-      : await api.post<Message>(`/chat/messages/${message._id}/star`);
-    setMessages((prev) => prev.map((m) => (m._id === updated._id ? updated : m)));
-  }
-
-  function jumpToReply(messageId: string) {
-    messageRefs.current[messageId]?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-    const el = messageRefs.current[messageId];
-    if (el) {
-      el.classList.add('ring-2', 'ring-accent', 'rounded-2xl');
-      setTimeout(() => el.classList.remove('ring-2', 'ring-accent', 'rounded-2xl'), 1200);
+  async function toggleStar(list: Message[]) {
+    const real = list.filter((m) => !isPlaceholderId(m._id) && !m.deletedForEveryone);
+    if (!real.length) return;
+    const allStarred = real.every((m) => m.starredBy?.includes(userId));
+    try {
+      const updated = await Promise.all(
+        real
+          .filter((m) => allStarred || !m.starredBy?.includes(userId))
+          .map((m) =>
+            allStarred ? api.delete<Message>(`/chat/messages/${m._id}/star`) : api.post<Message>(`/chat/messages/${m._id}/star`),
+          ),
+      );
+      const byId = new Map(updated.map((m) => [m._id, m]));
+      setMessages((prev) => prev.map((m) => byId.get(m._id) ?? m));
+      if (real.length > 1) showToast(allStarred ? 'تم إلغاء التمييز.' : 'تم التمييز بنجمة.');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر تنفيذ الإجراء.', 'error');
     }
+  }
+
+  function copyMessages(list: Message[]) {
+    const sorted = [...list].filter((m) => !m.deletedForEveryone).sort(byCreatedAt);
+    if (!sorted.length) return;
+    const body =
+      sorted.length === 1
+        ? stripMentionTokens(sorted[0].text || sorted[0].poll?.question || '')
+        : sorted
+            .map(
+              (m) =>
+                `[${formatClock(m.createdAt)}] ${m.sender?.name ?? ''}: ${stripMentionTokens(m.text || '') || messagePreview(m)}`,
+            )
+            .join('\n');
+    if (!body) return;
+    void navigator.clipboard
+      ?.writeText(body)
+      .then(() => showToast(sorted.length > 1 ? `تم نسخ ${sorted.length} رسائل.` : 'تم النسخ.'))
+      .catch(() => showToast('تعذّر النسخ.', 'error'));
+  }
+
+  async function translate(message: Message) {
+    const target = translationTarget(message.text);
+    setTranslations((prev) => ({ ...prev, [message._id]: { status: 'loading', target } }));
+    try {
+      const { text } = await chatApi.ai.translate(message._id, target);
+      setTranslations((prev) => ({ ...prev, [message._id]: { status: 'done', text, target } }));
+    } catch (err) {
+      setTranslations((prev) => ({ ...prev, [message._id]: { status: 'error', target } }));
+      showToast(err instanceof ApiError ? err.message : 'تعذّرت الترجمة.', 'error');
+    }
+  }
+
+  function handleVote(message: Message, optionIds: string[]) {
+    if (!socket || !message.poll || isPlaceholderId(message._id)) return;
+    // Optimistic: reflect my vote instantly; the server echo ('messageUpdated') then wins.
+    setMessages((prev) =>
+      prev.map((m) =>
+        m._id !== message._id || !m.poll
+          ? m
+          : {
+              ...m,
+              poll: {
+                ...m.poll,
+                options: m.poll.options.map((o) => ({
+                  ...o,
+                  voters: optionIds.includes(o.id)
+                    ? [...o.voters.filter((v) => v !== userId), userId]
+                    : o.voters.filter((v) => v !== userId),
+                })),
+              },
+            },
+      ),
+    );
+    socket.emit('votePoll', { messageId: message._id, optionIds });
+  }
+
+  function toggleSelect(message: Message) {
+    if (isPlaceholderId(message._id)) return;
+    setSelection((prev) => {
+      const current = prev ?? [];
+      const next = current.includes(message._id) ? current.filter((id) => id !== message._id) : [...current, message._id];
+      return next.length ? next : null;
+    });
+  }
+
+  function editLastMessage() {
+    for (let i = messagesRef.current.length - 1; i >= 0; i--) {
+      const m = messagesRef.current[i];
+      if (m.sender?._id === userId && m.text?.trim() && !m.poll && !m.deletedForEveryone && !isPlaceholderId(m._id)) {
+        setEditingMessage(m);
+        return;
+      }
+    }
+  }
+
+  function handleOverlayAction(key: MessageActionKey, message: Message) {
+    switch (key) {
+      case 'reply':
+        setReplyingTo(message);
+        break;
+      case 'copy':
+        copyMessages([message]);
+        break;
+      case 'forward':
+        setForwardTargets([message]);
+        break;
+      case 'pin':
+      case 'unpin':
+        socket?.emit('pinMessage', { messageId: message._id, pin: key === 'pin' });
+        break;
+      case 'star':
+        void toggleStar([message]);
+        break;
+      case 'translate':
+        void translate(message);
+        break;
+      case 'info':
+        setMessageInfoTarget(message);
+        break;
+      case 'reactions':
+        setReactionsTarget(message);
+        break;
+      case 'select':
+        setSelection([message._id]);
+        break;
+      case 'edit':
+        setEditingMessage(message);
+        break;
+      case 'closePoll':
+        socket?.emit('closePoll', { messageId: message._id });
+        break;
+      case 'deleteForMe':
+        handleDelete(message, false);
+        break;
+      case 'deleteForEveryone':
+        handleDelete(message, true);
+        break;
+    }
+  }
+
+  async function handleForwardConfirm(conversationIds: string[]) {
+    if (!forwardTargets?.length || !socket) return;
+    const ids = [...forwardTargets].sort(byCreatedAt).map((m) => m._id);
+    socket.emit('forwardMessage', ids.length === 1 ? { messageId: ids[0], conversationIds } : { messageIds: ids, conversationIds });
+    showToast(ids.length > 1 ? `تمت إعادة توجيه ${ids.length} رسائل.` : 'تمت إعادة التوجيه.');
+    setForwardTargets(null);
+    setSelection(null);
+  }
+
+  function deleteSelection(forEveryone: boolean) {
+    selectedMessages.forEach((m) => handleDelete(m, forEveryone && m.sender?._id === userId));
+    setDeleteSelectionOpen(false);
+    setSelection(null);
   }
 
   async function handleUnblock() {
@@ -477,311 +1162,588 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   }
 
   async function handleCall(callType: 'audio' | 'video') {
-    if (!conversation || conversation.isGroup) return;
-    const other = conversationAvatarUser(conversation, user!._id);
+    if (!conversation || conversation.isGroup || !user) return;
+    const other = conversationAvatarUser(conversation, user._id);
     if (!other) return;
     await startCall({ userId: other._id, name: other.name, photoUrl: other.photoUrl }, conversationId, callType);
   }
 
-  if (!user) return null;
-
-  // Capture the unread count once per conversation (first render where `conversation` is known).
-  if (conversation && unreadAtOpenRef.current.id !== conversationId) {
-    unreadAtOpenRef.current = { id: conversationId, count: conversation.unreadCount ?? 0 };
-  }
-  const firstUnreadId = (() => {
-    const cnt = unreadAtOpenRef.current.id === conversationId ? unreadAtOpenRef.current.count : 0;
-    if (!cnt) return null;
-    let seen = 0;
-    for (let i = messages.length - 1; i >= 0; i--) {
-      if (messages[i].sender?._id === user._id) continue;
-      if (++seen === cnt) return messages[i]._id;
+  async function toggleMute() {
+    if (!conversation) return;
+    const muted = isMuted(conversation, userId);
+    try {
+      await chatApi.markMuted(conversationId, !muted);
+      await refresh();
+      showToast(muted ? 'تم إلغاء كتم الإشعارات.' : 'تم كتم إشعارات هذه المحادثة.');
+    } catch (err) {
+      showToast(err instanceof ApiError ? err.message : 'تعذّر تنفيذ الإجراء.', 'error');
     }
-    return null;
-  })();
-  const chatRows = buildChatRows(messages, user._id, !!conversation?.isGroup, firstUnreadId);
+  }
+
+  async function exportChat() {
+    try {
+      showToast('جارٍ تجهيز ملف المحادثة…');
+      const all = (await chatApi.since(conversationId, new Date(0).toISOString())).slice().reverse();
+      const typeLabel: Record<string, string> = { image: 'صورة', video: 'فيديو', audio: 'ملف صوتي', voice: 'رسالة صوتية', document: 'مستند' };
+      const lines = all.map((m) => {
+        const d = new Date(m.createdAt);
+        const stamp = `${d.toLocaleDateString('en-CA')} ${d.toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' })}`;
+        const body = m.deletedForEveryone
+          ? '[رسالة محذوفة]'
+          : [
+              stripMentionTokens(m.text ?? ''),
+              m.poll ? `[استطلاع: ${m.poll.question} — ${m.poll.options.map((o) => `${o.text} (${o.voters.length})`).join('، ')}]` : '',
+              ...(m.attachments ?? []).map((a) => `[${typeLabel[a.type] ?? 'مرفق'}: ${a.name ?? assetUrl(a.url) ?? ''}]`),
+            ]
+              .filter(Boolean)
+              .join(' ');
+        return `[${stamp}] ${m.sender?.name ?? 'مستخدم محذوف'}: ${body}`;
+      });
+      const header = `محادثة: ${title}\nتاريخ التصدير: ${formatFullDate(new Date())}\nعدد الرسائل: ${all.length}\n${'-'.repeat(32)}\n`;
+      const safeName = title.replace(/[\\/:*?"<>|]+/g, ' ').trim() || 'chat';
+      await saveBlob(new Blob([header + lines.join('\n')], { type: 'text/plain;charset=utf-8' }), `${safeName}.txt`);
+    } catch {
+      showToast('تعذّر تصدير المحادثة.', 'error');
+    }
+  }
+
+  // ---------------------------------------------------------------------------------------------
+  // Stable actions for the memoized bubbles (forward to the latest closures via a ref)
+
+  const handlers = useRef<ChatThreadActions | null>(null);
+  handlers.current = {
+    reply: (m) => setReplyingTo(m),
+    react: handleReact,
+    openActions: (m, anchor) => {
+      if (selection) {
+        toggleSelect(m);
+        return;
+      }
+      setOverlay({ message: m, rect: anchor.getBoundingClientRect(), isOwn: m.sender?._id === userId });
+    },
+    toggleSelect,
+    jumpTo: (id, createdAt) => void jumpToMessage(id, createdAt),
+    retry: handleRetry,
+    openImage: (m, index) => setImagePreview({ message: m, index }),
+    vote: handleVote,
+    closePoll: (m) => socket?.emit('closePoll', { messageId: m._id }),
+    showReactions: (m) => setReactionsTarget(m),
+    showPollVotes: (m) => setPollVotesTarget(m),
+    replayEffect: (m) => m.effect && playChatEffect(m.effect),
+    hideTranslation: (id) =>
+      setTranslations((prev) => {
+        const next = { ...prev };
+        delete next[id];
+        return next;
+      }),
+  };
+  const actions = useMemo<ChatThreadActions>(
+    () => ({
+      reply: (m) => handlers.current?.reply(m),
+      react: (m, e) => handlers.current?.react(m, e),
+      openActions: (m, a) => handlers.current?.openActions(m, a),
+      toggleSelect: (m) => handlers.current?.toggleSelect(m),
+      jumpTo: (id, t) => handlers.current?.jumpTo(id, t),
+      retry: (m) => handlers.current?.retry(m),
+      openImage: (m, i) => handlers.current?.openImage(m, i),
+      vote: (m, ids) => handlers.current?.vote(m, ids),
+      closePoll: (m) => handlers.current?.closePoll(m),
+      showReactions: (m) => handlers.current?.showReactions(m),
+      showPollVotes: (m) => handlers.current?.showPollVotes(m),
+      replayEffect: (m) => handlers.current?.replayEffect(m),
+      hideTranslation: (id) => handlers.current?.hideTranslation(id),
+    }),
+    [],
+  );
+  const threadInfo = useMemo(
+    () => ({ currentUserId: userId, isGroup: !!conversation?.isGroup, participantsById }),
+    [userId, conversation?.isGroup, participantsById],
+  );
+
+  // ---------------------------------------------------------------------------------------------
+  // Keyboard + drag & drop
+
+  function handleRootKeyDown(e: React.KeyboardEvent) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'f') {
+      e.preventDefault();
+      setSearchOpen(true);
+      return;
+    }
+    if (e.key === 'Escape') {
+      if (selection) setSelection(null);
+      else if (searchOpen) closeSearch();
+    }
+  }
+
+  const draggingFiles = (e: React.DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+
+  // Jump-to-date: tapping a day divider opens the native date picker on a hidden input.
+  function openDatePicker() {
+    const input = dateInputRef.current as (HTMLInputElement & { showPicker?: () => void }) | null;
+    if (!input) return;
+    try {
+      if (typeof input.showPicker === 'function') input.showPicker();
+      else input.click();
+    } catch {
+      input.focus();
+    }
+  }
+
+  if (!user) return null;
 
   const title = conversation ? conversationTitle(conversation, user._id) : 'جارٍ التحميل…';
   const avatarUser = conversation ? conversationAvatarUser(conversation, user._id) : undefined;
-  const presence = !conversation?.isGroup ? presenceLabel(avatarUser) : null;
-  const blockedByMe =
-    !conversation?.isGroup && !!avatarUser && !!user.blockedUsers?.includes(avatarUser._id);
+  const isGroup = !!conversation?.isGroup;
+  const blockedByMe = !isGroup && !!avatarUser && !!user.blockedUsers?.includes(avatarUser._id);
+  const canPin = conversation ? canPinInConversation(conversation, user._id) : false;
+  const muted = conversation ? isMuted(conversation, user._id) : false;
+  const statusOf = (m: Message) => (conversation ? tickStatus(m, conversation, user._id) : 'sent');
 
-  // ========== RENDER ==========
+  const typingUsers = typingIds.map((id) => participantsById.get(id)).filter((u): u is User => !!u);
+  const onlineCount = isGroup ? otherParticipants(conversation!, user._id).filter((p) => p.isOnline).length : 0;
+  const memberCount = conversation?.participants.filter(Boolean).length ?? 0;
+  const presence = !isGroup ? presenceLabel(avatarUser) : null;
+
+  const subtitle: React.ReactNode = typingUsers.length ? (
+    <span className="flex items-center gap-1.5 font-medium text-accent">
+      <TypingDots />
+      {isGroup ? typingLabel(typingUsers.map((u) => u.name)) : 'يكتب الآن…'}
+    </span>
+  ) : isGroup ? (
+    `${memberCount} عضوًا${onlineCount ? ` · ${onlineCount} متصل الآن` : ''}`
+  ) : avatarUser?.isOnline ? (
+    <span className="flex items-center gap-1.5 text-success">
+      <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-success" /> متصل الآن
+    </span>
+  ) : presence ? (
+    presence
+  ) : avatarUser ? (
+    <RoleBadge role={avatarUser.role} />
+  ) : null;
+
+  const menuItems: DropdownItem[] = [
+    { label: isGroup ? 'معلومات المجموعة' : 'معلومات جهة الاتصال', icon: Info, onClick: () => setInfoOpen(true) },
+    { label: 'بحث في المحادثة', icon: Search, onClick: () => setSearchOpen(true) },
+    { label: 'ملخص ذكي', icon: Sparkles, onClick: () => setSummaryOpen(true) },
+    ...(!isGroup && conversation
+      ? [
+          { label: 'مكالمة صوتية', icon: Phone, onClick: () => void handleCall('audio') },
+          { label: 'مكالمة فيديو', icon: Video, onClick: () => void handleCall('video') },
+        ]
+      : []),
+    {
+      label: scheduled.length ? `الرسائل المجدولة (${scheduled.length})` : 'الرسائل المجدولة',
+      icon: CalendarClock,
+      onClick: () => setScheduledOpen(true),
+    },
+    { label: 'تحديد رسائل', icon: CheckSquare, onClick: () => setSelection([]) },
+    { label: 'مظهر المحادثة', icon: Palette, onClick: () => setBackgroundModalOpen(true) },
+    { label: muted ? 'إلغاء كتم الإشعارات' : 'كتم الإشعارات', icon: muted ? Bell : BellOff, onClick: () => void toggleMute() },
+    { label: 'تصدير المحادثة', icon: Download, onClick: () => void exportChat() },
+  ];
+
+  const selectionMode = selection !== null;
+  const canDeleteForEveryone =
+    selectedMessages.length > 0 && selectedMessages.every((m) => m.sender?._id === user._id && !m.deletedForEveryone);
+  const imageGallery = imagePreview
+    ? (imagePreview.message.attachments ?? [])
+        .filter((a) => a.type === 'image')
+        .map((a) => ({ url: assetUrl(a.url) ?? '', name: a.name ?? 'صورة' }))
+    : [];
+  const unreadAtOpen = unreadAtOpenRef.current.count;
+  const showCatchUp = unreadAtOpen >= CATCH_UP_THRESHOLD && !catchUpDismissed && !loading && !!firstUnreadId;
+
+  // ---------------------------------------------------------------------------------------------
+  // Render
+
   return (
-    <div className="flex h-full min-h-0 flex-col bg-surface" style={chatAccentVars(accent)}>
-      {/* Header */}
-      <div className="border-b border-border bg-surface shadow-sm">
-      <div className="mx-auto flex w-full max-w-3xl items-center gap-1.5 px-2.5 py-3 sm:gap-3 sm:px-4">
-        <Link
-          href="/chat"
-          className="shrink-0 rounded-full p-1.5 text-muted-foreground transition-colors hover:bg-surface-2 hover:text-foreground lg:hidden"
+    <ChatThreadActionsContext.Provider value={actions}>
+      <ChatThreadInfoContext.Provider value={threadInfo}>
+        <div
+          className="relative flex h-full min-h-0 flex-col bg-surface"
+          style={chatAccentVars(accent)}
+          onKeyDown={handleRootKeyDown}
+          onDragEnter={(e) => {
+            if (!draggingFiles(e) || blockedByMe) return;
+            e.preventDefault();
+            dragDepth.current += 1;
+            setDragActive(true);
+          }}
+          onDragOver={(e) => {
+            if (draggingFiles(e)) e.preventDefault();
+          }}
+          onDragLeave={(e) => {
+            if (!draggingFiles(e)) return;
+            dragDepth.current = Math.max(0, dragDepth.current - 1);
+            if (dragDepth.current === 0) setDragActive(false);
+          }}
+          onDrop={(e) => {
+            if (!draggingFiles(e)) return;
+            e.preventDefault();
+            dragDepth.current = 0;
+            setDragActive(false);
+            if (!blockedByMe) composerRef.current?.addFiles(Array.from(e.dataTransfer.files));
+          }}
         >
-          <ArrowRight className="h-5 w-5" />
-        </Link>
-        <button onClick={() => setInfoOpen(true)} className="flex min-w-0 flex-1 items-center gap-2 text-start sm:gap-3">
-          <Avatar src={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)} name={title} size="md" online={!conversation?.isGroup && !!avatarUser?.isOnline} />
-          <div className="min-w-0 flex-1">
-            <p dir="auto" className="truncate text-base font-semibold text-foreground">{title}</p>
-            <p className="truncate text-sm text-muted-foreground">
-              {typing ? (
-                <span className="animate-fade-in text-accent">يكتب الآن…</span>
-              ) : conversation?.isGroup ? (
-                `${conversation.participants.length} أعضاء`
-              ) : presence ? (
-                presence
-              ) : avatarUser ? (
-                <RoleBadge role={avatarUser.role} />
-              ) : null}
-            </p>
+          {/* Header (glass) / selection bar */}
+          <div className="relative z-30 border-b border-border/70 bg-surface/80 shadow-[0_1px_0_rgb(var(--border)/0.4)] backdrop-blur-xl">
+            {selectionMode ? (
+              <SelectionBar
+                count={selectedMessages.length}
+                canCopy={selectedMessages.some((m) => !m.deletedForEveryone && (m.text || m.poll))}
+                canForward={selectedMessages.length > 0 && selectedMessages.every((m) => !m.deletedForEveryone)}
+                allStarred={selectedMessages.length > 0 && selectedMessages.every((m) => m.starredBy?.includes(user._id))}
+                onCopy={() => {
+                  copyMessages(selectedMessages);
+                  setSelection(null);
+                }}
+                onStar={() => {
+                  void toggleStar(selectedMessages);
+                  setSelection(null);
+                }}
+                onForward={() => setForwardTargets(selectedMessages)}
+                onDelete={() => selectedMessages.length && setDeleteSelectionOpen(true)}
+                onClose={() => setSelection(null)}
+              />
+            ) : (
+              <ChatHeader
+                title={title}
+                avatarSrc={assetUrl(conversation?.groupIcon ?? avatarUser?.photoUrl)}
+                online={!isGroup && !!avatarUser?.isOnline}
+                subtitle={subtitle}
+                canCall={!isGroup && !!conversation}
+                onOpenInfo={() => setInfoOpen(true)}
+                onCall={(type) => void handleCall(type)}
+                onSearch={() => setSearchOpen((v) => !v)}
+                onSummary={() => setSummaryOpen(true)}
+                menuItems={menuItems}
+              />
+            )}
           </div>
-        </button>
-        {/* Desktop: actions inline. Mobile: one overflow menu, so the name/status never gets crushed. */}
-        <div className="hidden shrink-0 items-center gap-1 sm:flex">
-          {!conversation?.isGroup && (
-            <>
-              <button
-                onClick={() => handleCall('audio')}
-                title="مكالمة صوتية"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
-              >
-                <Phone className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => handleCall('video')}
-                title="مكالمة فيديو"
-                className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
-              >
-                <Video className="h-4 w-4" />
-              </button>
-            </>
-          )}
-          <button
-            onClick={() => setBackgroundModalOpen(true)}
-            title="خلفية المحادثة"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
-          >
-            <ImageIcon className="h-4 w-4" />
-          </button>
-          <button
-            onClick={() => setSearchOpen((v) => !v)}
-            title="بحث في المحادثة"
-            className="flex h-9 w-9 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent"
-          >
-            <Search className="h-4 w-4" />
-          </button>
-        </div>
-        <div className="shrink-0 sm:hidden">
-          <Dropdown
-            menuLabel="إجراءات المحادثة"
-            trigger={
-              <span className="flex h-8 w-8 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-surface-2 hover:text-accent">
-                <MoreVertical className="h-4 w-4" />
-              </span>
-            }
-            items={[
-              { label: 'بحث في المحادثة', icon: Search, onClick: () => setSearchOpen(true) },
-              ...(!conversation?.isGroup
-                ? [
-                    { label: 'مكالمة صوتية', icon: Phone, onClick: () => handleCall('audio') },
-                    { label: 'مكالمة فيديو', icon: Video, onClick: () => handleCall('video') },
-                  ]
-                : []),
-              { label: 'خلفية المحادثة', icon: ImageIcon, onClick: () => setBackgroundModalOpen(true) },
-            ]}
-          />
-        </div>
-      </div>
-      </div>
 
-      {/* Search */}
-      {searchOpen && (
-        <div className="border-b border-border bg-surface">
-        <div className="mx-auto w-full max-w-3xl px-4 py-2.5">
-          <div className="flex items-center gap-2">
-            <Input
-              autoFocus
-              placeholder="ابحث في المحادثة"
-              value={searchQuery}
-              onChange={(e) => setSearchQuery(e.target.value)}
-              className="flex-1"
-            />
-            <button
-              onClick={() => {
-                setSearchOpen(false);
-                setSearchQuery('');
-              }}
-              className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full text-muted-foreground hover:bg-surface-2"
+          <AnimatePresence initial={false}>
+            {searchOpen && (
+              <ChatSearchBar
+                key="search"
+                query={searchQuery}
+                onQueryChange={setSearchQuery}
+                results={searchResults}
+                index={searchIndex}
+                loading={searchLoading}
+                onStep={stepSearch}
+                onPick={(i) => {
+                  setSearchIndex(i);
+                  const hit = searchResults[i];
+                  if (hit) void jumpToMessage(hit._id, hit.createdAt);
+                }}
+                onClose={closeSearch}
+              />
+            )}
+            {!searchOpen && pins.length > 0 && (
+              <PinnedBanner
+                key="pins"
+                pins={pins}
+                index={Math.min(pinIndex, pins.length - 1)}
+                onJump={(pin) => {
+                  void jumpToMessage(pin.message._id, pin.message.createdAt);
+                  setPinIndex((i) => (i + 1) % pins.length);
+                }}
+                onUnpin={canPin ? (pin) => socket?.emit('pinMessage', { messageId: pin.message._id, pin: false }) : undefined}
+              />
+            )}
+          </AnimatePresence>
+
+          {/* Thread */}
+          <div className="relative flex min-h-0 flex-1 flex-col">
+            <div
+              ref={scrollRef}
+              onScroll={handleScroll}
+              className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden bg-surface-2 px-3 pb-3 pt-2 scrollbar-thin [overflow-anchor:none] sm:px-6"
+              style={chatBackgroundStyle(background)}
             >
-              <X className="h-4 w-4" />
-            </button>
-          </div>
-          {searchQuery.trim() && (
-            <div className="mt-2 max-h-56 space-y-1 overflow-y-auto scrollbar-thin">
-              {searchResults.length === 0 ? (
-                <p className="py-3 text-center text-xs text-muted-foreground">لا نتائج</p>
-              ) : (
-                searchResults.map((m) => (
-                  <button
-                    key={m._id}
-                    onClick={() => {
-                      setSearchOpen(false);
-                      jumpToReply(m._id);
-                    }}
-                    className="block w-full truncate rounded-lg px-2.5 py-2 text-start text-sm hover:bg-surface-2"
-                  >
-                    <span className="font-medium text-foreground">{m.sender?.name ?? 'مستخدم محذوف'}: </span>
-                    <span className="text-muted-foreground">{m.text}</span>
-                  </button>
-                ))
-              )}
+              <div ref={contentRef} className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
+                {loadError && messages.length === 0 ? (
+                  <div className="flex flex-1 items-center justify-center">
+                    <LoadError title="تعذّر تحميل الرسائل" onRetry={() => setReloadKey((k) => k + 1)} />
+                  </div>
+                ) : loading ? (
+                  <div className="flex flex-1 items-center justify-center">
+                    <Spinner className="h-6 w-6" />
+                  </div>
+                ) : messages.length === 0 ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
+                    <div className="flex h-16 w-16 items-center justify-center rounded-full bg-surface shadow-elev-2 ring-1 ring-border/60">
+                      <MessageCircle className="h-7 w-7 text-accent" />
+                    </div>
+                    <div>
+                      <p className="text-sm font-semibold text-foreground">لا توجد رسائل بعد</p>
+                      <p className="mt-1 text-xs text-muted-foreground">قل مرحبًا وابدأ المحادثة 👋 — أو اكتب / لاكتشاف الأوامر</p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex-1">
+                    <div className="flex h-10 items-center justify-center">
+                      {loadingOlder ? (
+                        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+                      ) : !hasMore ? (
+                        <span className="rounded-full bg-surface/70 px-3 py-1 text-[11px] text-muted-foreground backdrop-blur-sm">
+                          بداية المحادثة
+                        </span>
+                      ) : null}
+                    </div>
+                    {chatRows.map((row) => {
+                        if (row.kind === 'day') {
+                          return <DayDivider key={row.id} label={row.label} onPick={() => openDatePicker()} />;
+                        }
+                        if (row.kind === 'unread') {
+                          return (
+                            <div key={row.id} ref={unreadDividerRef}>
+                              <UnreadDivider />
+                            </div>
+                          );
+                        }
+                        const message = row.message;
+                        const isOwn = message.sender?._id === user._id;
+                        const hasReactions = !!message.reactions?.length;
+                        return (
+                          <div
+                            key={row.id}
+                            ref={(el) => {
+                              messageRefs.current[message._id] = el;
+                            }}
+                            className={cn(row.flags.lastInGroup ? 'mb-3' : 'mb-1', hasReactions && 'mb-3')}
+                          >
+                            <MessageBubble
+                              message={message}
+                              isOwn={isOwn}
+                              isGroup={isGroup}
+                              showAvatar={row.flags.lastInGroup}
+                              showName={row.flags.showName}
+                              firstInGroup={row.flags.firstInGroup}
+                              lastInGroup={row.flags.lastInGroup}
+                              deletedCount={row.deletedCount}
+                              status={isOwn ? statusOf(message) : 'sent'}
+                              currentUserId={user._id}
+                              selectionMode={selectionMode}
+                              selected={selectedSet.has(message._id)}
+                              highlightKey={highlight?.id === message._id ? highlight.key : undefined}
+                              searchTerm={activeSearchTerm}
+                              translation={translations[message._id]}
+                              readerIds={readHeads.get(message._id)}
+                              pinned={pinnedIds.has(message._id)}
+                            />
+                          </div>
+                        );
+                      })}
+                    <AnimatePresence>
+                      {typingUsers.length > 0 && (
+                        <TypingBubble
+                          key="typing"
+                          users={typingUsers}
+                          label={typingLabel(typingUsers.map((u) => u.name))}
+                        />
+                      )}
+                    </AnimatePresence>
+                  </div>
+                )}
+                <div ref={bottomRef} className="h-px" />
+              </div>
             </div>
+
+            <AnimatePresence>
+              {showCatchUp && (
+                <CatchUpChip
+                  key="catch-up"
+                  count={unreadAtOpen}
+                  onSummarize={() => {
+                    setCatchUpDismissed(true);
+                    setSummaryOpen(true);
+                  }}
+                  onDismiss={() => setCatchUpDismissed(true)}
+                />
+              )}
+            </AnimatePresence>
+
+            <JumpButtons
+              showBottom={showJump || (!atBottom && newCount > 0)}
+              newCount={newCount}
+              mentionCount={mentionIds.length}
+              onBottom={() => scrollToBottom('smooth')}
+              onMention={() => {
+                const [first, ...rest] = mentionIds;
+                setMentionIds(rest);
+                if (first) void jumpToMessage(first);
+              }}
+            />
+
+            <AnimatePresence>{dragActive && <DropOverlay key="drop" />}</AnimatePresence>
+          </div>
+
+          {/* Composer */}
+          {blockedByMe ? (
+            <div className="border-t border-border/70 bg-surface">
+              <div className="mx-auto flex w-full max-w-3xl items-center justify-center gap-2 px-4 py-3.5 pb-[calc(0.875rem+env(safe-area-inset-bottom))] text-center text-sm text-muted-foreground">
+                <ShieldOff className="h-4 w-4 shrink-0" />
+                لقد قمت بحظر هذا المستخدم.
+                <button type="button" onClick={() => void handleUnblock()} className="font-medium text-accent hover:underline">
+                  إلغاء الحظر
+                </button>
+              </div>
+            </div>
+          ) : (
+            <MessageInput
+              ref={composerRef}
+              conversationId={conversationId}
+              onSend={handleSend}
+              onTyping={handleTyping}
+              onStopTyping={stopTypingNow}
+              replyingTo={replyingTo}
+              onCancelReply={() => setReplyingTo(null)}
+              editingMessage={editingMessage}
+              onCancelEdit={() => setEditingMessage(null)}
+              onSubmitEdit={handleSubmitEdit}
+              onEditLast={editLastMessage}
+              onCreatePoll={() => setPollModalOpen(true)}
+              onOpenSummary={() => setSummaryOpen(true)}
+              scheduledCount={scheduled.length}
+              onOpenScheduled={() => setScheduledOpen(true)}
+            />
+          )}
+
+          <input
+            ref={dateInputRef}
+            type="date"
+            aria-hidden
+            tabIndex={-1}
+            className="pointer-events-none absolute bottom-0 h-px w-px opacity-0"
+            max={new Date().toISOString().slice(0, 10)}
+            onChange={(e) => {
+              void jumpToDate(e.target.value);
+              e.target.value = '';
+            }}
+          />
+
+          <ChatEffects />
+
+          <MessageActionsOverlay
+            target={overlay}
+            onClose={() => setOverlay(null)}
+            onAction={handleOverlayAction}
+            onReact={handleReact}
+            currentUserId={user._id}
+            isGroup={isGroup}
+            canPin={canPin}
+            pinned={!!overlay && pinnedIds.has(overlay.message._id)}
+            status={overlay?.isOwn ? statusOf(overlay.message) : 'sent'}
+            accentStyle={chatAccentVars(accent)}
+          />
+
+          {/* Modals */}
+          <ForwardModal
+            open={!!forwardTargets}
+            count={forwardTargets?.length ?? 1}
+            onClose={() => setForwardTargets(null)}
+            onForward={handleForwardConfirm}
+          />
+          <ChatBackgroundModal
+            open={backgroundModalOpen}
+            onClose={() => setBackgroundModalOpen(false)}
+            background={background}
+            onChange={setBackground}
+            accent={accent}
+            onAccentChange={setAccent}
+          />
+          {conversation && (
+            <GroupInfoPanel open={infoOpen} onClose={() => setInfoOpen(false)} conversation={conversation} onChanged={refresh} />
+          )}
+          <CreatePollModal open={pollModalOpen} onClose={() => setPollModalOpen(false)} onCreate={handleCreatePoll} />
+          <ScheduledMessagesModal
+            open={scheduledOpen}
+            onClose={() => setScheduledOpen(false)}
+            items={scheduled}
+            loading={scheduledLoading}
+            onCancel={async (item) => {
+              try {
+                await chatApi.cancelScheduled(item._id);
+                setScheduled((prev) => prev.filter((s) => s._id !== item._id));
+              } catch (err) {
+                showToast(err instanceof ApiError ? err.message : 'تعذّر حذف الرسالة المجدولة.', 'error');
+              }
+            }}
+            onSendNow={async (item) => {
+              try {
+                await chatApi.sendScheduledNow(item._id);
+                setScheduled((prev) => prev.filter((s) => s._id !== item._id));
+              } catch (err) {
+                showToast(err instanceof ApiError ? err.message : 'تعذّر الإرسال.', 'error');
+              }
+            }}
+          />
+          <AiSummaryModal
+            open={summaryOpen}
+            onClose={() => setSummaryOpen(false)}
+            conversationId={conversationId}
+            firstUnreadId={unreadAtOpen > 0 ? firstUnreadId : null}
+            unreadCount={unreadAtOpen}
+          />
+          <MessageInfoModal
+            message={messageInfoTarget}
+            onClose={() => setMessageInfoTarget(null)}
+            participantsById={participantsById}
+            isGroup={isGroup}
+            currentUserId={user._id}
+            status={messageInfoTarget ? statusOf(messageInfoTarget) : 'sent'}
+          />
+          <ReactionsModal
+            message={reactionsTarget}
+            onClose={() => setReactionsTarget(null)}
+            currentUserId={user._id}
+            participantsById={participantsById}
+            onRemoveMine={handleReact}
+          />
+          <PollVotesModal message={pollVotesTarget} onClose={() => setPollVotesTarget(null)} participantsById={participantsById} />
+
+          <Modal
+            open={deleteSelectionOpen}
+            onClose={() => setDeleteSelectionOpen(false)}
+            title={selectedMessages.length === 1 ? 'حذف الرسالة؟' : `حذف ${selectedMessages.length} رسائل؟`}
+            className="max-w-sm"
+          >
+            <div className="flex flex-col gap-2">
+              {canDeleteForEveryone && (
+                <Button variant="danger" fullWidth onClick={() => deleteSelection(true)}>
+                  حذف لدى الجميع
+                </Button>
+              )}
+              <Button variant={canDeleteForEveryone ? 'outline' : 'danger'} fullWidth onClick={() => deleteSelection(false)}>
+                حذف لديّ فقط
+              </Button>
+              <Button variant="ghost" fullWidth onClick={() => setDeleteSelectionOpen(false)}>
+                إلغاء
+              </Button>
+            </div>
+          </Modal>
+
+          {imagePreview && imageGallery.length > 0 && (
+            <ImagePreviewModal
+              src={imageGallery[Math.min(imagePreview.index, imageGallery.length - 1)].url}
+              alt={imageGallery[0].name}
+              gallery={imageGallery}
+              initialIndex={Math.min(imagePreview.index, imageGallery.length - 1)}
+              onClose={() => setImagePreview(null)}
+              message={imagePreview.message}
+              isOwn={imagePreview.message.sender?._id === user._id}
+              onReply={(m) => setReplyingTo(m)}
+              onReact={handleReact}
+              onForward={(m) => setForwardTargets([m])}
+              onToggleStar={(m) => void toggleStar([m])}
+              onEdit={(m) => setEditingMessage(m)}
+              onDelete={handleDelete}
+              currentUserId={user._id}
+            />
           )}
         </div>
-        </div>
-      )}
-
-      {/* Messages */}
-      <div className="relative flex min-h-0 flex-1 flex-col">
-      <div
-        ref={scrollRef}
-        onScroll={handleScroll}
-        className="min-h-0 flex-1 overflow-y-auto bg-surface-2 px-4 py-5 scrollbar-thin sm:px-6"
-        style={chatBackgroundStyle(background)}
-      >
-        {/* Cap the thread to a comfortable reading width and centre it, so bubbles don't stretch
-            edge-to-edge (and own-messages don't hug the far side) on a wide conversation pane. */}
-        <div className="mx-auto flex min-h-full w-full max-w-3xl flex-col">
-        {loadError && messages.length === 0 ? (
-          <div className="flex flex-1 items-center justify-center">
-            <LoadError title="تعذّر تحميل الرسائل" onRetry={() => setReloadKey((k) => k + 1)} />
-          </div>
-        ) : loading || !conversation ? (
-          <div className="flex flex-1 items-center justify-center">
-            <Spinner className="h-6 w-6" />
-          </div>
-        ) : messages.length === 0 ? (
-          <div className="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-full bg-surface-2/70">
-              <MessageCircle className="h-6 w-6 text-muted-foreground" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">لا توجد رسائل بعد</p>
-              <p className="mt-1 text-xs text-muted-foreground">قل مرحبًا وابدأ المحادثة 👋</p>
-            </div>
-          </div>
-        ) : (
-          <div className="flex-1">
-          {chatRows.map((row) => {
-            if (row.kind === 'day') return <DayDivider key={row.id} label={row.label} />;
-            if (row.kind === 'unread') return <UnreadDivider key={row.id} />;
-            const message = row.message;
-            const isOwn = message.sender?._id === user._id;
-            return (
-              <div
-                key={message._id}
-                ref={(el) => { messageRefs.current[message._id] = el; }}
-                className={cn('transition-all', row.flags.lastInGroup ? 'mb-3' : 'mb-0.5')}
-              >
-                <MessageBubble
-                  message={message}
-                  isOwn={isOwn}
-                  showAvatar={row.flags.lastInGroup}
-                  showName={row.flags.showName}
-                  firstInGroup={row.flags.firstInGroup}
-                  lastInGroup={row.flags.lastInGroup}
-                  conversation={conversation}
-                  currentUserId={user._id}
-                  onReply={setReplyingTo}
-                  onEdit={setEditingMessage}
-                  onDelete={handleDelete}
-                  onReact={handleReact}
-                  onForward={setForwardTarget}
-                  onToggleStar={handleToggleStar}
-                  onJumpToReply={jumpToReply}
-                  onRetry={handleRetry}
-                  onImageClick={(url, name, msg) => setImagePreview({ url, name, message: msg, isOwn })}
-                />
-              </div>
-            );
-          })}
-          </div>
-        )}
-        <div ref={bottomRef} />
-        </div>
-      </div>
-
-        {newCount > 0 && (
-          <button
-            onClick={() => scrollToBottom('smooth')}
-            className="absolute bottom-4 left-1/2 z-20 flex -translate-x-1/2 items-center gap-1.5 rounded-full bg-accent px-4 py-2 text-xs font-semibold text-white shadow-elev-2 transition-transform hover:scale-105 active:scale-95"
-          >
-            <ArrowDown className="h-4 w-4" />
-            {newCount > 99 ? '+99' : newCount} رسائل جديدة
-          </button>
-        )}
-      </div>
-
-      {/* Input */}
-      {blockedByMe ? (
-        <div className="border-t border-border bg-surface">
-          <div className="mx-auto flex w-full max-w-3xl items-center justify-center gap-2 px-4 py-3.5 text-center text-sm text-muted-foreground">
-            <ShieldOff className="h-4 w-4 shrink-0" />
-            لقد قمت بحظر هذا المستخدم.
-            <button onClick={handleUnblock} className="font-medium text-accent hover:underline">
-              إلغاء الحظر
-            </button>
-          </div>
-        </div>
-      ) : (
-        <MessageInput
-          onSend={handleSend}
-          onTyping={handleTyping}
-          onStopTyping={handleStopTyping}
-          replyingTo={replyingTo}
-          onCancelReply={() => setReplyingTo(null)}
-          editingMessage={editingMessage}
-          onCancelEdit={() => setEditingMessage(null)}
-          onSubmitEdit={handleSubmitEdit}
-        />
-      )}
-
-      {/* Modals */}
-      <ForwardModal open={!!forwardTarget} onClose={() => setForwardTarget(null)} onForward={handleForwardConfirm} />
-      <ChatBackgroundModal
-        open={backgroundModalOpen}
-        onClose={() => setBackgroundModalOpen(false)}
-        background={background}
-        onChange={setBackground}
-        accent={accent}
-        onAccentChange={setAccent}
-      />
-      {conversation && (
-        <GroupInfoPanel
-          open={infoOpen}
-          onClose={() => setInfoOpen(false)}
-          conversation={conversation}
-          onChanged={refresh}
-        />
-      )}
-
-      {/* Image Preview with Actions */}
-      {imagePreview && (
-        <ImagePreviewModal
-          src={imagePreview.url}
-          alt={imagePreview.name}
-          onClose={() => setImagePreview(null)}
-          message={imagePreview.message}
-          isOwn={imagePreview.isOwn}
-          onReply={setReplyingTo}
-          onReact={handleReact}
-          onForward={setForwardTarget}
-          onToggleStar={handleToggleStar}
-          onEdit={setEditingMessage}
-          onDelete={handleDelete}
-          currentUserId={user._id}
-        />
-      )}
-    </div>
+      </ChatThreadInfoContext.Provider>
+    </ChatThreadActionsContext.Provider>
   );
 }

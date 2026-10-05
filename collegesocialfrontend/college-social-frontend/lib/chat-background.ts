@@ -13,7 +13,25 @@ export interface ChatBackgroundPreset {
   // CSS `background` shorthand -- these are drawn with gradients/patterns so the feature
   // doesn't depend on shipping actual image assets.
   css: string;
+  /** background-size, when the pattern tiles. */
+  size?: string;
+  /** CSS animation (keyframes live in app/globals.css). */
+  animation?: string;
 }
+
+// A light study-doodle tile (book, pencil, chat bubble, star, atom, sparkles) in neutral grey so it
+// reads on both themes over the surface colour -- WhatsApp's wallpaper idea, campus edition.
+const DOODLE_SVG =
+  "<svg xmlns='http://www.w3.org/2000/svg' width='160' height='160' viewBox='0 0 160 160'>" +
+  "<g fill='none' stroke='#8b8fa3' stroke-opacity='0.24' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'>" +
+  "<path d='M14 28c7-4 14-4 20 0v22c-6-4-13-4-20 0z M34 28c6-4 13-4 20 0v22c-7-4-14-4-20 0z'/>" +
+  "<path d='M98 16l14 14-26 26-17 3 3-17z M93 21l14 14'/>" +
+  "<path d='M62 82h26a7 7 0 0 1 7 7v12a7 7 0 0 1-7 7H76l-8 7v-7h-6a7 7 0 0 1-7-7V89a7 7 0 0 1 7-7z'/>" +
+  "<path d='M128 96l4 9 10 1-7 7 2 10-9-5-9 5 2-10-7-7 10-1z'/>" +
+  "<circle cx='34' cy='124' r='4'/><ellipse cx='34' cy='124' rx='18' ry='7'/><ellipse cx='34' cy='124' rx='18' ry='7' transform='rotate(60 34 124)'/>" +
+  "<path d='M120 140v10 M115 145h10 M140 60v6 M137 63h6'/>" +
+  '</g></svg>';
+const DOODLE_URL = `url("data:image/svg+xml,${encodeURIComponent(DOODLE_SVG)}")`;
 
 export const CHAT_BACKGROUND_PRESETS: ChatBackgroundPreset[] = [
   {
@@ -45,6 +63,31 @@ export const CHAT_BACKGROUND_PRESETS: ChatBackgroundPreset[] = [
     id: 'graph',
     label: 'ورق مربعات',
     css: 'linear-gradient(#e7edf5 1px, transparent 1px), linear-gradient(90deg, #e7edf5 1px, transparent 1px), #fbfcfe',
+    size: '24px 24px',
+  },
+  {
+    // Follows the chat's accent colour (the per-chat --accent override cascades into it).
+    id: 'mesh',
+    label: 'تدرّج حيوي',
+    css:
+      'radial-gradient(60% 50% at 0% 0%, rgb(var(--accent) / 0.18), transparent 70%), ' +
+      'radial-gradient(50% 45% at 100% 15%, rgb(var(--accent-2) / 0.14), transparent 70%), ' +
+      'radial-gradient(60% 55% at 85% 100%, rgb(var(--accent) / 0.14), transparent 75%), rgb(var(--surface-2))',
+  },
+  {
+    id: 'aurora',
+    label: 'شفق متحرك',
+    css:
+      'linear-gradient(120deg, rgb(var(--accent) / 0.22), rgb(var(--accent-2) / 0.16), rgb(56 189 248 / 0.16), ' +
+      'rgb(244 114 182 / 0.14), rgb(var(--accent) / 0.22)), rgb(var(--surface-2))',
+    size: '400% 400%',
+    animation: 'chat-aurora-drift 26s ease-in-out infinite',
+  },
+  {
+    id: 'doodle',
+    label: 'رسومات دراسية',
+    css: `${DOODLE_URL}, rgb(var(--surface-2))`,
+    size: '160px 160px',
   },
 ];
 
@@ -132,7 +175,7 @@ export function chatBackgroundStyle(bg: ChatBackground | null): React.CSSPropert
   if (!bg) return {};
   if (bg.type === 'preset') {
     const preset = CHAT_BACKGROUND_PRESETS.find((p) => p.id === bg.value);
-    return preset ? { background: preset.css, backgroundSize: bg.value === 'graph' ? '24px 24px' : undefined } : {};
+    return preset ? { background: preset.css, backgroundSize: preset.size, animation: preset.animation } : {};
   }
   return { backgroundImage: `url(${bg.value})`, backgroundSize: 'cover', backgroundPosition: 'center' };
 }

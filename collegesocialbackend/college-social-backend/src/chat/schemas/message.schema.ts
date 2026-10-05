@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
+import { MESSAGE_EFFECTS, type MessageEffect } from '../chat.constants';
 
 export type MessageDocument = HydratedDocument<Message>;
 
@@ -47,6 +48,54 @@ export class Reaction {
 }
 
 export const ReactionSchema = SchemaFactory.createForClass(Reaction);
+
+@Schema({ _id: false })
+export class PollOption {
+  // Short, stable id ("o1", "o2", ...) that clients vote by -- an array index would silently
+  // re-point votes if the options were ever reordered.
+  @Prop({ required: true })
+  id: string;
+
+  @Prop({ required: true, trim: true })
+  text: string;
+
+  @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
+  voters: Types.ObjectId[];
+}
+
+export const PollOptionSchema = SchemaFactory.createForClass(PollOption);
+
+@Schema({ _id: false })
+export class Poll {
+  @Prop({ required: true, trim: true })
+  question: string;
+
+  @Prop({ type: [PollOptionSchema], default: [] })
+  options: PollOption[];
+
+  // true = a voter may tick several options; false = single choice (a new pick replaces the old).
+  @Prop({ default: false })
+  multiple: boolean;
+
+  // Set by the poll's creator: voting is frozen, results stay visible.
+  @Prop({ default: false })
+  closed: boolean;
+}
+
+export const PollSchema = SchemaFactory.createForClass(Poll);
+
+// When one participant received / read one message -- the timestamped twin of the plain
+// `deliveredTo` / `readBy` id arrays, which stay the source of truth for tick state.
+@Schema({ _id: false })
+export class Receipt {
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  user: Types.ObjectId;
+
+  @Prop({ type: Date, required: true })
+  at: Date;
+}
+
+export const ReceiptSchema = SchemaFactory.createForClass(Receipt);
 
 @Schema({ timestamps: true })
 export class Message {
@@ -103,6 +152,25 @@ export class Message {
   // participant of this conversation -- see common/utils/tag-parser.util.ts.
   @Prop({ type: [Types.ObjectId], ref: 'User', default: [] })
   mentions: Types.ObjectId[];
+
+  // A poll message: `text` is empty and the question/options live here. null for every
+  // ordinary message. Votes are written with an atomic pipeline update (ChatService.votePoll),
+  // never a read-modify-save, so concurrent voters can't overwrite each other.
+  @Prop({ type: PollSchema, default: null })
+  poll: Poll | null;
+
+  // Optional "send with effect" celebration the client plays once when the message arrives.
+  @Prop({ type: String, enum: [...MESSAGE_EFFECTS], default: null })
+  effect: MessageEffect | null;
+
+  // Per-recipient timestamps for the sender's "message info" view. `select: false` keeps them out
+  // of every normal payload (a large group would otherwise ship N receipts with each message) --
+  // only GET /chat/messages/:id/info asks for them with `+readReceipts +deliveryReceipts`.
+  @Prop({ type: [ReceiptSchema], default: [], select: false })
+  readReceipts: Receipt[];
+
+  @Prop({ type: [ReceiptSchema], default: [], select: false })
+  deliveryReceipts: Receipt[];
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);

@@ -1,7 +1,6 @@
-# Type-checks both packages on every push / PR to main. This is the cheap, high-signal gate --
-# it catches exactly the class of breakage that "tsc --noEmit" would locally, without needing a
-# full `next build` (blocked in CI-less-network setups by next/font's Google Fonts fetch) or a
-# running MongoDB.
+# Validates frontend/backend types, builds the backend, and runs database-free backend tests on
+# every push / PR to main. The frontend lint command remains informational while existing lint debt
+# is cleaned up; do not treat its current continue-on-error as a passing lint gate.
 #
 # Playwright E2E is a separate, heavier job -- see the (commented) `e2e` job at the bottom; it
 # needs `@playwright/test` added as a devDependency in the frontend first.
@@ -29,15 +28,15 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: collegesocialfrontend/college-social-frontend/package-lock.json
       - run: npm ci
       - name: tsc --noEmit
         run: npx tsc --noEmit
-      - name: next lint
+      - name: next lint (informational while existing lint debt is addressed)
         run: npx next lint --max-warnings=0
-        continue-on-error: true # no eslint config in the repo yet -- informational until one lands
+        continue-on-error: true
 
   typecheck-backend:
     runs-on: ubuntu-latest
@@ -49,7 +48,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
           cache-dependency-path: collegesocialbackend/college-social-backend/package-lock.json
       - run: npm ci
@@ -57,6 +56,8 @@ jobs:
         run: npx tsc --noEmit -p tsconfig.json
       - name: nest build
         run: npm run build
+      - name: backend tests
+        run: npm test
 
   # --- E2E (opt-in) -----------------------------------------------------------
   # Uncomment after: cd collegesocialfrontend/college-social-frontend

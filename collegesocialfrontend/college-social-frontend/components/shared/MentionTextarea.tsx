@@ -90,9 +90,16 @@ export function MentionTextarea({
   onChange,
   onKeyDown,
   className,
+  inputRef,
+  suggestionsPlacement = 'bottom',
   ...rest
-}: TextareaHTMLAttributes<HTMLTextAreaElement>) {
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+}: TextareaHTMLAttributes<HTMLTextAreaElement> & {
+  /** Optional handle on the underlying <textarea> (autosize, selection, focus). */
+  inputRef?: React.MutableRefObject<HTMLTextAreaElement | null>;
+  /** Where the @-suggestion list opens -- 'top' for inputs docked at the bottom of the screen. */
+  suggestionsPlacement?: 'top' | 'bottom';
+}) {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState('');
   const [triggerStart, setTriggerStart] = useState<number | null>(null);
@@ -207,7 +214,10 @@ export function MentionTextarea({
     <div className="relative min-w-0 flex-1">
       <textarea
         {...rest}
-        ref={textareaRef}
+        ref={(el) => {
+          textareaRef.current = el;
+          if (inputRef) inputRef.current = el;
+        }}
         value={display}
         onChange={handleTextareaChange}
         onKeyDown={handleKeyDown}
@@ -219,7 +229,12 @@ export function MentionTextarea({
         className={cn(BASE_TEXTAREA_CLASS, className)}
       />
       {open && suggestions.length > 0 && (
-        <div className="absolute start-0 top-full z-30 mt-1 max-h-56 w-64 overflow-y-auto rounded-xl2 border border-border bg-surface py-1 shadow-card scrollbar-thin">
+        <div
+          className={cn(
+            'absolute start-0 z-30 max-h-56 w-64 overflow-y-auto rounded-xl2 border border-border bg-surface py-1 shadow-card scrollbar-thin',
+            suggestionsPlacement === 'top' ? 'bottom-full mb-1' : 'top-full mt-1',
+          )}
+        >
           {suggestions.map((user, i) => (
             <button
               key={user._id}

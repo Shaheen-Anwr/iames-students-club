@@ -1,4 +1,4 @@
-import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import type { Response } from 'express';
@@ -19,6 +19,14 @@ import { extractMentionIds } from '../common/utils/tag-parser.util';
 import { UsersService } from '../users/users.service';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { StorageService } from '../upload/storage.service';
+import {
+  escapeRegex,
+  FORWARD_LIMITS,
+  isMessageEffect,
+  MAX_PINNED_MESSAGES,
+  messagePreviewText,
+  normalizePollInput,
+} from './chat.constants';
 
 export interface PaginatedConversations {
   data: unknown[];
@@ -34,18 +42,59 @@ export interface ChatStats {
   dailyMessages: DailyCount[];
 }
 
+// Optional extras for a send, beyond text/attachments/reply (see CreateMessageDto).
+export interface SaveMessageExtras {
+  poll?: unknown;
+  effect?: string | null;
+  silent?: boolean;
+}
+
+export interface PinnedMessageView {
+  message: MessageDocument;
+  pinnedBy: string;
+  pinnedAt: Date;
+}
+
+// The sender's "message info" breakdown: who read it (and when), who only received it, who hasn't
+// yet. `at` is null for receipts recorded before per-recipient timestamps existed.
+export interface MessageInfo {
+  messageId: string;
+  read: { user: string; at: Date | null }[];
+  delivered: { user: string; at: Date | null }[];
+  pending: string[];
+}
+
+// One message flattened for an AI prompt (catch-up summary, smart replies).
+export interface AiTranscriptMessage {
+  id: string;
+  senderId: string | null;
+  senderName: string;
+  text: string;
+  poll: { question: string; options: string[] } | null;
+  attachmentTypes: string[];
+  createdAt: Date;
+}
+
 const MESSAGE_POPULATE = [
   { path: 'sender', select: 'name role photoUrl collegeId' },
   { path: 'reactions.user', select: 'name' },
   {
     path: 'replyTo',
-    select: 'text sender attachments deletedForEveryone',
+    select: 'text sender attachments deletedForEveryone poll',
     populate: { path: 'sender', select: 'name' },
   },
 ];
 
+const PARTICIPANT_FIELDS = 'name role photoUrl collegeId isOnline lastSeenAt';
+
+// Notifications for one new message are written this many recipients at a time -- bounded
+// concurrency, so a 300-member public group doesn't fire 300 simultaneous DB writes + pushes.
+const NOTIFY_BATCH = 15;
+
 @Injectable()
 export class ChatService {
+  private readonly logger = new Logger(ChatService.name);
+
   constructor(
     @InjectModel(Conversation.name) private conversationModel: Model<ConversationDocument>,
     @InjectModel(Message.name) private messageModel: Model<MessageDocument>,
@@ -87,7 +136,7 @@ export class ChatService {
           participants: { $all: participantIds.map((id) => new Types.ObjectId(id)), $size: 2 },
         })
         .sort({ lastMessageAt: -1, createdAt: -1 })
-        .populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt')
+        .populate('participants', PARTICIPANT_FIELDS)
         .exec();
       if (existing) return existing;
     }
@@ -103,7 +152,7 @@ export class ChatService {
     await conversation.save();
     // The frontend expects populated User objects in `participants`, same as
     // listConversationsForUser() -- without this, callers get raw ObjectIds instead.
-    await conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
+    await conversation.populate('participants', PARTICIPANT_FIELDS);
 
     // A public group belongs in every user's chat list -- tell the online ones straight away
     // instead of waiting for their next list refresh / socket reconnect.
@@ -124,7 +173,8 @@ export class ChatService {
         ],
       })
       .sort({ lastMessageAt: -1, updatedAt: -1 })
-      .populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt')
+      .populate('participants', PARTICIPANT_FIELDS)
+      .populate('lastMessageSender', 'name')
       .exec();
 
     // Only surface unread badges for conversations the user has actually joined -- otherwise
@@ -180,6 +230,7 @@ export class ChatService {
   }
 
   async assertParticipant(conversationId: string, userId: string): Promise<ConversationDocument> {
+    if (!Types.ObjectId.isValid(conversationId)) throw new NotFoundException('المحادثة غير موجودة');
     const conversation = await this.conversationModel.findById(conversationId).exec();
     if (!conversation) throw new NotFoundException('المحادثة غير موجودة');
     const isParticipant = conversation.participants.some((p) => p.toString() === userId);
@@ -195,6 +246,7 @@ export class ChatService {
     userId: string,
     { autoJoin = true }: { autoJoin?: boolean } = {},
   ): Promise<ConversationDocument> {
+    if (!Types.ObjectId.isValid(conversationId)) throw new NotFoundException('المحادثة غير موجودة');
     const conversation = await this.conversationModel.findById(conversationId).exec();
     if (!conversation) throw new NotFoundException('المحادثة غير موجودة');
     if (conversation.participants.some((p) => p.toString() === userId)) return conversation;
@@ -228,21 +280,59 @@ export class ChatService {
     await this.messageModel.deleteMany({ conversation: conversation._id, createdAt: { $lt: cutoff } }).exec();
   }
 
-  async getMessages(conversationId: string, userId: string, page = 1, limit = 30): Promise<MessageDocument[]> {
+  private clearedAtFor(conversation: ConversationDocument, userId: string): Date | null {
+    return conversation.clearedBy.find((c) => c.user.toString() === userId)?.at ?? null;
+  }
+
+  /**
+   * Newest-first page of a conversation's messages for this user.
+   *
+   * Cursoring: `beforeId` returns the page strictly older than that message (stable while new
+   * messages keep arriving, unlike `page`'s skip). `since` returns everything from that instant
+   * up to the cursor -- used to jump to an old message (search hit, pin, date) in one request.
+   */
+  async getMessages(
+    conversationId: string,
+    userId: string,
+    page = 1,
+    limit = 30,
+    cursor: { beforeId?: string; since?: Date } = {},
+  ): Promise<MessageDocument[]> {
     const conversation = await this.assertCanAccessConversation(conversationId, userId);
     await this.purgeExpiredMessages(conversation);
 
-    const clearedEntry = conversation.clearedBy.find((c) => c.user.toString() === userId);
     const filter: Record<string, unknown> = {
-      conversation: new Types.ObjectId(conversationId),
+      conversation: conversation._id,
       deletedFor: { $ne: new Types.ObjectId(userId) },
     };
-    if (clearedEntry) filter.createdAt = { $gt: clearedEntry.at };
+    const createdAt: Record<string, Date> = {};
+    const clearedAt = this.clearedAtFor(conversation, userId);
+    if (clearedAt) createdAt.$gt = clearedAt;
+    if (cursor.since) createdAt.$gte = cursor.since;
+    if (Object.keys(createdAt).length) filter.createdAt = createdAt;
+
+    let skip = (page - 1) * limit;
+    if (cursor.beforeId && Types.ObjectId.isValid(cursor.beforeId)) {
+      const pivot = await this.messageModel
+        .findOne({ _id: cursor.beforeId, conversation: conversation._id })
+        .select('createdAt')
+        .lean<{ _id: Types.ObjectId; createdAt: Date } | null>()
+        .exec();
+      if (pivot) {
+        // Strictly older than the pivot -- the _id tiebreak keeps two messages stamped in the
+        // same millisecond from being skipped or repeated across pages.
+        filter.$or = [
+          { createdAt: { $lt: pivot.createdAt } },
+          { createdAt: pivot.createdAt, _id: { $lt: pivot._id } },
+        ];
+        skip = 0;
+      }
+    }
 
     return this.messageModel
       .find(filter)
-      .sort({ createdAt: -1 })
-      .skip((page - 1) * limit)
+      .sort({ createdAt: -1, _id: -1 })
+      .skip(skip)
       .limit(limit)
       .populate(MESSAGE_POPULATE)
       .exec();
@@ -254,9 +344,14 @@ export class ChatService {
     text: string,
     attachments: AttachmentDto[] | undefined,
     replyTo: string | undefined,
+    extras: SaveMessageExtras = {},
   ): Promise<MessageDocument> {
     const conversation = await this.assertCanAccessConversation(conversationId, senderId);
-    if (!text?.trim() && !attachments?.length) {
+    const pollInput = extras.poll ? normalizePollInput(extras.poll) : null;
+    if (extras.poll && !pollInput) {
+      throw new BadRequestException('الاستطلاع يحتاج إلى سؤال وخيارين مختلفين على الأقل');
+    }
+    if (!text?.trim() && !attachments?.length && !pollInput) {
       throw new BadRequestException('لا يمكن إرسال رسالة فارغة');
     }
 
@@ -265,6 +360,14 @@ export class ChatService {
       if (other && (await this.usersService.areBlocked(senderId, other.toString()))) {
         throw new ForbiddenException('لا يمكنك إرسال رسالة إلى هذا المستخدم');
       }
+    }
+
+    // A reply may only quote a message from this same conversation -- the populated `replyTo`
+    // preview would otherwise leak another chat's text to everyone in this one.
+    let replyToId: Types.ObjectId | null = null;
+    if (replyTo && Types.ObjectId.isValid(replyTo)) {
+      const quoted = await this.messageModel.exists({ _id: replyTo, conversation: conversation._id }).exec();
+      if (quoted) replyToId = new Types.ObjectId(replyTo);
     }
 
     // A mention only counts if that user is actually a participant of this conversation --
@@ -276,58 +379,95 @@ export class ChatService {
     const validMentionIds = await this.usersService.findExistingIds(candidateMentionIds);
     const mentions = validMentionIds.map((id) => new Types.ObjectId(id));
 
+    const poll = pollInput
+      ? {
+          question: pollInput.question,
+          multiple: pollInput.multiple,
+          closed: false,
+          options: pollInput.options.map((option, i) => ({ id: `o${i + 1}`, text: option, voters: [] })),
+        }
+      : null;
+
     const message = await new this.messageModel({
       conversation: new Types.ObjectId(conversationId),
       sender: new Types.ObjectId(senderId),
       text: text ?? '',
       attachments: attachments ?? [],
-      replyTo: replyTo ? new Types.ObjectId(replyTo) : null,
+      replyTo: replyToId,
       readBy: [new Types.ObjectId(senderId)],
       deliveredTo: [new Types.ObjectId(senderId)],
       mentions,
+      poll,
+      effect: isMessageEffect(extras.effect) ? extras.effect : null,
     }).save();
 
-    const previewText = text?.slice(0, 120) || this.attachmentPreview(attachments);
+    const previewText = messagePreviewText({ text, attachments, poll });
     // A new message "revives" the conversation for anyone who had deleted it -- same behavior
     // as most chat apps, where deleting only hides it until the next incoming message.
     await this.conversationModel
       .findByIdAndUpdate(conversationId, {
-        $set: { lastMessagePreview: previewText, lastMessageAt: new Date(), lastMessageId: message._id },
+        $set: {
+          lastMessagePreview: previewText,
+          lastMessageAt: new Date(),
+          lastMessageId: message._id,
+          lastMessageSender: new Types.ObjectId(senderId),
+        },
         $pull: { deletedBy: { $in: conversation.participants } },
       })
       .exec();
 
-    const mentionedIds = new Set(validMentionIds);
-    for (const participant of conversation.participants) {
-      const recipientId = participant.toString();
-      if (recipientId === senderId) continue;
-      // A specifically @mentioned participant gets the more specific 'mention' notification
-      // instead of the generic 'chat_message' one, so nobody gets pinged twice for one message.
-      await this.notificationsService.create({
-        recipient: recipientId,
-        actor: senderId,
-        type: mentionedIds.has(recipientId) ? 'mention' : 'chat_message',
-        conversationId,
-        preview: previewText,
-      });
+    // "Send without sound" skips notifications entirely -- the message still lands, unread badge
+    // and all; nobody's phone buzzes.
+    if (!extras.silent) {
+      this.notifyParticipants(conversation, senderId, previewText, new Set(validMentionIds));
     }
 
     return message.populate(MESSAGE_POPULATE);
   }
 
-  private attachmentPreview(attachments?: AttachmentDto[]): string {
-    if (!attachments?.length) return '';
-    const labels: Record<string, string> = {
-      image: 'صورة 📷',
-      video: 'فيديو 🎥',
-      audio: 'ملف صوتي 🎵',
-      voice: 'رسالة صوتية 🎤',
-      document: 'مستند 📄',
-    };
-    return labels[attachments[0].type] ?? 'أرسل مرفقًا';
+  // Writes the per-recipient notifications for a new message in the background: the message is
+  // already saved and about to be broadcast, so a slow fan-out (big group, push latency) must
+  // never hold up its delivery. Recipients who muted this conversation are skipped -- unless they
+  // were @mentioned, which still gets through a mute (WhatsApp does the same).
+  private notifyParticipants(
+    conversation: ConversationDocument,
+    senderId: string,
+    previewText: string,
+    mentionedIds: Set<string>,
+  ): void {
+    const now = Date.now();
+    const mutedIds = new Set(
+      (conversation.mutedBy ?? [])
+        .filter((m) => !m.until || new Date(m.until).getTime() > now)
+        .map((m) => m.user.toString()),
+    );
+    const recipients = conversation.participants
+      .map((p) => p.toString())
+      .filter((id) => id !== senderId && (mentionedIds.has(id) || !mutedIds.has(id)));
+    if (!recipients.length) return;
+
+    const conversationId = String(conversation._id);
+    void (async () => {
+      for (let i = 0; i < recipients.length; i += NOTIFY_BATCH) {
+        // A specifically @mentioned participant gets the more specific 'mention' notification
+        // instead of the generic 'chat_message' one, so nobody gets pinged twice for one message.
+        await Promise.allSettled(
+          recipients.slice(i, i + NOTIFY_BATCH).map((recipientId) =>
+            this.notificationsService.create({
+              recipient: recipientId,
+              actor: senderId,
+              type: mentionedIds.has(recipientId) ? 'mention' : 'chat_message',
+              conversationId,
+              preview: previewText,
+            }),
+          ),
+        );
+      }
+    })().catch((err) => this.logger.warn(`Chat notification fan-out failed: ${(err as Error).message}`));
   }
 
   private async getOwnMessage(messageId: string, userId: string): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
     if (message.sender.toString() !== userId) throw new ForbiddenException('لا يمكنك تعديل رسالة مستخدم آخر');
@@ -337,6 +477,8 @@ export class ChatService {
   async editMessage(messageId: string, userId: string, text: string): Promise<MessageDocument> {
     const message = await this.getOwnMessage(messageId, userId);
     if (message.deletedForEveryone) throw new BadRequestException('تم حذف هذه الرسالة');
+    if (message.poll) throw new BadRequestException('لا يمكن تعديل الاستطلاع بعد إرساله');
+    if (!text?.trim()) throw new BadRequestException('لا يمكن أن تكون الرسالة فارغة');
     message.text = text;
     message.edited = true;
     message.editedAt = new Date();
@@ -349,6 +491,7 @@ export class ChatService {
   // mirrors PostsService.streamAttachment(). Any participant of the conversation may open it, same
   // as they can already see the message itself.
   async streamMessageAttachment(messageId: string, index: number, res: Response, userId: string): Promise<void> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('المرفق غير موجود');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('المرفق غير موجود');
     await this.assertCanAccessConversation(message.conversation.toString(), userId);
@@ -364,6 +507,7 @@ export class ChatService {
   }
 
   async deleteMessage(messageId: string, userId: string, forEveryone: boolean): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
     const conversation = await this.assertCanAccessConversation(message.conversation.toString(), userId);
@@ -376,12 +520,20 @@ export class ChatService {
       message.text = '';
       message.attachments = [];
       message.reactions = [];
+      message.poll = null;
+      message.effect = null;
       await message.save();
 
       // If this was the message the conversation list's cached preview was derived from, that
       // preview is now stale (it would otherwise keep leaking the deleted content) -- recompute it.
       if (conversation.lastMessageId?.toString() === messageId) {
-        await this.refreshLastMessagePreview(conversation._id.toString());
+        await this.refreshLastMessagePreview(String(conversation._id));
+      }
+      // A deleted message can't stay pinned to the top of the thread.
+      if (conversation.pinnedMessages?.some((p) => p.message.toString() === messageId)) {
+        await this.conversationModel
+          .updateOne({ _id: conversation._id }, { $pull: { pinnedMessages: { message: message._id } } })
+          .exec();
       }
     } else {
       const uid = new Types.ObjectId(userId);
@@ -397,20 +549,30 @@ export class ChatService {
     const latest = await this.messageModel
       .findOne({ conversation: new Types.ObjectId(conversationId), deletedForEveryone: false })
       .sort({ createdAt: -1 })
-      .lean<{ _id: Types.ObjectId; text: string; attachments: AttachmentDto[]; createdAt: Date } | null>()
+      .select('text attachments poll sender createdAt')
+      .lean<{
+        _id: Types.ObjectId;
+        text: string;
+        attachments: AttachmentDto[];
+        poll: { question: string } | null;
+        sender: Types.ObjectId;
+        createdAt: Date;
+      } | null>()
       .exec();
     await this.conversationModel
       .findByIdAndUpdate(conversationId, {
         $set: {
           lastMessageId: latest?._id ?? null,
-          lastMessagePreview: latest ? latest.text?.slice(0, 120) || this.attachmentPreview(latest.attachments) : null,
+          lastMessagePreview: latest ? messagePreviewText(latest) : null,
           lastMessageAt: latest?.createdAt ?? null,
+          lastMessageSender: latest?.sender ?? null,
         },
       })
       .exec();
   }
 
   async reactToMessage(messageId: string, userId: string, emoji: string): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
     await this.assertCanAccessConversation(message.conversation.toString(), userId);
@@ -428,62 +590,114 @@ export class ChatService {
     return message.populate(MESSAGE_POPULATE);
   }
 
+  // Single-message forward -- kept for the existing REST route / socket event.
   async forwardMessage(messageId: string, userId: string, conversationIds: string[]): Promise<MessageDocument[]> {
-    const original = await this.messageModel.findById(messageId).exec();
-    if (!original) throw new NotFoundException('الرسالة غير موجودة');
-    await this.assertCanAccessConversation(original.conversation.toString(), userId);
-    if (original.deletedForEveryone) throw new BadRequestException('تم حذف هذه الرسالة');
+    return this.forwardMessages([messageId], userId, conversationIds);
+  }
 
-    const results: MessageDocument[] = [];
-    for (const conversationId of conversationIds) {
+  // Forwards one or more messages (multi-select) into one or more conversations, preserving the
+  // originals' order. Only text/attachments/poll questions are copied (a forwarded poll starts
+  // with zero votes); the copies are flagged `forwarded` with no live link back. Every target is
+  // validated up front, so a blocked or inaccessible target fails the whole request before
+  // anything is sent rather than half-way through.
+  async forwardMessages(messageIds: string[], userId: string, conversationIds: string[]): Promise<MessageDocument[]> {
+    const ids = [...new Set(messageIds ?? [])]
+      .filter((id) => Types.ObjectId.isValid(id))
+      .slice(0, FORWARD_LIMITS.maxMessages);
+    const targetIds = [...new Set(conversationIds ?? [])]
+      .filter((id) => Types.ObjectId.isValid(id))
+      .slice(0, FORWARD_LIMITS.maxConversations);
+    if (!ids.length || !targetIds.length) throw new BadRequestException('اختر رسالة ومحادثة لإعادة التوجيه');
+
+    const originals = await this.messageModel
+      .find({ _id: { $in: ids }, deletedForEveryone: false, deletedFor: { $ne: new Types.ObjectId(userId) } })
+      .sort({ createdAt: 1, _id: 1 })
+      .exec();
+    if (!originals.length) throw new BadRequestException('تم حذف هذه الرسالة');
+    for (const sourceId of new Set(originals.map((m) => m.conversation.toString()))) {
+      await this.assertCanAccessConversation(sourceId, userId);
+    }
+
+    const targets: ConversationDocument[] = [];
+    for (const conversationId of targetIds) {
       const conversation = await this.assertCanAccessConversation(conversationId, userId);
-      const message = await new this.messageModel({
-        conversation: conversation._id,
-        sender: new Types.ObjectId(userId),
-        text: original.text,
-        attachments: original.attachments,
-        forwarded: true,
-        readBy: [new Types.ObjectId(userId)],
-        deliveredTo: [new Types.ObjectId(userId)],
-      }).save();
+      if (!conversation.isGroup) {
+        const other = conversation.participants.find((p) => p.toString() !== userId);
+        if (other && (await this.usersService.areBlocked(userId, other.toString()))) {
+          throw new ForbiddenException('لا يمكنك إرسال رسالة إلى هذا المستخدم');
+        }
+      }
+      targets.push(conversation);
+    }
 
-      const previewText = message.text?.slice(0, 120) || this.attachmentPreview(message.attachments as unknown as AttachmentDto[]);
+    const uid = new Types.ObjectId(userId);
+    const results: MessageDocument[] = [];
+    for (const conversation of targets) {
+      let last: MessageDocument | null = null;
+      for (const original of originals) {
+        const message = await new this.messageModel({
+          conversation: conversation._id,
+          sender: uid,
+          text: original.text,
+          attachments: original.attachments,
+          poll: original.poll
+            ? {
+                question: original.poll.question,
+                multiple: original.poll.multiple,
+                closed: false,
+                options: original.poll.options.map((o) => ({ id: o.id, text: o.text, voters: [] })),
+              }
+            : null,
+          forwarded: true,
+          readBy: [uid],
+          deliveredTo: [uid],
+        }).save();
+        results.push(await message.populate(MESSAGE_POPULATE));
+        last = message;
+      }
+      if (!last) continue;
+
+      const previewText = messagePreviewText(last);
       await this.conversationModel
-        .findByIdAndUpdate(conversationId, {
-          lastMessagePreview: previewText,
-          lastMessageAt: new Date(),
-          lastMessageId: message._id,
+        .findByIdAndUpdate(conversation._id, {
+          $set: {
+            lastMessagePreview: previewText,
+            lastMessageAt: new Date(),
+            lastMessageId: last._id,
+            lastMessageSender: uid,
+          },
+          $pull: { deletedBy: { $in: conversation.participants } },
         })
         .exec();
-
-      for (const participant of conversation.participants) {
-        const recipientId = participant.toString();
-        if (recipientId === userId) continue;
-        await this.notificationsService.create({
-          recipient: recipientId,
-          actor: userId,
-          type: 'chat_message',
-          conversationId,
-          preview: previewText,
-        });
-      }
-
-      results.push(await message.populate(MESSAGE_POPULATE));
+      // One notification per target conversation, not one per forwarded message.
+      this.notifyParticipants(conversation, userId, previewText, new Set());
     }
     return results;
   }
 
   async markDelivered(conversationId: string, userId: string): Promise<string[]> {
+    if (!Types.ObjectId.isValid(conversationId)) return [];
     const uid = new Types.ObjectId(userId);
+    const conversationOid = new Types.ObjectId(conversationId);
+    // Only a member's device can acknowledge delivery.
+    if (!(await this.conversationModel.exists({ _id: conversationOid, participants: uid }).exec())) return [];
+
     const undelivered = await this.messageModel
-      .find({ conversation: new Types.ObjectId(conversationId), sender: { $ne: uid }, deliveredTo: { $ne: uid } })
+      .find({ conversation: conversationOid, sender: { $ne: uid }, deliveredTo: { $ne: uid } })
       .select('_id')
+      .lean<{ _id: Types.ObjectId }[]>()
       .exec();
     if (!undelivered.length) return [];
+    const ids = undelivered.map((m) => m._id);
+    // The `deliveredTo: {$ne}` guard makes the receipt push idempotent per document even if two
+    // tabs acknowledge at the same moment.
     await this.messageModel
-      .updateMany({ _id: { $in: undelivered.map((m) => m._id) } }, { $addToSet: { deliveredTo: uid } })
+      .updateMany(
+        { _id: { $in: ids }, deliveredTo: { $ne: uid } },
+        { $addToSet: { deliveredTo: uid }, $push: { deliveryReceipts: { user: uid, at: new Date() } } },
+      )
       .exec();
-    return undelivered.map((m) => (m._id as Types.ObjectId).toString());
+    return ids.map(String);
   }
 
   async markRead(conversationId: string, userId: string): Promise<string[]> {
@@ -491,19 +705,202 @@ export class ChatService {
     const uid = new Types.ObjectId(userId);
     const unread = await this.messageModel
       .find({ conversation: new Types.ObjectId(conversationId), sender: { $ne: uid }, readBy: { $ne: uid } })
-      .select('_id')
+      .select('_id deliveredTo')
+      .lean<{ _id: Types.ObjectId; deliveredTo?: Types.ObjectId[] }[]>()
       .exec();
     if (!unread.length) return [];
-    await this.messageModel
-      .updateMany(
-        { _id: { $in: unread.map((m) => m._id) } },
-        { $addToSet: { readBy: uid, deliveredTo: uid } },
+
+    const now = new Date();
+    const ids = unread.map((m) => m._id);
+    const undeliveredIds = unread.filter((m) => !m.deliveredTo?.some((d) => d.equals(uid))).map((m) => m._id);
+    await Promise.all([
+      this.messageModel
+        .updateMany(
+          { _id: { $in: ids }, readBy: { $ne: uid } },
+          { $addToSet: { readBy: uid }, $push: { readReceipts: { user: uid, at: now } } },
+        )
+        .exec(),
+      // Read implies delivered: anything read before its delivery ack gets both stamps at once.
+      undeliveredIds.length
+        ? this.messageModel
+            .updateMany(
+              { _id: { $in: undeliveredIds }, deliveredTo: { $ne: uid } },
+              { $addToSet: { deliveredTo: uid }, $push: { deliveryReceipts: { user: uid, at: now } } },
+            )
+            .exec()
+        : Promise.resolve(null),
+    ]);
+    return ids.map(String);
+  }
+
+  // The sender's per-recipient breakdown (WhatsApp "message info"). Sender-only: other members
+  // don't get to audit who read someone else's message.
+  async getMessageInfo(messageId: string, userId: string): Promise<MessageInfo> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
+    const message = await this.messageModel.findById(messageId).select('+readReceipts +deliveryReceipts').exec();
+    if (!message || message.deletedForEveryone) throw new NotFoundException('الرسالة غير موجودة');
+    if (message.sender.toString() !== userId) {
+      throw new ForbiddenException('معلومات القراءة متاحة لمرسل الرسالة فقط');
+    }
+    const conversation = await this.assertCanAccessConversation(message.conversation.toString(), userId, {
+      autoJoin: false,
+    });
+
+    const readAt = new Map((message.readReceipts ?? []).map((r) => [r.user.toString(), r.at]));
+    const deliveredAt = new Map((message.deliveryReceipts ?? []).map((r) => [r.user.toString(), r.at]));
+    const readSet = new Set(message.readBy.map(String));
+    const deliveredSet = new Set(message.deliveredTo.map(String));
+
+    const info: MessageInfo = { messageId, read: [], delivered: [], pending: [] };
+    for (const participant of conversation.participants) {
+      const id = participant.toString();
+      if (id === userId) continue;
+      if (readSet.has(id)) info.read.push({ user: id, at: readAt.get(id) ?? null });
+      else if (deliveredSet.has(id)) info.delivered.push({ user: id, at: deliveredAt.get(id) ?? null });
+      else info.pending.push(id);
+    }
+    const newestFirst = (a: { at: Date | null }, b: { at: Date | null }) =>
+      (b.at ? new Date(b.at).getTime() : 0) - (a.at ? new Date(a.at).getTime() : 0);
+    info.read.sort(newestFirst);
+    info.delivered.sort(newestFirst);
+    return info;
+  }
+
+  // --- Pinned messages (shared by every participant) ---
+
+  async listPins(conversationId: string, userId: string): Promise<PinnedMessageView[]> {
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
+    return this.buildPins(conversation);
+  }
+
+  // Pins/unpins a message for everyone in its conversation. Any member may pin in a DM or private
+  // group; in a public group only admins can, so a stranger can't hijack the top of the thread.
+  async setMessagePinned(
+    messageId: string,
+    userId: string,
+    pin: boolean,
+  ): Promise<{ conversationId: string; pins: PinnedMessageView[] }> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
+    const message = await this.messageModel.findById(messageId).select('conversation deletedForEveryone').exec();
+    if (!message) throw new NotFoundException('الرسالة غير موجودة');
+    const conversation = await this.assertParticipant(message.conversation.toString(), userId);
+    if (
+      conversation.isGroup &&
+      conversation.visibility === 'public' &&
+      !conversation.admins.some((a) => a.toString() === userId)
+    ) {
+      throw new ForbiddenException('تثبيت الرسائل في المجموعات العامة متاح للمشرفين فقط');
+    }
+
+    const alreadyPinned = conversation.pinnedMessages.some((p) => p.message.toString() === messageId);
+    if (pin && !alreadyPinned) {
+      if (message.deletedForEveryone) throw new BadRequestException('لا يمكن تثبيت رسالة محذوفة');
+      conversation.pinnedMessages.push({
+        message: message._id,
+        pinnedBy: new Types.ObjectId(userId),
+        pinnedAt: new Date(),
+      });
+      while (conversation.pinnedMessages.length > MAX_PINNED_MESSAGES) conversation.pinnedMessages.shift();
+      await conversation.save();
+    } else if (!pin && alreadyPinned) {
+      conversation.pinnedMessages = conversation.pinnedMessages.filter((p) => p.message.toString() !== messageId);
+      await conversation.save();
+    }
+    return { conversationId: String(conversation._id), pins: await this.buildPins(conversation) };
+  }
+
+  // Newest pin first, each with its fully populated message. Pins whose message has since been
+  // deleted for everyone (or hard-deleted by moderation) are skipped.
+  private async buildPins(conversation: ConversationDocument): Promise<PinnedMessageView[]> {
+    const entries = conversation.pinnedMessages ?? [];
+    if (!entries.length) return [];
+    const messages = await this.messageModel
+      .find({ _id: { $in: entries.map((p) => p.message) }, deletedForEveryone: false })
+      .populate(MESSAGE_POPULATE)
+      .exec();
+    const byId = new Map(messages.map((m) => [String(m._id), m]));
+    const views: PinnedMessageView[] = [];
+    for (const entry of entries) {
+      const message = byId.get(entry.message.toString());
+      if (message) views.push({ message, pinnedBy: entry.pinnedBy.toString(), pinnedAt: entry.pinnedAt });
+    }
+    return views.reverse();
+  }
+
+  // --- Polls ---
+
+  // Records this user's choice(s), replacing any earlier vote; an empty selection retracts it.
+  // One aggregation-pipeline update = one atomic write per document, so two people voting at
+  // the same instant can't overwrite each other (a find-modify-save here would lose votes).
+  async votePoll(messageId: string, userId: string, optionIds: unknown): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
+    const message = await this.messageModel.findById(messageId).select('conversation poll deletedForEveryone').exec();
+    if (!message || message.deletedForEveryone) throw new NotFoundException('الرسالة غير موجودة');
+    if (!message.poll) throw new BadRequestException('هذه الرسالة ليست استطلاعًا');
+    if (message.poll.closed) throw new BadRequestException('تم إغلاق هذا الاستطلاع');
+    await this.assertCanAccessConversation(message.conversation.toString(), userId);
+
+    const validIds = new Set(message.poll.options.map((o) => o.id));
+    let chosen = Array.isArray(optionIds)
+      ? [...new Set(optionIds.filter((id): id is string => typeof id === 'string' && validIds.has(id)))]
+      : [];
+    if (!message.poll.multiple) chosen = chosen.slice(0, 1);
+
+    const uid = new Types.ObjectId(userId);
+    const votersWithoutMe = { $filter: { input: '$$o.voters', as: 'v', cond: { $ne: ['$$v', uid] } } };
+    const result = await this.messageModel
+      .updateOne({ _id: message._id, 'poll.closed': false }, [
+        {
+          $set: {
+            'poll.options': {
+              $map: {
+                input: '$poll.options',
+                as: 'o',
+                in: {
+                  $mergeObjects: [
+                    '$$o',
+                    {
+                      voters: {
+                        $cond: [
+                          { $in: ['$$o.id', chosen] },
+                          { $concatArrays: [votersWithoutMe, [uid]] },
+                          votersWithoutMe,
+                        ],
+                      },
+                    },
+                  ],
+                },
+              },
+            },
+          },
+        },
+      ])
+      .exec();
+    if (!result.matchedCount) throw new BadRequestException('تم إغلاق هذا الاستطلاع');
+    return this.findPopulated(messageId);
+  }
+
+  // Only the poll's creator can end it; results stay visible, voting stops.
+  async closePoll(messageId: string, userId: string): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
+    const result = await this.messageModel
+      .updateOne(
+        { _id: messageId, sender: new Types.ObjectId(userId), poll: { $ne: null }, deletedForEveryone: false },
+        { $set: { 'poll.closed': true } },
       )
       .exec();
-    return unread.map((m) => (m._id as Types.ObjectId).toString());
+    if (!result.matchedCount) throw new ForbiddenException('يمكن لمنشئ الاستطلاع فقط إنهاؤه');
+    return this.findPopulated(messageId);
+  }
+
+  private async findPopulated(messageId: string): Promise<MessageDocument> {
+    const message = await this.messageModel.findById(messageId).populate(MESSAGE_POPULATE).exec();
+    if (!message) throw new NotFoundException('الرسالة غير موجودة');
+    return message;
   }
 
   async starMessage(messageId: string, userId: string): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
     await this.assertCanAccessConversation(message.conversation.toString(), userId);
@@ -514,6 +911,7 @@ export class ChatService {
   }
 
   async unstarMessage(messageId: string, userId: string): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
     const message = await this.messageModel.findById(messageId).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
     await this.assertCanAccessConversation(message.conversation.toString(), userId);
@@ -530,20 +928,136 @@ export class ChatService {
       .exec();
   }
 
+  // In-conversation search. The query is matched as plain text (regex-escaped -- user input must
+  // never be compiled as a pattern) against message text and poll questions, and respects this
+  // user's "clear chat" cutoff.
   async searchMessages(conversationId: string, userId: string, query: string): Promise<MessageDocument[]> {
-    await this.assertCanAccessConversation(conversationId, userId);
-    if (!query?.trim()) return [];
+    const conversation = await this.assertCanAccessConversation(conversationId, userId);
+    const q = query?.trim().slice(0, 100);
+    if (!q) return [];
+    const pattern = { $regex: escapeRegex(q), $options: 'i' };
+    const filter: Record<string, unknown> = {
+      conversation: conversation._id,
+      deletedFor: { $ne: new Types.ObjectId(userId) },
+      deletedForEveryone: false,
+      $or: [{ text: pattern }, { 'poll.question': pattern }],
+    };
+    const clearedAt = this.clearedAtFor(conversation, userId);
+    if (clearedAt) filter.createdAt = { $gt: clearedAt };
     return this.messageModel
-      .find({
-        conversation: new Types.ObjectId(conversationId),
-        deletedFor: { $ne: new Types.ObjectId(userId) },
-        deletedForEveryone: false,
-        text: { $regex: query.trim(), $options: 'i' },
-      })
+      .find(filter)
       .sort({ createdAt: -1 })
       .limit(50)
       .populate(MESSAGE_POPULATE)
       .exec();
+  }
+
+  // Search across every conversation this user is in (the chat list's search box). Newest
+  // first, capped; each hit carries its `conversation` id so the client can open + jump to it.
+  async searchAllMessages(userId: string, query: string): Promise<MessageDocument[]> {
+    const q = query?.trim().slice(0, 100);
+    if (!q || q.length < 2) return [];
+    const uid = new Types.ObjectId(userId);
+    const conversations = await this.conversationModel
+      .find({ participants: uid, deletedBy: { $ne: uid } })
+      .select('_id clearedBy')
+      .lean<{ _id: Types.ObjectId; clearedBy?: { user: Types.ObjectId; at: Date }[] }[]>()
+      .exec();
+    if (!conversations.length) return [];
+
+    const pattern = { $regex: escapeRegex(q), $options: 'i' };
+    const hits = await this.messageModel
+      .find({
+        conversation: { $in: conversations.map((c) => c._id) },
+        deletedFor: { $ne: uid },
+        deletedForEveryone: false,
+        $or: [{ text: pattern }, { 'poll.question': pattern }],
+      })
+      .sort({ createdAt: -1 })
+      .limit(120)
+      .populate(MESSAGE_POPULATE)
+      .exec();
+
+    const clearedAt = new Map<string, number>();
+    for (const c of conversations) {
+      const entry = c.clearedBy?.find((e) => e.user.toString() === userId);
+      if (entry) clearedAt.set(c._id.toString(), new Date(entry.at).getTime());
+    }
+    return hits
+      .filter((m) => {
+        const cutoff = clearedAt.get(m.conversation.toString());
+        return !cutoff || new Date(m.get('createdAt') as Date).getTime() > cutoff;
+      })
+      .slice(0, 60);
+  }
+
+  // --- Helpers for AI features (AiModule's ChatAiService) ---
+
+  // One message, if this user may read it (participant / public group, not deleted for them).
+  async getMessageForUser(messageId: string, userId: string): Promise<MessageDocument> {
+    if (!Types.ObjectId.isValid(messageId)) throw new NotFoundException('الرسالة غير موجودة');
+    const message = await this.messageModel.findById(messageId).populate(MESSAGE_POPULATE).exec();
+    if (!message || message.deletedForEveryone || message.deletedFor.some((d) => d.toString() === userId)) {
+      throw new NotFoundException('الرسالة غير موجودة');
+    }
+    await this.assertCanAccessConversation(message.conversation.toString(), userId, { autoJoin: false });
+    return message;
+  }
+
+  // The latest `limit` messages this user can see, oldest first -- optionally only those from
+  // `sinceId` onward (an "unread since here" catch-up). Flattened to plain data for a prompt.
+  async getRecentMessagesForAi(
+    conversationId: string,
+    userId: string,
+    opts: { limit: number; sinceId?: string },
+  ): Promise<{ conversation: ConversationDocument; messages: AiTranscriptMessage[] }> {
+    const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
+    const filter: Record<string, unknown> = {
+      conversation: conversation._id,
+      deletedFor: { $ne: new Types.ObjectId(userId) },
+      deletedForEveryone: false,
+    };
+    const createdAt: Record<string, Date> = {};
+    const clearedAt = this.clearedAtFor(conversation, userId);
+    if (clearedAt) createdAt.$gt = clearedAt;
+    if (opts.sinceId && Types.ObjectId.isValid(opts.sinceId)) {
+      const pivot = await this.messageModel
+        .findOne({ _id: opts.sinceId, conversation: conversation._id })
+        .select('createdAt')
+        .lean<{ createdAt: Date } | null>()
+        .exec();
+      if (pivot) createdAt.$gte = pivot.createdAt;
+    }
+    if (Object.keys(createdAt).length) filter.createdAt = createdAt;
+
+    const docs = await this.messageModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(opts.limit)
+      .select('sender text attachments poll createdAt')
+      .populate({ path: 'sender', select: 'name' })
+      .lean<
+        {
+          _id: Types.ObjectId;
+          sender: { _id: Types.ObjectId; name: string } | null;
+          text: string;
+          attachments?: { type: string }[];
+          poll?: { question: string; options: { text: string }[] } | null;
+          createdAt: Date;
+        }[]
+      >()
+      .exec();
+
+    const messages = docs.reverse().map((d) => ({
+      id: d._id.toString(),
+      senderId: d.sender?._id?.toString() ?? null,
+      senderName: d.sender?.name ?? 'مستخدم محذوف',
+      text: d.text ?? '',
+      poll: d.poll ? { question: d.poll.question, options: (d.poll.options ?? []).map((o) => o.text) } : null,
+      attachmentTypes: (d.attachments ?? []).map((a) => a.type),
+      createdAt: d.createdAt,
+    }));
+    return { conversation, messages };
   }
 
   // Backs the "Shared media / files / links" tab in group/contact info. Scans the most recent
@@ -674,7 +1188,7 @@ export class ChatService {
     if (dto.disappearingSeconds !== undefined) conversation.disappearingSeconds = dto.disappearingSeconds;
     if (dto.visibility !== undefined) conversation.visibility = dto.visibility;
     await conversation.save();
-    return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
+    return conversation.populate('participants', PARTICIPANT_FIELDS);
   }
 
   async addMembers(conversationId: string, userId: string, userIds: string[]): Promise<ConversationDocument> {
@@ -688,7 +1202,7 @@ export class ChatService {
       (b) => !addedSet.has(b.toString()),
     ) as unknown as Types.ObjectId[];
     await conversation.save();
-    return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
+    return conversation.populate('participants', PARTICIPANT_FIELDS);
   }
 
   async removeMember(conversationId: string, userId: string, targetUserId: string): Promise<ConversationDocument> {
@@ -706,7 +1220,7 @@ export class ChatService {
       conversation.blockedUsers.push(new Types.ObjectId(targetUserId));
     }
     await conversation.save();
-    return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
+    return conversation.populate('participants', PARTICIPANT_FIELDS);
   }
 
   async leaveGroup(conversationId: string, userId: string): Promise<void> {
@@ -738,7 +1252,7 @@ export class ChatService {
       conversation.admins = conversation.admins.filter((a) => a.toString() !== targetUserId) as unknown as Types.ObjectId[];
     }
     await conversation.save();
-    return conversation.populate('participants', 'name role photoUrl collegeId isOnline lastSeenAt');
+    return conversation.populate('participants', PARTICIPANT_FIELDS);
   }
 
   // --- Admin-only operations (guarded at the controller level) ---
@@ -747,7 +1261,7 @@ export class ChatService {
   // e.g. via an off-platform complaint), not a free-browse inbox of everyone's DMs.
 
   async adminListConversations(page = 1, limit = 20, search?: string): Promise<PaginatedConversations> {
-    const filter = search ? { name: { $regex: search, $options: 'i' } } : {};
+    const filter = search ? { name: { $regex: escapeRegex(search), $options: 'i' } } : {};
     const [data, total] = await Promise.all([
       this.conversationModel
         .find(filter)
@@ -763,11 +1277,13 @@ export class ChatService {
   }
 
   async adminRemoveMessage(id: string): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('الرسالة غير موجودة');
     const message = await this.messageModel.findByIdAndDelete(id).exec();
     if (!message) throw new NotFoundException('الرسالة غير موجودة');
   }
 
   async adminRemoveConversation(id: string): Promise<void> {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('المحادثة غير موجودة');
     const conversation = await this.conversationModel.findByIdAndDelete(id).exec();
     if (!conversation) throw new NotFoundException('المحادثة غير موجودة');
     await this.messageModel.deleteMany({ conversation: conversation._id }).exec();

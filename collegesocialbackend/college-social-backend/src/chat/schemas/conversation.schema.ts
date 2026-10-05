@@ -27,6 +27,20 @@ export class ClearedEntry {
 
 export const ClearedEntrySchema = SchemaFactory.createForClass(ClearedEntry);
 
+@Schema({ _id: false })
+export class PinnedMessageEntry {
+  @Prop({ type: Types.ObjectId, ref: 'Message', required: true })
+  message: Types.ObjectId;
+
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  pinnedBy: Types.ObjectId;
+
+  @Prop({ type: Date, required: true })
+  pinnedAt: Date;
+}
+
+export const PinnedMessageEntrySchema = SchemaFactory.createForClass(PinnedMessageEntry);
+
 @Schema({ timestamps: true })
 export class Conversation {
   // NOTE: `ref` must sit at this outer level, not nested inside the array's object literal --
@@ -60,6 +74,16 @@ export class Conversation {
   // needs recomputing (see ChatService.refreshLastMessagePreview).
   @Prop({ type: Types.ObjectId, ref: 'Message', required: false, default: null })
   lastMessageId: Types.ObjectId | null;
+
+  // Who sent that last message -- lets the chat list prefix the preview with "أنت:" or, in
+  // groups, the sender's name (WhatsApp-style). Populated with just `name` by the list query.
+  @Prop({ type: Types.ObjectId, ref: 'User', required: false, default: null })
+  lastMessageSender: Types.ObjectId | null;
+
+  // Messages pinned to the top of the thread for every participant, oldest pin first. Capped at
+  // MAX_PINNED_MESSAGES (chat.constants.ts) -- pinning past the cap drops the oldest pin.
+  @Prop({ type: [PinnedMessageEntrySchema], default: [] })
+  pinnedMessages: PinnedMessageEntry[];
 
   // --- Group chat metadata (isGroup === true only) ---
 

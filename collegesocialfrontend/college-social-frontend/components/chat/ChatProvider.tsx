@@ -5,6 +5,7 @@ import { usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
+import { messagePreview } from '@/lib/chat-helpers';
 import type { Conversation, Message } from '@/lib/types';
 
 interface ChatContextValue {
@@ -90,16 +91,18 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
-    const bumpLocal = (conversationId: string, preview: string, at: string, incrementUnread: boolean) => {
+    const bumpLocal = (message: Message, incrementUnread: boolean) => {
       setConversations((prev) => {
-        const idx = prev.findIndex((c) => c._id === conversationId);
+        const idx = prev.findIndex((c) => c._id === message.conversation);
         if (idx === -1) return prev;
         const next = [...prev];
         const [conv] = next.splice(idx, 1);
         next.unshift({
           ...conv,
-          lastMessagePreview: preview || conv.lastMessagePreview,
-          lastMessageAt: at,
+          lastMessagePreview: messagePreview(message) || conv.lastMessagePreview,
+          lastMessageAt: message.createdAt ?? new Date().toISOString(),
+          lastMessageId: message._id,
+          lastMessageSender: message.sender ? { _id: message.sender._id, name: message.sender.name } : conv.lastMessageSender,
           unreadCount: incrementUnread ? (conv.unreadCount ?? 0) + 1 : conv.unreadCount,
         });
         return next;
@@ -113,12 +116,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       // in a conversation the user isn't currently viewing.
       const fromMe = !!userIdRef.current && message.sender?._id === userIdRef.current;
       const isActive = message.conversation === activeIdRef.current;
-      bumpLocal(
-        message.conversation,
-        message.text || '📎',
-        message.createdAt ?? new Date().toISOString(),
-        !fromMe && !isActive,
-      );
+      bumpLocal(message, !fromMe && !isActive);
     };
 
     const onNewNotification = (n: { type?: string; conversationId?: string | null }) => {
@@ -146,15 +144,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       });
     };
 
+    // After a reconnect (wifi drop, laptop sleep) the list may have missed messages -- re-pull it.
+    let connectedOnce = socket.connected;
+    const onConnect = () => {
+      if (!connectedOnce) {
+        connectedOnce = true;
+        return;
+      }
+      void refresh();
+    };
+
     socket.on('newMessage', onNewMessage);
     socket.on('newNotification', onNewNotification);
     socket.on('conversationCreated', onConversationCreated);
     socket.on('messageDeleted', onMessageDeleted);
+    socket.on('connect', onConnect);
     return () => {
       socket.off('newMessage', onNewMessage);
       socket.off('newNotification', onNewNotification);
       socket.off('conversationCreated', onConversationCreated);
       socket.off('messageDeleted', onMessageDeleted);
+      socket.off('connect', onConnect);
     };
   }, [socket, refresh]);
 

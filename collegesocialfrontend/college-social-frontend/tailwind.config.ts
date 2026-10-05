@@ -5,7 +5,8 @@ import type { Config } from 'tailwindcss';
 // values via the `.dark` class on <html>, not sprinkling `dark:` on every usage.
 const config: Config = {
   darkMode: 'class',
-  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}'],
+  // lib/ too: a few helpers there return class names (e.g. chat-helpers' fileVisual tiles).
+  content: ['./app/**/*.{ts,tsx}', './components/**/*.{ts,tsx}', './lib/**/*.{ts,tsx}'],
   // Foundation utilities that are addressed by computed names (design-system gallery) or are
   // meant to be always-available building blocks for Phase B primitives.
   safelist: [
@@ -187,6 +188,11 @@ const config: Config = {
           '0%': { backgroundPosition: '200% 0' },
           '100%': { backgroundPosition: '-200% 0' },
         },
+        // Chat "typing…" dots: each dot hops in turn (staggered via animation-delay).
+        'typing-dot': {
+          '0%, 60%, 100%': { transform: 'translateY(0)', opacity: '0.35' },
+          '30%': { transform: 'translateY(-3px)', opacity: '1' },
+        },
       },
       animation: {
         'fade-in': 'fade-in 0.15s ease-out',
@@ -207,6 +213,7 @@ const config: Config = {
         'aurora-2': 'aurora-2 21s ease-in-out infinite',
         breathe: 'breathe 3s ease-in-out infinite',
         shimmer: 'shimmer 2.2s linear infinite',
+        'typing-dot': 'typing-dot 1.2s ease-in-out infinite',
       },
     },
   },

@@ -690,6 +690,9 @@ export interface Conversation {
   lastMessagePreview?: string | null;
   lastMessageAt?: string | null;
   lastMessageId?: string | null;
+  // Who sent the last message -- populated with just `name` by GET /chat/conversations; a bare
+  // id (or null) elsewhere.
+  lastMessageSender?: { _id: string; name: string } | string | null;
   updatedAt?: string;
   createdBy?: string | null;
   groupIcon?: string | null;
@@ -702,7 +705,67 @@ export interface Conversation {
   mutedBy?: MutedEntry[];
   disappearingSeconds?: number;
   unreadCount?: number;
+  // Messages pinned to the top of the thread (ids only here -- GET .../pins returns the full ones).
+  pinnedMessages?: { message: string; pinnedBy: string; pinnedAt: string }[];
 }
+
+// "Send with effect" -- the full-screen celebration recipients' clients play on arrival.
+export type MessageEffect = 'confetti' | 'hearts' | 'fireworks' | 'stars';
+
+export interface PollOption {
+  id: string;
+  text: string;
+  voters: string[];
+}
+
+export interface Poll {
+  question: string;
+  options: PollOption[];
+  multiple: boolean;
+  closed: boolean;
+}
+
+export interface PinnedMessage {
+  message: Message;
+  pinnedBy: string;
+  pinnedAt: string;
+}
+
+export type ScheduledMessageStatus = 'pending' | 'sending' | 'sent' | 'failed' | 'canceled';
+
+export interface ScheduledChatMessage {
+  _id: string;
+  conversation: string;
+  sender: string;
+  text: string;
+  attachments: Attachment[];
+  replyTo?: string | null;
+  poll?: { question: string; options: string[]; multiple: boolean } | null;
+  effect?: MessageEffect | null;
+  silent?: boolean;
+  sendAt: string;
+  status: ScheduledMessageStatus;
+  error?: string | null;
+  createdAt: string;
+}
+
+// GET /chat/messages/:id/info -- sender-only per-recipient receipts. `at` is null for receipts
+// recorded before timestamps existed.
+export interface MessageInfo {
+  messageId: string;
+  read: { user: string; at: string | null }[];
+  delivered: { user: string; at: string | null }[];
+  pending: string[];
+}
+
+export interface ChatSummary {
+  headline: string;
+  bullets: string[];
+  actionItems: string[];
+  count: number;
+}
+
+export type ChatRewriteMode = 'improve' | 'formal' | 'friendly' | 'shorter' | 'fix' | 'en' | 'ar';
 
 export type AttachmentType = 'image' | 'video' | 'audio' | 'voice' | 'document';
 
@@ -730,6 +793,7 @@ export interface ReplyPreview {
   attachments?: Attachment[];
   attachmentUrl?: string | null;
   deletedForEveryone?: boolean;
+  poll?: { question: string } | null;
 }
 
 export interface Message {
@@ -750,11 +814,17 @@ export interface Message {
   starredBy?: string[];
   readBy: string[];
   deliveredTo?: string[];
+  // Ids of participants @mentioned in `text` (validated server-side).
+  mentions?: string[];
+  poll?: Poll | null;
+  effect?: MessageEffect | null;
   createdAt: string;
   /** Client-only: an optimistic message shown before the server has echoed it back. */
   pending?: boolean;
   /** Client-only: an optimistic message the server never acknowledged (tap to retry). */
   failed?: boolean;
+  /** Client-only: send options to replay if a failed optimistic message is retried. */
+  sendOptions?: { silent?: boolean; effect?: MessageEffect | null; replyTo?: string };
 }
 
 export interface LinkPreview {

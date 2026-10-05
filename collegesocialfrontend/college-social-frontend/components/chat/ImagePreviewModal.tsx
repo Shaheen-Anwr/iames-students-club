@@ -1,7 +1,7 @@
 'use client';
 
-import { useEffect, useState } from 'react';
-import { Forward, Pencil, Reply, SmilePlus, Star, Trash2, X } from 'lucide-react';
+import { useEffect, useRef, useState } from 'react';
+import { ChevronLeft, ChevronRight, Download, Forward, Pencil, Reply, SmilePlus, Star, Trash2, X } from 'lucide-react';
 import { cldOptimize } from '@/lib/images';
 import { QuickReactionBar } from './EmojiPicker';
 
@@ -25,6 +25,8 @@ export function ImagePreviewModal<T extends PreviewMessage>({
   onEdit,
   onDelete,
   currentUserId,
+  gallery,
+  initialIndex = 0,
 }: {
   src: string;
   alt: string;
@@ -38,7 +40,16 @@ export function ImagePreviewModal<T extends PreviewMessage>({
   onEdit: (msg: T) => void;
   onDelete: (msg: T, forEveryone: boolean) => void;
   currentUserId: string;
+  /** Album mode: every photo of the message, swipe / arrow keys between them. */
+  gallery?: { url: string; name: string }[];
+  initialIndex?: number;
 }) {
+  const [index, setIndex] = useState(initialIndex);
+  const touchStart = useRef<number | null>(null);
+  const count = gallery?.length ?? 1;
+  const current = gallery?.[index] ?? { url: src, name: alt };
+  // One photo forward (+1) / back (-1); the album reads right-to-left under RTL, so "next" is leftward.
+  const step = (delta: number) => setIndex((i) => Math.min(count - 1, Math.max(0, i + delta)));
   const [reactionBarOpen, setReactionBarOpen] = useState(false);
   const [deleteOptionsOpen, setDeleteOptionsOpen] = useState(false);
   const isStarred = message.starredBy?.includes(currentUserId);
@@ -49,10 +60,13 @@ export function ImagePreviewModal<T extends PreviewMessage>({
         onClose();
         setDeleteOptionsOpen(false);
       }
+      // RTL reading order: ArrowLeft moves forward through the album.
+      if (e.key === 'ArrowLeft') setIndex((i) => Math.min(count - 1, i + 1));
+      if (e.key === 'ArrowRight') setIndex((i) => Math.max(0, i - 1));
     };
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [onClose]);
+  }, [onClose, count]);
 
   return (
     <div
@@ -73,11 +87,66 @@ export function ImagePreviewModal<T extends PreviewMessage>({
         <X className="h-6 w-6" />
       </button>
 
+      {count > 1 && (
+        <span className="absolute left-1/2 top-5 -translate-x-1/2 rounded-full bg-black/50 px-3 py-1 text-sm font-medium tabular-nums text-white">
+          {index + 1} / {count}
+        </span>
+      )}
+      <a
+        href={current.url}
+        target="_blank"
+        rel="noopener noreferrer"
+        download
+        onClick={(e) => e.stopPropagation()}
+        className="absolute left-4 top-4 rounded-full bg-black/50 p-2 text-white hover:bg-black/70"
+        aria-label="فتح الصورة الأصلية"
+        title="فتح الصورة الأصلية"
+      >
+        <Download className="h-6 w-6" />
+      </a>
+      {count > 1 && index > 0 && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            step(-1);
+          }}
+          className="absolute right-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/45 p-2.5 text-white hover:bg-black/70"
+          aria-label="الصورة السابقة"
+        >
+          <ChevronRight className="h-6 w-6" />
+        </button>
+      )}
+      {count > 1 && index < count - 1 && (
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            step(1);
+          }}
+          className="absolute left-3 top-1/2 z-10 -translate-y-1/2 rounded-full bg-black/45 p-2.5 text-white hover:bg-black/70"
+          aria-label="الصورة التالية"
+        >
+          <ChevronLeft className="h-6 w-6" />
+        </button>
+      )}
+
       {/* eslint-disable-next-line @next/next/no-img-element */}
       <img
-        src={cldOptimize(src, { width: 1600, crop: 'limit' })}
-        alt={alt}
-        className="max-h-[70vh] w-full flex-1 object-contain"
+        key={current.url}
+        src={cldOptimize(current.url, { width: 1600, crop: 'limit' })}
+        alt={current.name}
+        onTouchStart={(e) => {
+          touchStart.current = e.touches[0].clientX;
+        }}
+        onTouchEnd={(e) => {
+          if (touchStart.current === null) return;
+          const dx = e.changedTouches[0].clientX - touchStart.current;
+          touchStart.current = null;
+          // Swipe right -> forward (RTL), swipe left -> back.
+          if (Math.abs(dx) > 50) step(dx > 0 ? 1 : -1);
+        }}
+        className="max-h-[70vh] w-full flex-1 animate-fade-in object-contain"
         onClick={(e) => e.stopPropagation()}
       />
 

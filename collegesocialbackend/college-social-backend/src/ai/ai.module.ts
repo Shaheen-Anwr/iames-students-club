@@ -17,6 +17,8 @@ import { AiToolsService } from './ai-tools.service';
 import { AiMemoryService } from './ai-memory.service';
 import { AiConversationsService } from './ai-conversations.service';
 import { AiController } from './ai.controller';
+import { ChatAiService } from './chat-ai.service';
+import { ChatAiController } from './chat-ai.controller';
 import { UploadModule } from '../upload/upload.module';
 import { ScheduleModule } from '../schedule/schedule.module';
 import { PlannerModule } from '../planner/planner.module';
@@ -52,7 +54,7 @@ import { AssignmentsModule } from '../assignments/assignments.module';
     // (gamification points/badges, isPersonal handling) instead of duplicating it.
     forwardRef(() => AssignmentsModule),
   ],
-  controllers: [AiController],
+  controllers: [AiController, ChatAiController],
   providers: [
     LectureIndexService,
     LectureSearchService,
@@ -63,6 +65,7 @@ import { AssignmentsModule } from '../assignments/assignments.module';
     AiToolsService,
     AiMemoryService,
     AiConversationsService,
+    ChatAiService,
   ],
   exports: [LectureIndexService, AiConversationsService, AiService],
 })

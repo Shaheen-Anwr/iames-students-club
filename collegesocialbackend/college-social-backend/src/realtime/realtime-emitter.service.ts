@@ -16,6 +16,12 @@ export class RealtimeEmitterService {
     this.server?.to(`user:${userId}`).emit(event, payload);
   }
 
+  // Everyone in one conversation's live room (`conversation:<id>`, joined at connect time) -- for
+  // events raised outside a socket handler, e.g. a scheduled message going out from a timer.
+  emitToConversation(conversationId: string, event: string, payload: unknown) {
+    this.server?.to(`conversation:${conversationId}`).emit(event, payload);
+  }
+
   // Admin dashboard live signal (online count, activity feed) -- sockets join the 'admins' room
   // in ChatGateway.handleConnection when their JWT role is 'admin'.
   emitToAdmins(event: string, payload: unknown) {

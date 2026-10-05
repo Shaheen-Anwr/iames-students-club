@@ -306,3 +306,16 @@
   }
 
 }
+
+/* Chat wallpaper "aurora": referenced by name from inline styles (lib/chat-background.ts), so it
+   lives here rather than as a Tailwind animation that only emits when its class is used. The
+   global reduced-motion rule above already neutralises it for users who opt out of motion. */
+@keyframes chat-aurora-drift {
+  0%,
+  100% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+}

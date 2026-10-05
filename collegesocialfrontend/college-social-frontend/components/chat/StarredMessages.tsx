@@ -8,6 +8,7 @@ import { Spinner } from '@/components/ui/Spinner';
 import { api } from '@/lib/api';
 import { assetUrl, timeAgo } from '@/lib/utils';
 import type { Message } from '@/lib/types';
+import { FormattedText } from './FormattedText';
 
 export function StarredMessages() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -56,7 +57,12 @@ export function StarredMessages() {
                     <p className="truncate text-sm font-semibold text-foreground">{message.sender?.name ?? 'مستخدم محذوف'}</p>
                     <span className="shrink-0 text-xs text-muted-foreground">{timeAgo(message.createdAt)}</span>
                   </div>
-                  {message.text && <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">{message.text}</p>}
+                  {message.text && (
+                    <p dir="auto" className="mt-0.5 whitespace-pre-wrap break-words text-sm text-foreground">
+                      <FormattedText text={message.text} />
+                    </p>
+                  )}
+                  {message.poll && <p className="mt-0.5 text-sm font-medium text-foreground">📊 {message.poll.question}</p>}
                   {message.attachments?.map((a, i) =>
                     a.type === 'image' ? (
                       // eslint-disable-next-line @next/next/no-img-element
@@ -68,8 +74,11 @@ export function StarredMessages() {
                     ),
                   )}
                   <div className="mt-2 flex items-center gap-3">
-                    <Link href={`/chat/${message.conversation}`} className="text-xs font-medium text-accent hover:underline">
-                      الانتقال إلى المحادثة
+                    <Link
+                      href={`/chat/${message.conversation}?m=${message._id}&t=${encodeURIComponent(message.createdAt)}`}
+                      className="text-xs font-medium text-accent hover:underline"
+                    >
+                      الانتقال إلى الرسالة
                     </Link>
                     <button onClick={() => unstar(message._id)} className="text-xs font-medium text-muted-foreground hover:text-danger">
                       إلغاء التمييز
