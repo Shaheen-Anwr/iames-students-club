@@ -25,6 +25,9 @@ import { UsersService } from '../users/users.service';
 import { Role } from '../common/enums/role.enum';
 import { corsOriginValidator } from '../common/cors-origin';
 import { WsHttpExceptionFilter } from './ws-exception.filter';
+import { ChatCallService } from './chat-call.service';
+import { isCallId } from './chat.constants';
+import { Types } from 'mongoose';
 
 interface AuthedSocket extends Socket {
   data: {
@@ -36,11 +39,6 @@ interface AuthedSocket extends Socket {
   };
 }
 
-interface CallSignalPayload {
-  toUserId: string;
-  conversationId: string;
-  [key: string]: unknown;
-}
 
 // Frontend connects with: io(URL, { auth: { token: <JWT access token> } })
 // Then joins per-conversation rooms with the "joinConversation" event before sending messages.
@@ -99,6 +97,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     private readonly realtimeEmitter: RealtimeEmitterService,
     private readonly usersService: UsersService,
     private readonly presence: ChatPresenceService,
+    private readonly callService: ChatCallService,
   ) {}
 
   // Lets HTTP-only services (e.g. PostsService, over comments/reactions) push notifications
@@ -495,42 +494,156 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   }
 
   // --- WebRTC call signaling (1-to-1 voice/video calls) ---
-  // The server never touches media -- it only relays SDP offers/answers and ICE candidates
-  // between the two peers' personal rooms (`user:${id}`, joined at connect time above).
+  // The server never touches media. It validates call SETUP (callUser: same DM, no block, caller
+  // card from the DB) and otherwise relays signaling between the two users' personal rooms
+  // (`user:<id>`). Every relay carries the call's client-generated `callId`; clients ignore
+  // anything for a call they're not in, so the relays stay stateless and multi-instance safe.
+
+  // Shared guard for every relayed call signal.
+  private callRelayTarget(client: AuthedSocket, dto: { callId?: unknown; toUserId?: unknown } | null | undefined) {
+    if (this.rateLimited(client, 'callSignal', 400, 10_000)) return null;
+    if (!dto || !isCallId(dto.callId) || typeof dto.toUserId !== 'string' || !Types.ObjectId.isValid(dto.toUserId)) {
+      return null;
+    }
+    return { callId: dto.callId, toUserId: dto.toUserId };
+  }
 
   @SubscribeMessage('callUser')
-  onCallUser(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: CallSignalPayload & { offer: unknown; callType: 'audio' | 'video' }) {
-    this.server.to(`user:${dto.toUserId}`).emit('incomingCall', {
+  async onCallUser(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() dto: { callId: string; toUserId: string; conversationId: string; offer: unknown; callType: string },
+  ) {
+    if (this.rateLimited(client, 'callUser', 8, 60_000)) {
+      throw new WsException('محاولات اتصال كثيرة، انتظر قليلًا ثم حاول مجددًا.');
+    }
+    const target = this.callRelayTarget(client, dto);
+    if (!target || !dto.offer) throw new WsException('طلب اتصال غير صالح');
+    const caller = await this.callService.validateCall(client.data.userId, dto.conversationId, target.toUserId);
+    const online = await this.presence.isOnline(target.toUserId);
+    this.server.to(`user:${target.toUserId}`).emit('incomingCall', {
+      callId: target.callId,
       fromUserId: client.data.userId,
+      fromUser: caller,
       conversationId: dto.conversationId,
       offer: dto.offer,
-      callType: dto.callType,
+      callType: dto.callType === 'video' ? 'video' : 'audio',
     });
+    // Nobody's connected to ring -- tell the caller right away so the UI can say so.
+    if (!online) client.emit('callPeerOffline', { callId: target.callId });
+    return { ok: true, online };
+  }
+
+  // Callee's device got the call and is ringing -> caller UI switches "جارٍ الاتصال" to "يرن".
+  @SubscribeMessage('callRinging')
+  onCallRinging(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { callId: string; toUserId: string }) {
+    const target = this.callRelayTarget(client, dto);
+    if (!target) return { ok: false };
+    this.server.to(`user:${target.toUserId}`).emit('callRinging', { callId: target.callId, fromUserId: client.data.userId });
+    return { ok: true };
   }
 
   @SubscribeMessage('answerCall')
-  onAnswerCall(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: CallSignalPayload & { answer: unknown }) {
-    this.server.to(`user:${dto.toUserId}`).emit('callAnswered', {
+  onAnswerCall(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { callId: string; toUserId: string; answer: unknown }) {
+    const target = this.callRelayTarget(client, dto);
+    if (!target || !dto.answer) return { ok: false };
+    this.server.to(`user:${target.toUserId}`).emit('callAnswered', {
+      callId: target.callId,
       fromUserId: client.data.userId,
       answer: dto.answer,
     });
-  }
-
-  @SubscribeMessage('iceCandidate')
-  onIceCandidate(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: CallSignalPayload & { candidate: unknown }) {
-    this.server.to(`user:${dto.toUserId}`).emit('iceCandidate', {
-      fromUserId: client.data.userId,
-      candidate: dto.candidate,
-    });
-  }
-
-  @SubscribeMessage('endCall')
-  onEndCall(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: CallSignalPayload) {
-    this.server.to(`user:${dto.toUserId}`).emit('callEnded', { fromUserId: client.data.userId });
+    // The callee's other tabs/devices are still ringing -- stop them.
+    client.to(`user:${client.data.userId}`).emit('callHandledElsewhere', { callId: target.callId });
+    return { ok: true };
   }
 
   @SubscribeMessage('rejectCall')
-  onRejectCall(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: CallSignalPayload) {
-    this.server.to(`user:${dto.toUserId}`).emit('callRejected', { fromUserId: client.data.userId });
+  onRejectCall(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { callId: string; toUserId: string; reason?: string }) {
+    const target = this.callRelayTarget(client, dto);
+    if (!target) return { ok: false };
+    const reason = dto.reason === 'busy' ? 'busy' : 'declined';
+    this.server.to(`user:${target.toUserId}`).emit('callRejected', {
+      callId: target.callId,
+      fromUserId: client.data.userId,
+      reason,
+    });
+    if (reason === 'declined') client.to(`user:${client.data.userId}`).emit('callHandledElsewhere', { callId: target.callId });
+    return { ok: true };
+  }
+
+  @SubscribeMessage('endCall')
+  onEndCall(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { callId: string; toUserId: string }) {
+    const target = this.callRelayTarget(client, dto);
+    if (!target) return { ok: false };
+    this.server.to(`user:${target.toUserId}`).emit('callEnded', { callId: target.callId, fromUserId: client.data.userId });
+    return { ok: true };
+  }
+
+  @SubscribeMessage('iceCandidate')
+  onIceCandidate(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { callId: string; toUserId: string; candidate: unknown }) {
+    const target = this.callRelayTarget(client, dto);
+    if (!target || !dto.candidate) return { ok: false };
+    this.server.to(`user:${target.toUserId}`).emit('iceCandidate', {
+      callId: target.callId,
+      fromUserId: client.data.userId,
+      candidate: dto.candidate,
+    });
+    return { ok: true };
+  }
+
+  // Mid-call renegotiation (audio -> video upgrade, screen share, ICE restart): an SDP offer or
+  // answer, relayed as-is ("perfect negotiation" runs on the clients).
+  @SubscribeMessage('callRenegotiate')
+  onCallRenegotiate(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { callId: string; toUserId: string; description: unknown }) {
+    const target = this.callRelayTarget(client, dto);
+    if (!target || !dto.description) return { ok: false };
+    this.server.to(`user:${target.toUserId}`).emit('callRenegotiate', {
+      callId: target.callId,
+      fromUserId: client.data.userId,
+      description: dto.description,
+    });
+    return { ok: true };
+  }
+
+  // Mic / camera / screen-share state, so the other side can show "muted" / "camera off".
+  @SubscribeMessage('callMediaState')
+  onCallMediaState(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() dto: { callId: string; toUserId: string; audio?: boolean; video?: boolean; screen?: boolean },
+  ) {
+    const target = this.callRelayTarget(client, dto);
+    if (!target) return { ok: false };
+    this.server.to(`user:${target.toUserId}`).emit('callMediaState', {
+      callId: target.callId,
+      fromUserId: client.data.userId,
+      audio: !!dto.audio,
+      video: !!dto.video,
+      screen: !!dto.screen,
+    });
+    return { ok: true };
+  }
+
+  // The caller's client reports how the call ended; it becomes a call-log bubble in the chat
+  // (and, for a missed call, a notification to the other side).
+  @SubscribeMessage('callLog')
+  async onCallLog(
+    @ConnectedSocket() client: AuthedSocket,
+    @MessageBody() dto: { callId: string; conversationId: string; callType: string; outcome: string; duration?: number },
+  ) {
+    if (this.rateLimited(client, 'callLog', 10, 60_000)) return { ok: false };
+    const { message, created } = await this.callService.logCall(client.data.userId, dto);
+    if (created) this.server.to(`conversation:${dto.conversationId}`).emit('newMessage', message);
+    return { ok: true };
+  }
+
+  // "يسجل رسالة صوتية…" -- the voice-note twin of the typing indicator.
+  @SubscribeMessage('recordingVoice')
+  onRecordingVoice(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { conversationId: string; active: boolean }) {
+    if (this.rateLimited(client, 'typing', 20, 5_000)) return;
+    if (!dto || typeof dto.conversationId !== 'string') return;
+    client.to(`conversation:${dto.conversationId}`).emit('userRecording', {
+      conversationId: dto.conversationId,
+      userId: client.data.userId,
+      active: !!dto.active,
+    });
   }
 }

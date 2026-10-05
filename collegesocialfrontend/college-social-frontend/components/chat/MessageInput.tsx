@@ -51,6 +51,8 @@ export interface SendPayload {
 export interface MessageInputHandle {
   addFiles: (files: File[]) => void;
   focus: () => void;
+  /** Put text into the composer (appended on a new line if something's already there). */
+  insertText: (text: string) => void;
 }
 
 interface MessageInputProps {
@@ -70,6 +72,8 @@ interface MessageInputProps {
   onOpenSummary: () => void;
   scheduledCount: number;
   onOpenScheduled: () => void;
+  /** Voice recording started/stopped -- drives the "يسجل رسالة صوتية…" indicator for others. */
+  onRecordingChange?: (active: boolean) => void;
 }
 
 const MAX_FILES = 10;
@@ -172,6 +176,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     onOpenSummary,
     scheduledCount,
     onOpenScheduled,
+    onRecordingChange,
   },
   ref,
 ) {
@@ -279,7 +284,27 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     [showToast],
   );
 
-  useImperativeHandle(ref, () => ({ addFiles, focus: () => textareaRef.current?.focus() }), [addFiles]);
+  useImperativeHandle(
+    ref,
+    () => ({
+      addFiles,
+      focus: () => textareaRef.current?.focus(),
+      insertText: (value: string) => {
+        editText((prev) => (prev.trim() ? `${prev.trimEnd()}\n${value}` : value));
+        requestAnimationFrame(() => textareaRef.current?.focus());
+      },
+    }),
+    [addFiles, editText],
+  );
+
+  // Tell the conversation while a voice note is being recorded (and stop when it ends/unmounts).
+  const recordingCallback = useRef(onRecordingChange);
+  recordingCallback.current = onRecordingChange;
+  useEffect(() => {
+    if (!recording) return;
+    recordingCallback.current?.(true);
+    return () => recordingCallback.current?.(false);
+  }, [recording]);
 
   const closeMenus = useCallback(() => {
     setAttachOpen(false);

@@ -88,7 +88,12 @@ export function messagePreview(message: {
   text?: string | null;
   poll?: { question?: string | null } | null;
   attachments?: { type: string }[] | null;
+  call?: { type: string; outcome: string } | null;
 }): string {
+  if (message.call) {
+    const missed = ['no_answer', 'canceled', 'busy'].includes(message.call.outcome);
+    return `${message.call.type === 'video' ? '🎥 مكالمة فيديو' : '📞 مكالمة صوتية'}${missed ? ' فائتة' : ''}`;
+  }
   const raw = stripMentionTokens(message.text ?? '');
   // One-line surfaces show the words, not the *markers* (a code block keeps its contents).
   const text = (hasFormatting(raw) ? stripFormatting(raw) : raw).replace(/\s+/g, ' ').trim();
@@ -231,4 +236,13 @@ export function senderColor(userId?: string | null): string {
   let hash = 0;
   for (let i = 0; i < userId.length; i++) hash = (hash * 31 + userId.charCodeAt(i)) | 0;
   return SENDER_COLORS[Math.abs(hash) % SENDER_COLORS.length];
+}
+
+// "3:24" / "1:02:05" -- call durations.
+export function formatDuration(totalSeconds: number): string {
+  const s = Math.max(0, Math.floor(totalSeconds));
+  const h = Math.floor(s / 3600);
+  const m = Math.floor((s % 3600) / 60);
+  const sec = String(s % 60).padStart(2, '0');
+  return h ? `${h}:${String(m).padStart(2, '0')}:${sec}` : `${m}:${sec}`;
 }

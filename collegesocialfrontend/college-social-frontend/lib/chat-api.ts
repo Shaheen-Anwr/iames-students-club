@@ -1,4 +1,4 @@
-import { api } from './api';
+import { api, ApiError } from './api';
 import type {
   Attachment,
   ChatRewriteMode,
@@ -70,5 +70,17 @@ export const chatApi = {
     rewrite: (text: string, mode: ChatRewriteMode) => api.post<{ text: string }>('/ai/chat/rewrite', { text, mode }),
     translate: (messageId: string, target: 'ar' | 'en') =>
       api.post<{ text: string; sourceLanguage: string | null }>(`/ai/chat/messages/${messageId}/translate`, { target }),
+    transcribe: (messageId: string) =>
+      api.post<{ text: string; cached: boolean }>(`/ai/chat/messages/${messageId}/transcribe`),
   },
 };
+
+// A user-facing Arabic message for a failed AI call -- the throttler's 429 arrives in English.
+export function aiErrorMessage(err: unknown, fallback = 'تعذّر الاتصال بالذكاء الاصطناعي، حاول مجددًا.'): string {
+  if (err instanceof ApiError) {
+    if (err.status === 429) return 'طلبات كثيرة خلال دقيقة — انتظر قليلًا ثم أعد المحاولة.';
+    if (err.status === 503) return err.message || 'ميزات الذكاء الاصطناعي غير مفعّلة حاليًا.';
+    return err.message || fallback;
+  }
+  return fallback;
+}

@@ -41,6 +41,13 @@ export class ChatAiController {
     return this.chatAi.translateMessage(id, user.userId, dto.target);
   }
 
+  // Whisper call + audio download per hit (cached after the first, though).
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @Post('messages/:id/transcribe')
+  async transcribe(@Param('id') id: string, @CurrentUser() user: AuthenticatedUser) {
+    return this.chatAi.transcribe(id, user.userId);
+  }
+
   private async displayName(userId: string): Promise<string> {
     const user = await this.usersService.findById(userId).catch(() => null);
     return user?.name ?? 'الطالب';

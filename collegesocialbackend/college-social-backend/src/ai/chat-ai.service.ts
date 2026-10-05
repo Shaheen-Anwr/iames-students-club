@@ -1,8 +1,10 @@
 import {
   BadGatewayException,
+  BadRequestException,
   HttpException,
   Injectable,
   Logger,
+  PayloadTooLargeException,
   ServiceUnavailableException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -55,13 +57,24 @@ function clean(value: unknown, max: number): string {
   return typeof value === 'string' ? value.replace(/\s+/g, ' ').trim().slice(0, max) : '';
 }
 
+// Models sometimes return list items as objects ({ text }, { title }, { point }) instead of plain
+// strings -- accept those too rather than silently dropping the whole list.
 function cleanList(value: unknown, maxItems: number, maxLen: number): string[] {
   if (!Array.isArray(value)) return [];
   return value
-    .map((v) => clean(v, maxLen))
+    .map((v) => {
+      if (v && typeof v === 'object') {
+        const o = v as Record<string, unknown>;
+        return clean(o.text ?? o.title ?? o.point ?? o.item ?? o.content ?? '', maxLen);
+      }
+      return clean(v, maxLen);
+    })
     .filter(Boolean)
     .slice(0, maxItems);
 }
+
+// Whisper's upload limit on Groq's free tier.
+const MAX_TRANSCRIBE_BYTES = 25 * 1024 * 1024;
 
 // Mentions -> placeholders the model is told to keep verbatim, then restored afterwards, so a
 // rewrite/translation can never mangle or invent a user id.
@@ -91,6 +104,7 @@ function readableMentions(text: string): string {
 export class ChatAiService {
   private readonly logger = new Logger(ChatAiService.name);
   private readonly tzOffsetHours: number;
+  private readonly port: number;
 
   constructor(
     private readonly ai: AiService,
@@ -98,6 +112,7 @@ export class ChatAiService {
     config: ConfigService,
   ) {
     this.tzOffsetHours = config.get<number>('appTzOffsetHours') ?? 3;
+    this.port = config.get<number>('port') ?? 3001;
   }
 
   async summarize(conversationId: string, userId: string, userName: string, sinceMessageId?: string): Promise<ChatSummary> {
@@ -203,6 +218,31 @@ export class ChatAiService {
     const out = typeof raw?.text === 'string' ? raw.text.trim().slice(0, 4000) : '';
     if (!out) throw new BadGatewayException('تعذّرت الترجمة، حاول مجددًا');
     return { text: readableMentions(restore(out)), sourceLanguage: clean(raw?.sourceLanguage, 8) || null };
+  }
+
+  // Voice note -> text, generated once and cached on the attachment for everyone in the chat.
+  async transcribe(messageId: string, userId: string): Promise<{ text: string; cached: boolean }> {
+    const message = await this.chat.getMessageForUser(messageId, userId);
+    const attachments = message.attachments ?? [];
+    const index = attachments.findIndex((a) => a.type === 'voice' || a.type === 'audio');
+    if (index === -1) throw new BadRequestException('لا توجد رسالة صوتية في هذه الرسالة');
+    const attachment = attachments[index];
+    if (attachment.transcript) return { text: attachment.transcript, cached: true };
+
+    // Local-disk uploads are stored as "/uploads/..." paths served by this same process.
+    const url = /^https?:\/\//.test(attachment.url)
+      ? attachment.url
+      : `http://127.0.0.1:${this.port}${attachment.url.startsWith('/') ? '' : '/'}${attachment.url}`;
+    const res = await fetch(url).catch(() => null);
+    if (!res || !res.ok) throw new BadGatewayException('تعذّر تحميل الرسالة الصوتية');
+    const audio = Buffer.from(await res.arrayBuffer());
+    if (audio.length > MAX_TRANSCRIBE_BYTES) throw new PayloadTooLargeException('الرسالة الصوتية طويلة جدًا لتحويلها إلى نص');
+
+    const mime = (attachment.mimeType || res.headers.get('content-type') || 'audio/webm').split(';')[0];
+    const ext = mime.includes('mp4') || mime.includes('m4a') ? 'm4a' : mime.includes('ogg') ? 'ogg' : mime.includes('mpeg') ? 'mp3' : mime.includes('wav') ? 'wav' : 'webm';
+    const text = (await this.run(() => this.ai.transcribe(audio, `voice.${ext}`, mime))).slice(0, 5000);
+    if (text) await this.chat.setAttachmentTranscript(messageId, index, text);
+    return { text, cached: false };
   }
 
   // "[HH:mm] Name: text" lines, newest kept when over budget. Times are in the app's local zone.

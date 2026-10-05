@@ -1,6 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { HydratedDocument, Types } from 'mongoose';
-import { MESSAGE_EFFECTS, type MessageEffect } from '../chat.constants';
+import { CALL_OUTCOMES, MESSAGE_EFFECTS, type CallKind, type CallOutcome, type MessageEffect } from '../chat.constants';
 
 export type MessageDocument = HydratedDocument<Message>;
 
@@ -34,6 +34,11 @@ export class Attachment {
   // routes. Shared by ChannelMessage's `attachments`, which reuses this same schema.
   @Prop({ type: Number, default: null })
   chunkCount: number | null;
+
+  // Speech-to-text of a voice note, generated once on first request and shared by everyone who
+  // can see the message (ChatAiService.transcribe). null until someone asks.
+  @Prop({ type: String, default: null })
+  transcript: string | null;
 }
 
 export const AttachmentSchema = SchemaFactory.createForClass(Attachment);
@@ -96,6 +101,26 @@ export class Receipt {
 }
 
 export const ReceiptSchema = SchemaFactory.createForClass(Receipt);
+
+// A call record shown in the thread ("مكالمة صوتية · 3:24", "مكالمة فائتة"). The message's
+// sender is the caller; written once per call (unique on callId).
+@Schema({ _id: false })
+export class CallLog {
+  @Prop({ required: true })
+  callId: string;
+
+  @Prop({ type: String, enum: ['audio', 'video'], required: true })
+  type: CallKind;
+
+  @Prop({ type: String, enum: [...CALL_OUTCOMES], required: true })
+  outcome: CallOutcome;
+
+  // Seconds connected (completed calls only).
+  @Prop({ type: Number, default: 0 })
+  duration: number;
+}
+
+export const CallLogSchema = SchemaFactory.createForClass(CallLog);
 
 @Schema({ timestamps: true })
 export class Message {
@@ -171,7 +196,16 @@ export class Message {
 
   @Prop({ type: [ReceiptSchema], default: [], select: false })
   deliveryReceipts: Receipt[];
+
+  // Set only on call-log messages (text empty).
+  @Prop({ type: CallLogSchema, default: null })
+  call: CallLog | null;
 }
 
 export const MessageSchema = SchemaFactory.createForClass(Message);
 MessageSchema.index({ conversation: 1, createdAt: -1 });
+// One log message per call, even if the caller's client reports twice (retry, second tab).
+MessageSchema.index(
+  { 'call.callId': 1 },
+  { unique: true, partialFilterExpression: { 'call.callId': { $type: 'string' } } },
+);

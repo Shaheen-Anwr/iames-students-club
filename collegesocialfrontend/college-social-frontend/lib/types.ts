@@ -779,6 +779,18 @@ export interface Attachment {
   // >1 when this ('document') attachment was too large for a single Cloudinary asset and got split
   // on upload -- see MessageBubble/ChannelMessageBubble's chunked-download handling.
   chunkCount?: number | null;
+  // Voice notes: speech-to-text, generated on first request and cached server-side.
+  transcript?: string | null;
+}
+
+export type CallOutcome = 'completed' | 'no_answer' | 'canceled' | 'declined' | 'busy' | 'failed';
+
+// A call record in the thread (sender = the caller).
+export interface CallLogInfo {
+  callId: string;
+  type: 'audio' | 'video';
+  outcome: CallOutcome;
+  duration: number;
 }
 
 export interface MessageReaction {
@@ -818,6 +830,7 @@ export interface Message {
   mentions?: string[];
   poll?: Poll | null;
   effect?: MessageEffect | null;
+  call?: CallLogInfo | null;
   createdAt: string;
   /** Client-only: an optimistic message shown before the server has echoed it back. */
   pending?: boolean;

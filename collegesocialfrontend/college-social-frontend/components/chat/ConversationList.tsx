@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Archive, BellOff, Loader2, MessageSquarePlus, Pin, Search, Star, Users, UsersRound, X } from 'lucide-react';
+import { Archive, BellOff, Loader2, MessageSquarePlus, Mic, Pin, Search, Star, Users, UsersRound, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { LoadError } from '@/components/ui/LoadError';
@@ -79,7 +79,7 @@ function snippetAround(text: string, query: string, radius = 48): string {
 
 export function ConversationList() {
   const { user } = useAuth();
-  const { conversations, loading, error, refresh, typingConversationIds } = useChat();
+  const { conversations, loading, error, refresh, typingConversationIds, recordingConversationIds } = useChat();
   const { showToast } = useToast();
   const pathname = usePathname();
   const drafts = useChatDrafts();
@@ -324,6 +324,7 @@ export function ConversationList() {
                   const pinnedFlag = isPinned(conversation, user._id);
                   const unread = conversation.unreadCount ?? 0;
                   const isTyping = typingConversationIds.has(conversation._id);
+                  const isRecording = recordingConversationIds.has(conversation._id);
                   const online = !conversation.isGroup && !!avatarUser?.isOnline;
                   const draft = !active ? drafts[conversation._id]?.text : undefined;
                   const prefix = lastSenderPrefix(conversation, user._id);
@@ -397,7 +398,11 @@ export function ConversationList() {
                             </div>
                             <div className="mt-0.5 flex items-center justify-between gap-2">
                               <p className={cn('min-w-0 flex-1 truncate text-sm', unread > 0 ? 'font-medium text-foreground' : 'text-muted-foreground')}>
-                                {isTyping ? (
+                                {isRecording ? (
+                                  <span className="inline-flex items-center gap-1.5 font-semibold text-accent">
+                                    <Mic className="h-3.5 w-3.5 animate-pulse" /> يسجل رسالة صوتية…
+                                  </span>
+                                ) : isTyping ? (
                                   <span className="inline-flex items-center gap-1.5 font-semibold text-accent">
                                     <TypingDots /> يكتب الآن…
                                   </span>

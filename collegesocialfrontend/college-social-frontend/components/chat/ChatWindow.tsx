@@ -10,8 +10,10 @@ import {
   CheckSquare,
   Download,
   Info,
+  Keyboard,
   Loader2,
   MessageCircle,
+  Mic,
   Palette,
   Phone,
   Search,
@@ -157,6 +159,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const [typingIds, setTypingIds] = useState<string[]>([]);
+  const [recordingIds, setRecordingIds] = useState<string[]>([]);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [forwardTargets, setForwardTargets] = useState<Message[] | null>(null);
@@ -217,6 +221,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const loadingOlderRef = useRef(false);
   const pendingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
   const typingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const recordingTimers = useRef(new Map<string, ReturnType<typeof setTimeout>>());
+  const recordingPing = useRef<ReturnType<typeof setInterval> | null>(null);
   const typingEmit = useRef<{ last: number; stop: ReturnType<typeof setTimeout> | null }>({ last: 0, stop: null });
   const scrollRestore = useRef<{ height: number; top: number } | null>(null);
   const pendingJump = useRef<string | null>(null);
@@ -294,15 +300,34 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   useEffect(() => {
     const sendTimers = pendingTimers.current;
     const typers = typingTimers.current;
+    const recorders = recordingTimers.current;
     const typingState = typingEmit.current;
     return () => {
       sendTimers.forEach((t) => clearTimeout(t));
       sendTimers.clear();
       typers.forEach((t) => clearTimeout(t));
       typers.clear();
+      recorders.forEach((t) => clearTimeout(t));
+      recorders.clear();
       if (typingState.stop) clearTimeout(typingState.stop);
+      if (recordingPing.current) clearInterval(recordingPing.current);
     };
   }, []);
+
+  // While recording a voice note, tell the others ("يسجل رسالة صوتية…"), refreshing every 4s so
+  // the indicator expires by itself if this tab vanishes mid-recording.
+  const handleRecordingChange = useCallback(
+    (active: boolean) => {
+      if (recordingPing.current) clearInterval(recordingPing.current);
+      recordingPing.current = null;
+      if (!socket) return;
+      socket.emit('recordingVoice', { conversationId, active });
+      if (active) {
+        recordingPing.current = setInterval(() => socket.emit('recordingVoice', { conversationId, active: true }), 4000);
+      }
+    },
+    [socket, conversationId],
+  );
 
   const loadOlder = useCallback(async () => {
     const oldest = messagesRef.current.find((m) => !isPlaceholderId(m._id));
@@ -469,6 +494,28 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       removeTyping(payload.userId);
     };
 
+    // "يسجل رسالة صوتية…" -- refreshed every few seconds by the recorder, so it expires on its own.
+    const onRecording = (payload: { conversationId: string; userId: string; active: boolean }) => {
+      if (!payload || payload.conversationId !== conversationId || payload.userId === userId) return;
+      const id = payload.userId;
+      const existing = recordingTimers.current.get(id);
+      if (existing) clearTimeout(existing);
+      if (!payload.active) {
+        recordingTimers.current.delete(id);
+        setRecordingIds((prev) => prev.filter((x) => x !== id));
+        return;
+      }
+      removeTyping(id);
+      setRecordingIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+      recordingTimers.current.set(
+        id,
+        setTimeout(() => {
+          recordingTimers.current.delete(id);
+          setRecordingIds((prev) => prev.filter((x) => x !== id));
+        }, 7000),
+      );
+    };
+
     const onPinsUpdated = (payload: { conversationId: string; pins: PinnedMessage[]; actorId: string; pinned: boolean }) => {
       if (!payload || payload.conversationId !== conversationId || !Array.isArray(payload.pins)) return;
       setPins(payload.pins);
@@ -492,6 +539,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     socket.on('messagesDelivered', onMessagesDelivered);
     socket.on('userTyping', onTyping);
     socket.on('userStopTyping', onStopTyping);
+    socket.on('userRecording', onRecording);
     socket.on('pinsUpdated', onPinsUpdated);
     socket.on('scheduledUpdated', onScheduledUpdated);
     return () => {
@@ -505,6 +553,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       socket.off('messagesDelivered', onMessagesDelivered);
       socket.off('userTyping', onTyping);
       socket.off('userStopTyping', onStopTyping);
+      socket.off('userRecording', onRecording);
       socket.off('pinsUpdated', onPinsUpdated);
       socket.off('scheduledUpdated', onScheduledUpdated);
     };
@@ -1236,6 +1285,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         delete next[id];
         return next;
       }),
+    call: (type) => void handleCall(type),
   };
   const actions = useMemo<ChatThreadActions>(
     () => ({
@@ -1252,6 +1302,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
       showPollVotes: (m) => handlers.current?.showPollVotes(m),
       replayEffect: (m) => handlers.current?.replayEffect(m),
       hideTranslation: (id) => handlers.current?.hideTranslation(id),
+      call: (type) => handlers.current?.call(type),
     }),
     [],
   );
@@ -1300,11 +1351,17 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   const statusOf = (m: Message) => (conversation ? tickStatus(m, conversation, user._id) : 'sent');
 
   const typingUsers = typingIds.map((id) => participantsById.get(id)).filter((u): u is User => !!u);
+  const recordingUsers = recordingIds.map((id) => participantsById.get(id)).filter((u): u is User => !!u);
   const onlineCount = isGroup ? otherParticipants(conversation!, user._id).filter((p) => p.isOnline).length : 0;
   const memberCount = conversation?.participants.filter(Boolean).length ?? 0;
   const presence = !isGroup ? presenceLabel(avatarUser) : null;
 
-  const subtitle: React.ReactNode = typingUsers.length ? (
+  const subtitle: React.ReactNode = recordingUsers.length ? (
+    <span className="flex items-center gap-1.5 font-medium text-accent">
+      <Mic className="h-3.5 w-3.5 animate-pulse" />
+      {isGroup ? `${recordingUsers[0].name.split(/\s+/)[0]} يسجل رسالة صوتية…` : 'يسجل رسالة صوتية…'}
+    </span>
+  ) : typingUsers.length ? (
     <span className="flex items-center gap-1.5 font-medium text-accent">
       <TypingDots />
       {isGroup ? typingLabel(typingUsers.map((u) => u.name)) : 'يكتب الآن…'}
@@ -1340,7 +1397,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     { label: 'مظهر المحادثة', icon: Palette, onClick: () => setBackgroundModalOpen(true) },
     { label: muted ? 'إلغاء كتم الإشعارات' : 'كتم الإشعارات', icon: muted ? Bell : BellOff, onClick: () => void toggleMute() },
     { label: 'تصدير المحادثة', icon: Download, onClick: () => void exportChat() },
+    { label: 'اختصارات لوحة المفاتيح', icon: Keyboard, onClick: () => setShortcutsOpen(true) },
   ];
+  const lastMessageId = [...messages].reverse().find((m) => !isPlaceholderId(m._id))?._id ?? null;
 
   const selectionMode = selection !== null;
   const canDeleteForEveryone =
@@ -1477,8 +1536,25 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
                     </div>
                     <div>
                       <p className="text-sm font-semibold text-foreground">لا توجد رسائل بعد</p>
-                      <p className="mt-1 text-xs text-muted-foreground">قل مرحبًا وابدأ المحادثة 👋 — أو اكتب / لاكتشاف الأوامر</p>
+                      <p className="mt-1 text-xs text-muted-foreground">قل مرحبًا وابدأ المحادثة — أو اكتب / لاكتشاف الأوامر</p>
                     </div>
+                    {!blockedByMe && (
+                      <div className="mt-1 flex flex-wrap justify-center gap-2">
+                        {['👋', 'السلام عليكم', 'مرحبًا! كيف حالك؟'].map((starter) => (
+                          <button
+                            key={starter}
+                            type="button"
+                            onClick={() => void handleSend({ text: starter })}
+                            className={cn(
+                              'rounded-full bg-surface px-4 py-2 text-sm font-medium text-foreground shadow-elev-1 ring-1 ring-border/60 transition-transform hover:-translate-y-0.5 hover:ring-accent/40 active:scale-95',
+                              starter === '👋' && 'text-xl',
+                            )}
+                          >
+                            {starter}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 ) : (
                   <div className="flex-1">
@@ -1607,6 +1683,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               onOpenSummary={() => setSummaryOpen(true)}
               scheduledCount={scheduled.length}
               onOpenScheduled={() => setScheduledOpen(true)}
+              onRecordingChange={handleRecordingChange}
             />
           )}
 
@@ -1685,6 +1762,8 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             conversationId={conversationId}
             firstUnreadId={unreadAtOpen > 0 ? firstUnreadId : null}
             unreadCount={unreadAtOpen}
+            lastMessageId={lastMessageId}
+            onInsert={blockedByMe ? undefined : (text) => composerRef.current?.insertText(text)}
           />
           <MessageInfoModal
             message={messageInfoTarget}
@@ -1724,6 +1803,31 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
             </div>
           </Modal>
 
+          <Modal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} title="اختصارات لوحة المفاتيح" className="max-w-md">
+            <div className="space-y-1">
+              {(
+                [
+                  ['Enter', 'إرسال'],
+                  ['Shift + Enter', 'سطر جديد'],
+                  ['/', 'الأوامر السريعة (استطلاع، جدولة، ملخص…)'],
+                  ['↑', 'تعديل آخر رسالة لك'],
+                  ['Ctrl + F', 'البحث في المحادثة'],
+                  ['Ctrl + B / I / E', 'عريض / مائل / كود للنص المحدد'],
+                  ['Ctrl + Shift + X', 'يتوسطه خط'],
+                  ['Esc', 'إلغاء الرد أو التعديل أو التحديد'],
+                  ['M / V', 'أثناء المكالمة: الميكروفون / الكاميرا'],
+                ] as const
+              ).map(([keys, label]) => (
+                <div key={keys} className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 odd:bg-surface-2/60">
+                  <span className="text-sm text-foreground">{label}</span>
+                  <kbd dir="ltr" className="shrink-0 rounded-lg border border-border bg-surface px-2 py-1 font-mono text-[11px] text-muted-foreground shadow-sm">
+                    {keys}
+                  </kbd>
+                </div>
+              ))}
+            </div>
+          </Modal>
+
           {imagePreview && imageGallery.length > 0 && (
             <ImagePreviewModal
               src={imageGallery[Math.min(imagePreview.index, imageGallery.length - 1)].url}
@@ -1733,6 +1837,15 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               onClose={() => setImagePreview(null)}
               message={imagePreview.message}
               isOwn={imagePreview.message.sender?._id === user._id}
+              senderName={imagePreview.message.sender?._id === user._id ? 'أنت' : imagePreview.message.sender?.name ?? 'مستخدم محذوف'}
+              senderPhotoUrl={imagePreview.message.sender?.photoUrl ?? null}
+              createdAt={imagePreview.message.createdAt}
+              caption={imagePreview.message.text}
+              onGoToMessage={() => {
+                const id = imagePreview.message._id;
+                setImagePreview(null);
+                void jumpToMessage(id, imagePreview.message.createdAt);
+              }}
               onReply={(m) => setReplyingTo(m)}
               onReact={handleReact}
               onForward={(m) => setForwardTargets([m])}

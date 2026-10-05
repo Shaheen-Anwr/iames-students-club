@@ -8,6 +8,7 @@ import { ChatController } from './chat.controller';
 import { ChatGateway } from './chat.gateway';
 import { ChatPresenceService } from './chat-presence.service';
 import { ChatSchedulerService } from './chat-scheduler.service';
+import { ChatCallService } from './chat-call.service';
 import { LinkPreviewService } from './link-preview.service';
 import { AuthModule } from '../auth/auth.module';
 import { GroupsModule } from '../groups/groups.module';
@@ -29,7 +30,7 @@ import { UploadModule } from '../upload/upload.module';
     UploadModule,
   ],
   controllers: [ChatController],
-  providers: [ChatService, ChatGateway, ChatPresenceService, ChatSchedulerService, LinkPreviewService],
+  providers: [ChatService, ChatGateway, ChatPresenceService, ChatSchedulerService, ChatCallService, LinkPreviewService],
   exports: [ChatService],
 })
 export class ChatModule {}

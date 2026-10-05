@@ -4,18 +4,25 @@ import { memo, useEffect, useRef, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Ban,
+  Captions,
   Check,
   CheckCheck,
   Clock,
   Forward,
   Languages,
   MoreHorizontal,
+  Phone,
+  PhoneIncoming,
+  PhoneMissed,
+  PhoneOff,
+  PhoneOutgoing,
   Pin,
   Reply,
   RotateCw,
   SmilePlus,
   Sparkles,
   Star,
+  Video,
   X,
 } from 'lucide-react';
 
@@ -32,11 +39,13 @@ import {
   bigEmojiCount,
   extractFirstUrl,
   formatClock,
+  formatDuration,
   formatFullDate,
   messagePreview,
   senderColor,
   type TickStatus,
 } from '@/lib/chat-helpers';
+import { aiErrorMessage, chatApi } from '@/lib/chat-api';
 import { assetUrl, cn } from '@/lib/utils';
 import type { Attachment, Message, ReplyPreview, User } from '@/lib/types';
 
@@ -369,6 +378,162 @@ function DocumentRow({
   return <DocumentAttachment attachment={attachment} isOwn={isOwn} loading={opening} onOpen={() => void open()} />;
 }
 
+// Voice note -> text (AI, generated once server-side and cached on the attachment).
+function VoiceTranscript({ message, index, isOwn }: { message: Message; index: number; isOwn: boolean }) {
+  const cached = message.attachments?.[index]?.transcript ?? null;
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<{ status: 'idle' | 'loading' | 'done' | 'error'; text?: string; error?: string }>(
+    cached ? { status: 'done', text: cached } : { status: 'idle' },
+  );
+  if (message.pending || message._id.startsWith('tmp_')) return null;
+
+  async function load() {
+    setOpen(true);
+    if (state.status === 'done' || state.status === 'loading') return;
+    setState({ status: 'loading' });
+    try {
+      const { text } = await chatApi.ai.transcribe(message._id);
+      setState({ status: 'done', text });
+    } catch (err) {
+      setState({ status: 'error', error: aiErrorMessage(err, 'تعذّر تحويل الرسالة إلى نص.') });
+    }
+  }
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={(e) => {
+          e.stopPropagation();
+          void load();
+        }}
+        className={cn(
+          'mx-2 mb-1 mt-0.5 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11.5px] font-medium transition-colors',
+          isOwn ? 'bg-white/15 text-white hover:bg-white/25' : 'bg-accent/10 text-accent hover:bg-accent/15',
+        )}
+      >
+        <Captions className="h-3.5 w-3.5" /> عرض النص
+      </button>
+    );
+  }
+
+  return (
+    <div
+      onClick={(e) => e.stopPropagation()}
+      className={cn('mx-1 mb-1 rounded-xl px-2.5 py-1.5 text-[13.5px] leading-relaxed', isOwn ? 'bg-black/15' : 'bg-surface-2')}
+    >
+      <div className={cn('mb-0.5 flex items-center gap-1.5 text-[11px] font-medium', isOwn ? 'text-white/80' : 'text-accent')}>
+        <Captions className="h-3 w-3" /> النص
+        <button
+          type="button"
+          onClick={() => setOpen(false)}
+          aria-label="إخفاء النص"
+          className="ms-auto rounded-full p-0.5 opacity-70 hover:opacity-100"
+        >
+          <X className="h-3 w-3" />
+        </button>
+      </div>
+      {state.status === 'loading' ? (
+        <div className="space-y-1.5 py-1">
+          <div className="h-2.5 w-11/12 animate-pulse rounded bg-current opacity-20" />
+          <div className="h-2.5 w-2/3 animate-pulse rounded bg-current opacity-20" />
+        </div>
+      ) : state.status === 'error' ? (
+        <p className="text-xs opacity-80">{state.error}</p>
+      ) : state.text ? (
+        <p dir="auto" className="whitespace-pre-wrap break-words">
+          {state.text}
+        </p>
+      ) : (
+        <p className="text-xs opacity-75">لم يُتعرّف على كلام في هذه الرسالة.</p>
+      )}
+    </div>
+  );
+}
+
+// A call record in the thread: what happened, how long, and a one-tap call back.
+function CallLogCard({
+  message,
+  isOwn,
+  status,
+  pinned,
+  starred,
+}: {
+  message: Message;
+  isOwn: boolean;
+  status: TickStatus;
+  pinned?: boolean;
+  starred?: boolean;
+}) {
+  const actions = useChatActions();
+  const call = message.call!;
+  const video = call.type === 'video';
+  const completed = call.outcome === 'completed';
+  const missedForMe = !isOwn && (call.outcome === 'no_answer' || call.outcome === 'canceled' || call.outcome === 'busy');
+  const kind = video ? 'مكالمة فيديو' : 'مكالمة صوتية';
+  const title = isOwn
+    ? completed
+      ? `${kind} صادرة`
+      : call.outcome === 'declined'
+        ? 'رُفضت المكالمة'
+        : call.outcome === 'busy'
+          ? 'كان في مكالمة أخرى'
+          : call.outcome === 'failed'
+            ? 'تعذّر الاتصال'
+            : 'لم يتم الرد'
+    : completed
+      ? `${kind} واردة`
+      : call.outcome === 'declined'
+        ? 'رفضت المكالمة'
+        : call.outcome === 'failed'
+          ? 'مكالمة لم تكتمل'
+          : `${kind} فائتة`;
+  const subtitle = completed ? formatDuration(call.duration) : missedForMe ? 'اضغط لمعاودة الاتصال' : kind;
+  const Icon = completed ? (isOwn ? PhoneOutgoing : PhoneIncoming) : missedForMe ? PhoneMissed : PhoneOff;
+
+  return (
+    <div
+      className={cn(
+        'relative w-fit min-w-[15rem] max-w-full overflow-hidden rounded-[1.15rem] shadow-sm',
+        isOwn ? 'bg-gradient-accent text-white' : 'bg-surface text-foreground ring-1 ring-border/60',
+      )}
+    >
+      <div className="flex items-center gap-3 p-2.5 pe-3">
+        <span
+          className={cn(
+            'flex h-10 w-10 shrink-0 items-center justify-center rounded-full',
+            isOwn ? 'bg-white/20 text-white' : missedForMe ? 'bg-rose-500/15 text-rose-500' : 'bg-emerald-500/15 text-emerald-600 dark:text-emerald-400',
+          )}
+        >
+          {video && completed ? <Video className="h-5 w-5" /> : <Icon className="h-5 w-5" />}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className={cn('truncate text-sm font-semibold', missedForMe && 'text-rose-500')}>{title}</p>
+          <p className={cn('text-xs tabular-nums', isOwn ? 'text-white/75' : 'text-muted-foreground')}>{subtitle}</p>
+        </div>
+        <button
+          type="button"
+          onClick={(e) => {
+            e.stopPropagation();
+            actions.call(call.type);
+          }}
+          aria-label={video ? 'معاودة الاتصال بالفيديو' : 'معاودة الاتصال'}
+          title={video ? 'معاودة الاتصال بالفيديو' : 'معاودة الاتصال'}
+          className={cn(
+            'flex h-9 w-9 shrink-0 items-center justify-center rounded-full transition-transform hover:scale-105 active:scale-95',
+            isOwn ? 'bg-white/20 text-white hover:bg-white/30' : 'bg-accent/10 text-accent hover:bg-accent/15',
+          )}
+        >
+          {video ? <Video className="h-4 w-4" /> : <Phone className="h-4 w-4" />}
+        </button>
+      </div>
+      <div className="flex justify-end px-2.5 pb-1.5">
+        <Meta message={message} isOwn={isOwn} status={status} pinned={pinned} starred={starred} />
+      </div>
+    </div>
+  );
+}
+
 // ---------------------------------------------------------------------------------------------
 // The bubble itself (shared by the live row and the long-press overlay's preview)
 
@@ -428,6 +593,10 @@ function BubbleCard({
   const meta = (onMedia = false) => (
     <Meta message={message} isOwn={isOwn} status={status} pinned={pinned} starred={starred} onMedia={onMedia} />
   );
+
+  if (message.call) {
+    return <CallLogCard message={message} isOwn={isOwn} status={status} pinned={pinned} starred={starred} />;
+  }
 
   if (emojiSize) {
     return (
@@ -502,6 +671,7 @@ function BubbleCard({
       {audios.map(({ a, index }) => (
         <div key={`a-${index}`} className="px-1 pt-1" onClick={(e) => e.stopPropagation()}>
           <VoiceMessagePlayer src={assetUrl(a.url) ?? ''} isOwn={isOwn} duration={a.duration} bare />
+          <VoiceTranscript message={message} index={index} isOwn={isOwn} />
         </div>
       ))}
 

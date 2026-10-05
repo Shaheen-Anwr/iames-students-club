@@ -1,17 +1,20 @@
 'use client';
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Copy, RefreshCw, Sparkles } from 'lucide-react';
+import { CheckCircle2, Copy, MessageSquarePlus, RefreshCw, Sparkles } from 'lucide-react';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { Segmented } from '@/components/ui/Segmented';
-import { ApiError } from '@/lib/api';
-import { chatApi } from '@/lib/chat-api';
+import { aiErrorMessage, chatApi } from '@/lib/chat-api';
 import { useToast } from '@/lib/toast-context';
 import type { ChatSummary } from '@/lib/types';
 
 type Scope = 'unread' | 'recent';
+
+// Summaries already generated this session, per conversation + scope + newest message: reopening
+// the sheet with nothing new is instant and doesn't spend another AI call.
+const summaryCache = new Map<string, ChatSummary>();
 
 // "Catch me up" -- an on-demand AI digest of what you missed (or of the recent conversation):
 // one-line gist, key points, and the to-dos / dates / decisions buried in the thread.
@@ -21,6 +24,8 @@ export function AiSummaryModal({
   conversationId,
   firstUnreadId,
   unreadCount,
+  lastMessageId,
+  onInsert,
 }: {
   open: boolean;
   onClose: () => void;
@@ -28,27 +33,44 @@ export function AiSummaryModal({
   /** First unread message at open -- enables the "unread only" scope. */
   firstUnreadId: string | null;
   unreadCount: number;
+  /** Newest message in the thread -- part of the cache key, so a new message invalidates it. */
+  lastMessageId: string | null;
+  /** Put the summary into the composer (e.g. to share it with the group). */
+  onInsert?: (text: string) => void;
 }) {
   const { showToast } = useToast();
   const [scope, setScope] = useState<Scope>(firstUnreadId ? 'unread' : 'recent');
   const [summary, setSummary] = useState<ChatSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const requestId = useRef(0);
 
   const load = useCallback(
-    async (which: Scope) => {
+    async (which: Scope, { force = false }: { force?: boolean } = {}) => {
+      const key = `${conversationId}|${which}|${which === 'unread' ? firstUnreadId : ''}|${lastMessageId ?? ''}`;
+      const cached = summaryCache.get(key);
+      if (cached && !force) {
+        setError(null);
+        setLoading(false);
+        setSummary(cached);
+        return;
+      }
+      const id = ++requestId.current;
       setLoading(true);
       setError(null);
       setSummary(null);
       try {
-        setSummary(await chatApi.ai.summary(conversationId, which === 'unread' ? firstUnreadId : null));
+        const result = await chatApi.ai.summary(conversationId, which === 'unread' ? firstUnreadId : null);
+        if (id !== requestId.current) return; // a newer request (scope switch) superseded this one
+        summaryCache.set(key, result);
+        setSummary(result);
       } catch (err) {
-        setError(err instanceof ApiError ? err.message : 'تعذّر إنشاء الملخص، حاول مجددًا.');
+        if (id === requestId.current) setError(aiErrorMessage(err, 'تعذّر إنشاء الملخص، حاول مجددًا.'));
       } finally {
-        setLoading(false);
+        if (id === requestId.current) setLoading(false);
       }
     },
-    [conversationId, firstUnreadId],
+    [conversationId, firstUnreadId, lastMessageId],
   );
 
   useEffect(() => {
@@ -56,17 +78,24 @@ export function AiSummaryModal({
     const initial: Scope = firstUnreadId ? 'unread' : 'recent';
     setScope(initial);
     void load(initial);
-  }, [open, firstUnreadId, load]);
+    // Re-run only when the sheet opens; scope switches call load() directly.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [open]);
+
+  const asText = (s: ChatSummary) =>
+    [
+      `✨ ${s.headline}`,
+      '',
+      ...s.bullets.map((b) => `• ${b}`),
+      ...(s.actionItems.length ? ['', 'للمتابعة:', ...s.actionItems.map((a) => `☐ ${a}`)] : []),
+    ].join('\n');
 
   function copy() {
     if (!summary) return;
-    const text = [
-      summary.headline,
-      '',
-      ...summary.bullets.map((b) => `• ${b}`),
-      ...(summary.actionItems.length ? ['', 'للمتابعة:', ...summary.actionItems.map((a) => `☐ ${a}`)] : []),
-    ].join('\n');
-    void navigator.clipboard?.writeText(text).then(() => showToast('تم نسخ الملخص.'));
+    void navigator.clipboard
+      ?.writeText(asText(summary))
+      .then(() => showToast('تم نسخ الملخص.'))
+      .catch(() => showToast('تعذّر النسخ.', 'error'));
   }
 
   return (
@@ -158,15 +187,33 @@ export function AiSummaryModal({
           </p>
           {summary && (
             <div className="flex shrink-0 gap-1">
-              <Button size="icon" variant="ghost" onClick={copy} aria-label="نسخ الملخص">
+              <Button size="icon" variant="ghost" onClick={copy} aria-label="نسخ الملخص" title="نسخ الملخص">
                 <Copy className="h-4 w-4" />
               </Button>
-              <Button size="icon" variant="ghost" onClick={() => void load(scope)} aria-label="إعادة التوليد">
+              <Button
+                size="icon"
+                variant="ghost"
+                onClick={() => void load(scope, { force: true })}
+                aria-label="إعادة التوليد"
+                title="إعادة التوليد"
+              >
                 <RefreshCw className="h-4 w-4" />
               </Button>
             </div>
           )}
         </div>
+        {summary && onInsert && summary.count > 0 && (
+          <Button
+            variant="subtle"
+            fullWidth
+            onClick={() => {
+              onInsert(asText(summary));
+              onClose();
+            }}
+          >
+            <MessageSquarePlus className="h-4 w-4" /> إدراج الملخص في رسالة
+          </Button>
+        )}
       </div>
     </Modal>
   );

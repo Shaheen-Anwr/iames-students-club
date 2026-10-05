@@ -47,6 +47,8 @@ export interface SaveMessageExtras {
   poll?: unknown;
   effect?: string | null;
   silent?: boolean;
+  /** Call-log message (ChatCallService.logCall) -- validated by the caller. */
+  call?: { callId: string; type: 'audio' | 'video'; outcome: string; duration: number } | null;
 }
 
 export interface PinnedMessageView {
@@ -351,7 +353,7 @@ export class ChatService {
     if (extras.poll && !pollInput) {
       throw new BadRequestException('الاستطلاع يحتاج إلى سؤال وخيارين مختلفين على الأقل');
     }
-    if (!text?.trim() && !attachments?.length && !pollInput) {
+    if (!text?.trim() && !attachments?.length && !pollInput && !extras.call) {
       throw new BadRequestException('لا يمكن إرسال رسالة فارغة');
     }
 
@@ -399,9 +401,10 @@ export class ChatService {
       mentions,
       poll,
       effect: isMessageEffect(extras.effect) ? extras.effect : null,
+      call: extras.call ?? null,
     }).save();
 
-    const previewText = messagePreviewText({ text, attachments, poll });
+    const previewText = messagePreviewText({ text, attachments, poll, call: extras.call });
     // A new message "revives" the conversation for anyone who had deleted it -- same behavior
     // as most chat apps, where deleting only hides it until the next incoming message.
     await this.conversationModel
@@ -549,12 +552,13 @@ export class ChatService {
     const latest = await this.messageModel
       .findOne({ conversation: new Types.ObjectId(conversationId), deletedForEveryone: false })
       .sort({ createdAt: -1 })
-      .select('text attachments poll sender createdAt')
+      .select('text attachments poll call sender createdAt')
       .lean<{
         _id: Types.ObjectId;
         text: string;
         attachments: AttachmentDto[];
         poll: { question: string } | null;
+        call: { type: string; outcome: string } | null;
         sender: Types.ObjectId;
         createdAt: Date;
       } | null>()
@@ -989,6 +993,18 @@ export class ChatService {
         return !cutoff || new Date(m.get('createdAt') as Date).getTime() > cutoff;
       })
       .slice(0, 60);
+  }
+
+  // A call's log message, if it was already written (duplicate report from a retry / second tab).
+  async findCallLog(callId: string): Promise<MessageDocument | null> {
+    return this.messageModel.findOne({ 'call.callId': callId }).populate(MESSAGE_POPULATE).exec();
+  }
+
+  // Caches a voice note's transcript on the attachment so it's generated once for everyone.
+  async setAttachmentTranscript(messageId: string, index: number, transcript: string): Promise<void> {
+    await this.messageModel
+      .updateOne({ _id: new Types.ObjectId(messageId) }, { $set: { [`attachments.${index}.transcript`]: transcript } })
+      .exec();
   }
 
   // --- Helpers for AI features (AiModule's ChatAiService) ---

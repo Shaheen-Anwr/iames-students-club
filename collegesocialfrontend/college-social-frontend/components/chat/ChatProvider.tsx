@@ -17,6 +17,8 @@ interface ChatContextValue {
   findConversation: (id: string) => Conversation | undefined;
   addConversation: (conversation: Conversation) => void;
   typingConversationIds: Set<string>;
+  /** Conversations where someone is recording a voice note right now. */
+  recordingConversationIds: Set<string>;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
@@ -31,6 +33,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(false);
   const [typingConversationIds, setTypingConversationIds] = useState<Set<string>>(new Set());
+  const [recordingConversationIds, setRecordingConversationIds] = useState<Set<string>>(new Set());
 
   // The conversation the user is currently looking at (route: /chat/<id>). Messages that land
   // here must NOT raise the unread badge -- the user is reading them in real time.
@@ -234,12 +237,41 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       clear(payload.conversationId);
     };
 
+    // Voice-note recording ("يسجل رسالة صوتية…"): refreshed every few seconds by the recorder.
+    const recordTimeouts = new Map<string, ReturnType<typeof setTimeout>>();
+    const clearRecording = (conversationId: string) => {
+      setRecordingConversationIds((prev) => {
+        if (!prev.has(conversationId)) return prev;
+        const next = new Set(prev);
+        next.delete(conversationId);
+        return next;
+      });
+    };
+    const onRecording = (payload: { conversationId: string; active: boolean }) => {
+      if (!payload?.conversationId) return;
+      const existing = recordTimeouts.get(payload.conversationId);
+      if (existing) clearTimeout(existing);
+      if (!payload.active) {
+        recordTimeouts.delete(payload.conversationId);
+        clearRecording(payload.conversationId);
+        return;
+      }
+      setRecordingConversationIds((prev) => (prev.has(payload.conversationId) ? prev : new Set(prev).add(payload.conversationId)));
+      recordTimeouts.set(
+        payload.conversationId,
+        setTimeout(() => clearRecording(payload.conversationId), 7000),
+      );
+    };
+
     socket.on('userTyping', onTyping);
     socket.on('userStopTyping', onStopTyping);
+    socket.on('userRecording', onRecording);
     return () => {
       socket.off('userTyping', onTyping);
       socket.off('userStopTyping', onStopTyping);
+      socket.off('userRecording', onRecording);
       timeouts.forEach((t) => clearTimeout(t));
+      recordTimeouts.forEach((t) => clearTimeout(t));
     };
   }, [socket]);
 
@@ -251,7 +283,16 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   return (
     <ChatContext.Provider
-      value={{ conversations, loading, error, refresh, findConversation, addConversation, typingConversationIds }}
+      value={{
+        conversations,
+        loading,
+        error,
+        refresh,
+        findConversation,
+        addConversation,
+        typingConversationIds,
+        recordingConversationIds,
+      }}
     >
       {children}
     </ChatContext.Provider>

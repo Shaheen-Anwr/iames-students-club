@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import OpenAI from 'openai';
+import OpenAI, { toFile } from 'openai';
 
 // A single tool call the model asked for, fully accumulated from streamed argument-string deltas
 // (see streamCompletion below) -- argsJson is a raw JSON string, parsed by the caller.
@@ -77,6 +77,22 @@ export class AiService {
   /** True once AI_API_KEY is set -- callers gate expensive batch work (study kits) on this. */
   get isConfigured(): boolean {
     return this.client !== null;
+  }
+
+  /**
+   * Speech-to-text for a voice note (Whisper on the same OpenAI-compatible provider). Language is
+   * auto-detected, so Arabic, English and mixed notes all work. Throws AiNotConfiguredError when no
+   * key is set.
+   */
+  async transcribe(audio: Buffer, filename: string, mimeType: string): Promise<string> {
+    if (!this.client) throw new AiNotConfiguredError();
+    const model = this.config.get<string>('ai.transcribeModel') || 'whisper-large-v3-turbo';
+    const file = await toFile(audio, filename, { type: mimeType });
+    const result = await this.client.audio.transcriptions.create(
+      { file, model, response_format: 'json', temperature: 0 },
+      { timeout: 60_000 },
+    );
+    return (result.text ?? '').trim();
   }
 
   /** The configured provider model id -- stored alongside generated artefacts for disclosure. */

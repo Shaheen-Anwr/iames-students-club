@@ -64,6 +64,21 @@ export default () => ({
     // facts survive independently via the remember_about_me/forget_my_memory tools, so this is a
     // safe truncation, not a lossy one.
     historyWindowMessages: parseInt(process.env.AI_HISTORY_WINDOW_MESSAGES ?? '30', 10),
+    // Speech-to-text model for voice-note transcripts (Groq hosts Whisper on the same API key).
+    transcribeModel: process.env.AI_TRANSCRIBE_MODEL ?? 'whisper-large-v3-turbo',
+  },
+  // WebRTC voice/video calls. STUN alone can't connect two peers behind symmetric NATs -- most
+  // mobile carriers -- so set a TURN server for calls to connect everywhere. Either static
+  // credentials (TURN_USERNAME + TURN_CREDENTIAL) or a coturn `use-auth-secret` shared secret
+  // (TURN_SECRET), from which short-lived per-user credentials are minted on each request.
+  // TURN_URLS is comma-separated, e.g. "turn:turn.example.com:3478,turns:turn.example.com:5349".
+  calls: {
+    stunUrls: process.env.STUN_URLS ?? 'stun:stun.l.google.com:19302,stun:stun1.l.google.com:19302',
+    turnUrls: process.env.TURN_URLS ?? '',
+    turnUsername: process.env.TURN_USERNAME ?? '',
+    turnCredential: process.env.TURN_CREDENTIAL ?? '',
+    turnSecret: process.env.TURN_SECRET ?? '',
+    turnTtlSeconds: parseInt(process.env.TURN_TTL_SECONDS ?? '86400', 10),
   },
   // Cloudflare Stream -- video hosting + adaptive HLS. When all three are set, new reels upload
   // to Stream instead of Cloudinary (existing Cloudinary reels keep playing). Unset -> reels

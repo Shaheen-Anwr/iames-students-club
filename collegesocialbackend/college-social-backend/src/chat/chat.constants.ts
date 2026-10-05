@@ -32,6 +32,29 @@ export const SCHEDULE_LIMITS = {
 // Forwarding several selected messages at once -- bounds one request's fan-out.
 export const FORWARD_LIMITS = { maxMessages: 30, maxConversations: 10 } as const;
 
+// How a call ended, as logged into the chat by the caller's client (see ChatCallService.logCall).
+//   completed -- connected, then hung up (has a duration)
+//   no_answer -- rang out unanswered       canceled -- caller hung up before an answer
+//   declined  -- callee rejected it         busy     -- callee was already on a call
+//   failed    -- media never connected / dropped and couldn't recover
+export const CALL_OUTCOMES = ['completed', 'no_answer', 'canceled', 'declined', 'busy', 'failed'] as const;
+export type CallOutcome = (typeof CALL_OUTCOMES)[number];
+export type CallKind = 'audio' | 'video';
+
+export function isCallOutcome(value: unknown): value is CallOutcome {
+  return typeof value === 'string' && (CALL_OUTCOMES as readonly string[]).includes(value);
+}
+
+/** Outcomes the callee experiences as a missed call (worth a notification). */
+export function isMissedCallOutcome(outcome: CallOutcome): boolean {
+  return outcome === 'no_answer' || outcome === 'canceled' || outcome === 'busy';
+}
+
+// A client-generated call id: UUID-ish, so relays can be matched to one call without server state.
+export function isCallId(value: unknown): value is string {
+  return typeof value === 'string' && /^[A-Za-z0-9-]{8,64}$/.test(value);
+}
+
 export interface NormalizedPollInput {
   question: string;
   options: string[];
@@ -79,7 +102,13 @@ export function messagePreviewText(message: {
   text?: string | null;
   poll?: { question?: string | null } | null;
   attachments?: { type?: string | null }[] | null;
+  call?: { type?: string | null; outcome?: string | null } | null;
 }): string {
+  if (message.call) {
+    const kind = message.call.type === 'video' ? 'مكالمة فيديو' : 'مكالمة صوتية';
+    const missed = message.call.outcome && isMissedCallOutcome(message.call.outcome as CallOutcome);
+    return `${message.call.type === 'video' ? '🎥' : '📞'} ${kind}${missed ? ' فائتة' : ''}`;
+  }
   const text = message.text?.trim();
   if (text) return text.slice(0, 120);
   if (message.poll?.question) return `📊 ${message.poll.question}`.slice(0, 120);

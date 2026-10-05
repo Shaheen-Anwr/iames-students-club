@@ -14,6 +14,7 @@ import { EditMessageDto } from './dto/edit-message.dto';
 import { ForwardMessageDto } from './dto/forward-message.dto';
 import { ScheduleMessageDto } from './dto/schedule-message.dto';
 import { ChatSchedulerService } from './chat-scheduler.service';
+import { ChatCallService } from './chat-call.service';
 
 // REST endpoints for conversation setup, history, and everything that doesn't need to be
 // instantaneous. Real-time delivery of new/edited/reacted messages happens over the ChatGateway
@@ -27,7 +28,14 @@ export class ChatController {
     private readonly chatService: ChatService,
     private readonly linkPreviewService: LinkPreviewService,
     private readonly schedulerService: ChatSchedulerService,
+    private readonly callService: ChatCallService,
   ) {}
+
+  // STUN/TURN servers for a WebRTC call (TURN credentials are short-lived, minted per user).
+  @Get('calls/ice-servers')
+  async iceServers(@CurrentUser() user: AuthenticatedUser) {
+    return this.callService.getIceServers(user.userId);
+  }
 
   @Get('link-preview')
   async getLinkPreview(@Query('url') url?: string) {
