@@ -312,9 +312,6 @@ function DeviceSheet({ onClose }: { onClose: () => void }) {
             <SwitchCamera className="h-4 w-4" /> تبديل الكاميرا الأمامية/الخلفية
           </button>
         )}
-        <p className="text-[11px] leading-relaxed text-white/50">
-          اختصارات لوحة المفاتيح: M كتم/تشغيل الميكروفون · V الكاميرا · Esc تصغير المكالمة.
-        </p>
       </motion.div>
     </motion.div>
   );

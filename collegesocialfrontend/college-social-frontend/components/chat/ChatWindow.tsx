@@ -10,7 +10,6 @@ import {
   CheckSquare,
   Download,
   Info,
-  Keyboard,
   Loader2,
   MessageCircle,
   Mic,
@@ -160,7 +159,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
 
   const [typingIds, setTypingIds] = useState<string[]>([]);
   const [recordingIds, setRecordingIds] = useState<string[]>([]);
-  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [replyingTo, setReplyingTo] = useState<Message | null>(null);
   const [editingMessage, setEditingMessage] = useState<Message | null>(null);
   const [forwardTargets, setForwardTargets] = useState<Message[] | null>(null);
@@ -1397,7 +1395,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     { label: 'مظهر المحادثة', icon: Palette, onClick: () => setBackgroundModalOpen(true) },
     { label: muted ? 'إلغاء كتم الإشعارات' : 'كتم الإشعارات', icon: muted ? Bell : BellOff, onClick: () => void toggleMute() },
     { label: 'تصدير المحادثة', icon: Download, onClick: () => void exportChat() },
-    { label: 'اختصارات لوحة المفاتيح', icon: Keyboard, onClick: () => setShortcutsOpen(true) },
   ];
   const lastMessageId = [...messages].reverse().find((m) => !isPlaceholderId(m._id))?._id ?? null;
 
@@ -1800,31 +1797,6 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
               <Button variant="ghost" fullWidth onClick={() => setDeleteSelectionOpen(false)}>
                 إلغاء
               </Button>
-            </div>
-          </Modal>
-
-          <Modal open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} title="اختصارات لوحة المفاتيح" className="max-w-md">
-            <div className="space-y-1">
-              {(
-                [
-                  ['Enter', 'إرسال'],
-                  ['Shift + Enter', 'سطر جديد'],
-                  ['/', 'الأوامر السريعة (استطلاع، جدولة، ملخص…)'],
-                  ['↑', 'تعديل آخر رسالة لك'],
-                  ['Ctrl + F', 'البحث في المحادثة'],
-                  ['Ctrl + B / I / E', 'عريض / مائل / كود للنص المحدد'],
-                  ['Ctrl + Shift + X', 'يتوسطه خط'],
-                  ['Esc', 'إلغاء الرد أو التعديل أو التحديد'],
-                  ['M / V', 'أثناء المكالمة: الميكروفون / الكاميرا'],
-                ] as const
-              ).map(([keys, label]) => (
-                <div key={keys} className="flex items-center justify-between gap-3 rounded-xl px-2 py-2 odd:bg-surface-2/60">
-                  <span className="text-sm text-foreground">{label}</span>
-                  <kbd dir="ltr" className="shrink-0 rounded-lg border border-border bg-surface px-2 py-1 font-mono text-[11px] text-muted-foreground shadow-sm">
-                    {keys}
-                  </kbd>
-                </div>
-              ))}
             </div>
           </Modal>
 
