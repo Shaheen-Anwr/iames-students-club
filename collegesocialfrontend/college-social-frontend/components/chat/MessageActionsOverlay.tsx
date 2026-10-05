@@ -195,9 +195,13 @@ function OverlayBody({
   const vw = viewport.w;
   const vh = viewport.h;
   const rows = view === 'delete' ? (isOwn ? 3 : 2) : view === 'emoji' ? 0 : items.length;
-  const menuH = view === 'emoji' ? Math.min(360, vh * 0.5) : Math.min(rows * ROW_H + 12, vh * 0.48);
   const showBar = !placeholder;
   const barSpace = showBar ? BAR_H + GAP : 0;
+  // The menu gets whatever height is left once the strip and a slice of the bubble are placed --
+  // the whole list when it fits, a scrollable one on short screens.
+  const naturalMenuH = view === 'emoji' ? 360 : rows * ROW_H + 12;
+  const roomForMenu = vh - MARGIN * 2 - barSpace - GAP - Math.min(rect.height, 96);
+  const menuH = Math.max(150, Math.min(naturalMenuH, roomForMenu));
   const maxPreviewH = Math.max(72, vh - MARGIN * 2 - barSpace - menuH - GAP);
   const previewH = Math.min(rect.height, maxPreviewH);
   const minTop = MARGIN + barSpace;

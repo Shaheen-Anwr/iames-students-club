@@ -186,6 +186,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (!socket) return;
     const onPresenceUpdate = (payload: { userId: string; isOnline: boolean; lastSeenAt?: string }) => {
+      if (!payload?.userId) return;
       setConversations((prev) =>
         prev.map((c) => ({
           ...c,
@@ -216,6 +217,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     };
 
     const onTyping = (payload: { conversationId: string }) => {
+      if (!payload?.conversationId) return;
       setTypingConversationIds((prev) => (prev.has(payload.conversationId) ? prev : new Set(prev).add(payload.conversationId)));
       const existing = timeouts.get(payload.conversationId);
       if (existing) clearTimeout(existing);
@@ -225,6 +227,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       );
     };
     const onStopTyping = (payload: { conversationId: string }) => {
+      if (!payload?.conversationId) return;
       const existing = timeouts.get(payload.conversationId);
       if (existing) clearTimeout(existing);
       timeouts.delete(payload.conversationId);

@@ -385,7 +385,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
 
     const onNewMessage = (message: Message) => {
-      if (message.conversation !== conversationId) return;
+      if (!message || message.conversation !== conversationId) return;
       const mine = message.sender?._id === userId;
       setMessages((prev) => {
         if (prev.some((m) => m._id === message._id)) return prev;
@@ -417,7 +417,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
 
     const replaceMessage = (message: Message) => {
-      if (message.conversation !== conversationId) return;
+      if (!message || message.conversation !== conversationId) return;
       setMessages((prev) => prev.map((m) => (m._id === message._id ? message : m)));
     };
 
@@ -433,7 +433,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
 
     const onMessagesRead = (payload: { conversationId: string; userId: string; messageIds: string[] }) => {
-      if (payload.conversationId !== conversationId) return;
+      if (!payload || payload.conversationId !== conversationId) return;
       const ids = new Set(payload.messageIds);
       setMessages((prev) =>
         prev.map((m) =>
@@ -449,7 +449,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
 
     const onMessagesDelivered = (payload: { conversationId: string; userId: string; messageIds: string[] }) => {
-      if (payload.conversationId !== conversationId) return;
+      if (!payload || payload.conversationId !== conversationId) return;
       const ids = new Set(payload.messageIds);
       setMessages((prev) =>
         prev.map((m) =>
@@ -461,16 +461,16 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
 
     const onTyping = (payload: { conversationId: string; userId: string }) => {
-      if (payload.conversationId !== conversationId || payload.userId === userId) return;
+      if (!payload || payload.conversationId !== conversationId || payload.userId === userId) return;
       addTyping(payload.userId);
     };
     const onStopTyping = (payload: { conversationId: string; userId: string }) => {
-      if (payload.conversationId !== conversationId || payload.userId === userId) return;
+      if (!payload || payload.conversationId !== conversationId || payload.userId === userId) return;
       removeTyping(payload.userId);
     };
 
     const onPinsUpdated = (payload: { conversationId: string; pins: PinnedMessage[]; actorId: string; pinned: boolean }) => {
-      if (payload.conversationId !== conversationId) return;
+      if (!payload || payload.conversationId !== conversationId || !Array.isArray(payload.pins)) return;
       setPins(payload.pins);
       setPinIndex(0);
       if (payload.actorId === userId) showToast(payload.pinned ? 'تم تثبيت الرسالة.' : 'تم إلغاء التثبيت.');

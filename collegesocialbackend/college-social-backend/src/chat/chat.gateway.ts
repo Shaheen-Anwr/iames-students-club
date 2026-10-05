@@ -246,11 +246,16 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     return false;
   }
 
+  // NOTE on handler return values: Nest's socket adapter treats a returned object WITH an `event`
+  // key as "emit this event back to the sender" (with its `data`). Returning `{ event:
+  // 'messageReacted', ... }` therefore sent every sender a second, payload-less 'messageReacted'
+  // that crashed the client's real listener. Handlers return plain `{ ok, ... }` acks instead --
+  // delivered only to a client that passes an ack callback, ignored otherwise.
   @SubscribeMessage('joinConversation')
   async onJoinConversation(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
     await this.chatService.assertCanAccessConversation(conversationId, client.data.userId);
     client.join(`conversation:${conversationId}`);
-    return { event: 'joinedConversation', conversationId };
+    return { ok: true, conversationId };
   }
 
   @SubscribeMessage('sendMessage')
@@ -269,7 +274,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
 
     // Broadcast to everyone in the room, including the sender (so all their tabs update)
     this.server.to(`conversation:${dto.conversationId}`).emit('newMessage', message);
-    return { event: 'messageSent', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   // Pin / unpin a message for everyone in its conversation (see ChatService.setMessagePinned for
@@ -288,22 +293,22 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       pinned: pin,
       actorId: client.data.userId,
     });
-    return { event: 'pinsUpdated', conversationId };
+    return { ok: true, conversationId };
   }
 
   @SubscribeMessage('votePoll')
   async onVotePoll(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { messageId: string; optionIds: string[] }) {
-    if (this.rateLimited(client, 'votePoll', 20, 10_000)) return { event: 'messageUpdated' };
+    if (this.rateLimited(client, 'votePoll', 20, 10_000)) return { ok: false, rateLimited: true };
     const message = await this.chatService.votePoll(dto?.messageId, client.data.userId, dto?.optionIds);
     this.server.to(`conversation:${message.conversation.toString()}`).emit('messageUpdated', message);
-    return { event: 'messageUpdated', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('closePoll')
   async onClosePoll(@ConnectedSocket() client: AuthedSocket, @MessageBody() dto: { messageId: string }) {
     const message = await this.chatService.closePoll(dto?.messageId, client.data.userId);
     this.server.to(`conversation:${message.conversation.toString()}`).emit('messageUpdated', message);
-    return { event: 'messageUpdated', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('typing')
@@ -332,7 +337,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   ) {
     const message = await this.chatService.editMessage(dto.messageId, client.data.userId, dto.text);
     this.server.to(`conversation:${message.conversation.toString()}`).emit('messageEdited', message);
-    return { event: 'messageEdited', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('deleteMessage')
@@ -348,7 +353,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
       // only, distinct from the room-wide broadcast used for "delete for everyone".
       client.emit('messageDeleted', { message, forEveryone: false });
     }
-    return { event: 'messageDeleted', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('reactToMessage')
@@ -356,10 +361,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() dto: { messageId: string } & ReactMessageDto,
   ) {
-    if (this.rateLimited(client, 'reactToMessage', 30, 10_000)) return { event: 'messageReacted' };
+    if (this.rateLimited(client, 'reactToMessage', 30, 10_000)) return { ok: false, rateLimited: true };
     const message = await this.chatService.reactToMessage(dto.messageId, client.data.userId, dto.emoji);
     this.server.to(`conversation:${message.conversation.toString()}`).emit('messageReacted', message);
-    return { event: 'messageReacted', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   // Forwards one message (`messageId`) or a multi-select batch (`messageIds`, kept in order).
@@ -376,12 +381,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     messages.forEach((message) => {
       this.server.to(`conversation:${message.conversation.toString()}`).emit('newMessage', message);
     });
-    return { event: 'messageForwarded', count: messages.length };
+    return { ok: true, count: messages.length };
   }
 
   @SubscribeMessage('markRead')
   async onMarkRead(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
-    if (this.rateLimited(client, 'markRead', 40, 10_000)) return { event: 'read', conversationId };
+    if (this.rateLimited(client, 'markRead', 40, 10_000)) return { ok: false, rateLimited: true };
     const messageIds = await this.chatService.markRead(conversationId, client.data.userId);
     if (messageIds.length) {
       client.to(`conversation:${conversationId}`).emit('messagesRead', {
@@ -390,12 +395,12 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         messageIds,
       });
     }
-    return { event: 'read', conversationId };
+    return { ok: true, conversationId };
   }
 
   @SubscribeMessage('markDelivered')
   async onMarkDelivered(@ConnectedSocket() client: AuthedSocket, @MessageBody() conversationId: string) {
-    if (this.rateLimited(client, 'markDelivered', 40, 10_000)) return { event: 'delivered', conversationId };
+    if (this.rateLimited(client, 'markDelivered', 40, 10_000)) return { ok: false, rateLimited: true };
     const messageIds = await this.chatService.markDelivered(conversationId, client.data.userId);
     if (messageIds.length) {
       client.to(`conversation:${conversationId}`).emit('messagesDelivered', {
@@ -404,7 +409,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
         messageIds,
       });
     }
-    return { event: 'delivered', conversationId };
+    return { ok: true, conversationId };
   }
 
   // --- Group channels (parallel to the conversation handlers above) ---
@@ -413,7 +418,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   async onJoinChannel(@ConnectedSocket() client: AuthedSocket, @MessageBody() channelId: string) {
     await this.groupsService.assertChannelMember(channelId, client.data.userId);
     client.join(`channel:${channelId}`);
-    return { event: 'joinedChannel', channelId };
+    return { ok: true, channelId };
   }
 
   @SubscribeMessage('sendChannelMessage')
@@ -431,7 +436,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     );
 
     this.server.to(`channel:${dto.channelId}`).emit('newChannelMessage', message);
-    return { event: 'channelMessageSent', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('editChannelMessage')
@@ -441,7 +446,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
   ) {
     const message = await this.groupsService.editChannelMessage(dto.messageId, client.data.userId, dto.text);
     this.server.to(`channel:${message.channel.toString()}`).emit('channelMessageEdited', message);
-    return { event: 'channelMessageEdited', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('deleteChannelMessage')
@@ -457,7 +462,7 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     } else {
       client.emit('channelMessageDeleted', { message, forEveryone: false });
     }
-    return { event: 'channelMessageDeleted', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('reactToChannelMessage')
@@ -465,10 +470,10 @@ export class ChatGateway implements OnGatewayConnection, OnGatewayDisconnect, On
     @ConnectedSocket() client: AuthedSocket,
     @MessageBody() dto: { messageId: string } & ReactMessageDto,
   ) {
-    if (this.rateLimited(client, 'reactToMessage', 30, 10_000)) return { event: 'channelMessageReacted' };
+    if (this.rateLimited(client, 'reactToMessage', 30, 10_000)) return { ok: false, rateLimited: true };
     const message = await this.groupsService.reactToChannelMessage(dto.messageId, client.data.userId, dto.emoji);
     this.server.to(`channel:${message.channel.toString()}`).emit('channelMessageReacted', message);
-    return { event: 'channelMessageReacted', messageId: message.id };
+    return { ok: true, messageId: message.id };
   }
 
   @SubscribeMessage('channelTyping')

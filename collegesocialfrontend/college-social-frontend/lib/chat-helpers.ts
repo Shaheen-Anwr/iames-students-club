@@ -1,5 +1,6 @@
 import { formatDistanceToNowStrict } from 'date-fns';
 import { ar } from 'date-fns/locale';
+import { hasFormatting, stripFormatting } from './chat-format';
 import type { Conversation, Message, User } from './types';
 
 // Filters out the current user, and drops any participant whose account was since deleted
@@ -88,7 +89,9 @@ export function messagePreview(message: {
   poll?: { question?: string | null } | null;
   attachments?: { type: string }[] | null;
 }): string {
-  const text = stripMentionTokens(message.text ?? '').trim();
+  const raw = stripMentionTokens(message.text ?? '');
+  // One-line surfaces show the words, not the *markers* (a code block keeps its contents).
+  const text = (hasFormatting(raw) ? stripFormatting(raw) : raw).replace(/\s+/g, ' ').trim();
   if (text) return text.slice(0, 120);
   if (message.poll?.question) return `📊 ${message.poll.question}`;
   const first = message.attachments?.[0];

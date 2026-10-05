@@ -205,11 +205,20 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   const textRef = useRef(text);
   textRef.current = text;
   const stashRef = useRef<string | null>(null);
+  // Set by any user-driven change. The unmount flush below only runs when this is true: under
+  // React StrictMode's simulated unmount the saved draft hasn't even been loaded into state yet,
+  // and flushing that empty initial text would erase it.
+  const dirtyRef = useRef(false);
+  const editText = useCallback((value: React.SetStateAction<string>) => {
+    dirtyRef.current = true;
+    setText(value);
+  }, []);
 
   // --- drafts: restore on open, debounce-save while typing, flush on leave ---
   useEffect(() => {
     setText(getDraft(conversationId));
     return () => {
+      if (!dirtyRef.current) return;
       // Mid-edit, the real draft is the one stashed away -- not the message being edited.
       setDraft(conversationId, stashRef.current !== null ? stashRef.current : textRef.current);
     };
@@ -332,7 +341,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     });
     if (ok === false) return;
     haptic('tap');
-    setText('');
+    editText('');
     setFiles([]);
     setArmed({});
     setSmart(null);
@@ -371,7 +380,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     setAiBusy(true);
     try {
       const { text: out } = await chatApi.ai.rewrite(original, mode);
-      setText(out);
+      editText(out);
       setUndoText(original);
       haptic('success');
     } catch (err) {
@@ -392,7 +401,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
   useEffect(() => setSlashIndex(0), [slashQuery]);
 
   function runCommand(command: SlashCommand) {
-    setText('');
+    editText('');
     haptic('select');
     switch (command.id) {
       case 'poll':
@@ -411,7 +420,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
         setArmed((a) => ({ ...a, silent: true }));
         break;
       case 'shrug':
-        setText('¯\\_(ツ)_/¯ ');
+        editText('¯\\_(ツ)_/¯ ');
         break;
       default:
         setArmed((a) => ({ ...a, effect: command.id as MessageEffect }));
@@ -426,7 +435,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
     const { selectionStart: start, selectionEnd: end } = el;
     if (start === end) return false;
     const next = text.slice(0, start) + marker + text.slice(start, end) + marker + text.slice(end);
-    setText(next);
+    editText(next);
     requestAnimationFrame(() => {
       el.focus();
       el.setSelectionRange(start + marker.length, end + marker.length);
@@ -448,7 +457,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
       }
       if (e.key === 'Escape') {
         e.preventDefault();
-        setText('');
+        editText('');
         return;
       }
     }
@@ -499,7 +508,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
 
   return (
     <div className="relative border-t border-border/70 bg-surface/90 backdrop-blur-xl" onPaste={handlePaste}>
-      <div className="mx-auto w-full max-w-3xl px-2.5 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pt-2.5">
+      <div className="relative mx-auto w-full max-w-3xl px-2.5 pb-[calc(0.5rem+env(safe-area-inset-bottom))] pt-2 sm:px-4 sm:pt-2.5">
         {/* Context strips */}
         <AnimatePresence initial={false}>
           {editingMessage && (
@@ -580,7 +589,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                           animate={{ opacity: 1, scale: 1 }}
                           transition={{ delay: i * 0.05 }}
                           onClick={() => {
-                            setText(reply);
+                            editText(reply);
                             setSmart(null);
                             requestAnimationFrame(() => textareaRef.current?.focus());
                           }}
@@ -633,7 +642,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               <button
                 type="button"
                 onClick={() => {
-                  setText(undoText);
+                  editText(undoText);
                   setUndoText(null);
                 }}
                 className="inline-flex items-center gap-1 rounded-full bg-surface-2 px-2.5 py-1 text-xs font-medium text-foreground hover:bg-surface-3"
@@ -722,7 +731,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
               initial={{ opacity: 0, y: 8 }}
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: 8 }}
-              className="mb-2 overflow-hidden rounded-2xl border border-border/70 bg-surface shadow-elev-3"
+              className="absolute inset-x-2.5 bottom-full z-40 mb-1 overflow-hidden rounded-2xl border border-border/70 bg-surface/95 shadow-elev-4 backdrop-blur-xl sm:inset-x-4"
               role="listbox"
               aria-label="الأوامر"
             >
@@ -846,7 +855,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                 <EmojiPicker
                   open={emojiOpen}
                   onClose={() => setEmojiOpen(false)}
-                  onSelect={(emoji) => setText((t) => t + emoji)}
+                  onSelect={(emoji) => editText((t) => t + emoji)}
                   triggerRef={emojiButtonRef}
                   anchorClassName="absolute bottom-full start-0 z-40 mb-3 w-72 rounded-2xl border border-border bg-surface p-3 shadow-elev-4 animate-scale-in"
                 />
@@ -859,7 +868,7 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                 enterKeyHint="send"
                 suggestionsPlacement="top"
                 onChange={(e) => {
-                  setText(e.target.value);
+                  editText(e.target.value);
                   if (undoText !== null) setUndoText(null);
                   if (e.target.value) onTyping();
                 }}

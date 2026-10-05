@@ -115,6 +115,9 @@ export function AiFab() {
   if (pathname === '/feed' && feedCardVisible) return null;
   // Reels is a full-screen immersive takeover (see ReelsExperience) -- no floating chrome over it.
   if (pathname === '/reels' || pathname.startsWith('/reels/')) return null;
+  // Inside an open conversation it would sit on the composer's send/mic corner -- and the chat has
+  // its own AI tools there (catch-up summary, smart replies, rewrite).
+  if (pathname.startsWith('/chat/') && pathname !== '/chat/starred') return null;
 
   function handlePointerDown(e: React.PointerEvent<HTMLButtonElement>) {
     const rect = btnRef.current!.getBoundingClientRect();
