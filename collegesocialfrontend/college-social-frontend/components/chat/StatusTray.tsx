@@ -310,7 +310,7 @@ function StatusViewer({
       aria-label={`حالة ${author.name}`}
     >
       {/* Progress */}
-      <div className="flex gap-1 px-3 pt-[calc(env(safe-area-inset-top)+10px)]" dir="ltr">
+      <div className="flex gap-1 px-3 pt-[calc(env(safe-area-inset-top)+10px)]">
         {items.map((s, i) => (
           <span key={s._id} className="h-[3px] flex-1 overflow-hidden rounded-full bg-white/30">
             <span
