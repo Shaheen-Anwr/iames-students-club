@@ -147,7 +147,7 @@ function toReplyPreview(m: Message): ReplyPreview {
 export function ChatWindow({ conversationId }: { conversationId: string }) {
   const { user, updateLocalUser } = useAuth();
   const { socket } = useSocket();
-  const { findConversation, refresh } = useChat();
+  const { findConversation, refresh, messageCache } = useChat();
   const { startCall } = useCall();
   const { showToast } = useToast();
   const router = useRouter();
@@ -158,11 +158,14 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // ---------------------------------------------------------------------------------------------
   // State
 
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [loading, setLoading] = useState(true);
+  // A thread seen earlier this session (or warmed by the chat list) opens straight onto its last
+  // page from memory; the effect below refreshes it in the background.
+  const [cached] = useState(() => messageCache.get(conversationId));
+  const [messages, setMessages] = useState<Message[]>(() => cached?.messages ?? []);
+  const [loading, setLoading] = useState(!cached);
   const [loadError, setLoadError] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [hasMore, setHasMore] = useState(false);
+  const [hasMore, setHasMore] = useState(cached?.hasMore ?? false);
   const [loadingOlder, setLoadingOlder] = useState(false);
 
   const [typingIds, setTypingIds] = useState<string[]>([]);
@@ -257,27 +260,42 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   // ---------------------------------------------------------------------------------------------
   // Loading
 
+  // Latest page: shown as-is on a cold open; folded into the cached page (edits, deletions,
+  // anything that arrived meanwhile) when one is already on screen -- no spinner either way.
+  // Shares the request with a hover/touch preload that's still in flight.
+  const loadedOnce = useRef(false);
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
+    const showingCached = messagesRef.current.length > 0;
+    if (!showingCached) setLoading(true);
     setLoadError(false);
-    chatApi
-      .latest(conversationId)
+    messageCache
+      .refresh(conversationId)
       .then((data) => {
         if (cancelled) return;
-        setMessages(data.slice().reverse());
-        setHasMore(data.length >= MESSAGE_PAGE_SIZE);
+        loadedOnce.current = true;
+        setMessages((prev) => (prev.length ? mergeLatest(prev, data.messages, userId) : data.messages));
+        setHasMore((prev) => (showingCached ? prev || data.hasMore : data.hasMore));
         setLoading(false);
       })
       .catch(() => {
         if (cancelled) return;
-        setLoadError(true);
+        if (!showingCached) setLoadError(true);
         setLoading(false);
       });
     return () => {
       cancelled = true;
     };
-  }, [conversationId, reloadKey]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [conversationId, reloadKey, messageCache]);
+
+  // Leaving the chat hands its current page back to the cache, so reopening it is instant too.
+  useEffect(
+    () => () => {
+      if (loadedOnce.current) messageCache.set(conversationId, { messages: messagesRef.current, hasMore: hasMoreRef.current });
+    },
+    [conversationId, messageCache],
+  );
 
   const refreshPins = useCallback(async () => {
     try {

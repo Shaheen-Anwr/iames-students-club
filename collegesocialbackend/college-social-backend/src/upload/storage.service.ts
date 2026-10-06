@@ -343,7 +343,9 @@ export class StorageService {
           throw new BadRequestException('معرّف ملف غير صالح');
         }
         try {
-          return await cloudinary.api.resource(publicId, { resource_type: 'video', tags: true });
+          // media_metadata is what makes the Admin API include `duration` (summed below) --
+          // without it the 60s caps (reels, stories) silently fell back to the client's number.
+          return await cloudinary.api.resource(publicId, { resource_type: 'video', tags: true, media_metadata: true });
         } catch {
           throw new BadRequestException('تعذّر التحقق من الملف المرفوع');
         }

@@ -18,12 +18,13 @@ export interface StreamStatus {
   thumbnailUrl: string;
   /** Who requested the upload (set from the JWT at direct-upload time), null on older videos. */
   creator: string | null;
-  /** meta.name -- story uploads carry `${STATUS_VIDEO_NAME}:<userId>` so they can be swept. */
-  name: string | null;
+  /** meta.purpose -- 'status' for story uploads (what the 24h story sweep looks for). */
+  purpose: string | null;
 }
 
-// Name prefix for story videos -- what sweepVideos() searches for. Reels carry no name.
-export const STATUS_VIDEO_NAME = 'chat-status';
+// How far back the story sweep looks. It runs hourly, so anything older was already handled.
+const SWEEP_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+const LIST_PAGE = 1000;
 
 // Cloudflare Stream integration -- video hosting + adaptive HLS, used for new reels when
 // configured (CF_STREAM_*). Talks to the Stream REST API with a Bearer token; the browser
@@ -70,7 +71,9 @@ export class StreamService {
   // maxDurationSeconds is enforced by Stream itself -- a longer upload is rejected on their side.
   async createDirectUpload(
     maxDurationSeconds = 60,
-    tag: { creator?: string; name?: string } = {},
+    // Recorded on the video: who asked for the upload, and (for stories) a purpose in meta. Not
+    // meta.name -- Stream overwrites that with the uploaded file's name.
+    tag: { creator?: string; purpose?: 'status' } = {},
   ): Promise<{ uploadURL: string; uid: string }> {
     const cfg = this.assert();
     let json: { success?: boolean; result?: { uploadURL: string; uid: string }; errors?: unknown };
@@ -82,7 +85,7 @@ export class StreamService {
           maxDurationSeconds,
           requireSignedURLs: false,
           ...(tag.creator ? { creator: tag.creator } : {}),
-          ...(tag.name ? { meta: { name: tag.name } } : {}),
+          ...(tag.purpose ? { meta: { purpose: tag.purpose } } : {}),
         }),
       });
       json = (await res.json()) as typeof json;
@@ -105,7 +108,7 @@ export class StreamService {
 
     let json: {
       success?: boolean;
-      result?: { readyToStream?: boolean; duration?: number; creator?: string | null; meta?: { name?: string } };
+      result?: { readyToStream?: boolean; duration?: number; creator?: string | null; meta?: { purpose?: string } };
     };
     try {
       const res = await fetch(`${API}/accounts/${cfg.accountId}/stream/${uid}`, { headers: this.headers() });
@@ -126,30 +129,34 @@ export class StreamService {
       playbackUrl: this.playbackUrl(uid),
       thumbnailUrl: this.thumbnailUrl(uid),
       creator: json.result.creator ?? null,
-      name: json.result.meta?.name ?? null,
+      purpose: json.result.meta?.purpose ?? null,
     };
   }
 
-  // Deletes every story video (meta.name starting with STATUS_VIDEO_NAME) created more than
-  // `olderThanMs` ago -- expired stories and abandoned uploads alike. Never throws.
+  // Deletes every story video (meta.purpose 'status') created more than `olderThanMs` ago --
+  // expired stories and abandoned uploads alike. Stream can only search meta.name, so this lists
+  // the creation window page by page (oldest first) and filters on meta.purpose. Never throws.
   async sweepStatusVideos(olderThanMs: number): Promise<number> {
     if (!this.cfg) return 0;
+    const end = new Date(Date.now() - olderThanMs).toISOString();
+    let start = new Date(Date.now() - olderThanMs - SWEEP_WINDOW_MS).toISOString();
+    const stale = new Set<string>();
     try {
-      const res = await fetch(`${API}/accounts/${this.cfg.accountId}/stream?search=${encodeURIComponent(STATUS_VIDEO_NAME)}`, {
-        headers: this.headers(),
-      });
-      const json = (await res.json()) as { success?: boolean; result?: { uid: string; created: string; meta?: { name?: string } }[] };
-      if (!res.ok || !json.success) return 0;
-      const cutoff = Date.now() - olderThanMs;
-      const stale = (json.result ?? []).filter(
-        (video) => video.meta?.name?.startsWith(`${STATUS_VIDEO_NAME}:`) && Date.parse(video.created) < cutoff,
-      );
-      for (const video of stale) await this.deleteVideo(video.uid);
-      return stale.length;
+      for (let page = 0; page < 20; page += 1) {
+        const query = `asc=true&limit=${LIST_PAGE}&start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`;
+        const res = await fetch(`${API}/accounts/${this.cfg.accountId}/stream?${query}`, { headers: this.headers() });
+        const json = (await res.json()) as { success?: boolean; result?: { uid: string; created: string; meta?: { purpose?: string } }[] };
+        if (!res.ok || !json.success) break;
+        const videos = json.result ?? [];
+        for (const video of videos) if (video.meta?.purpose === 'status') stale.add(video.uid);
+        if (videos.length < LIST_PAGE) break;
+        start = videos[videos.length - 1].created;
+      }
+      for (const uid of stale) await this.deleteVideo(uid);
     } catch (err) {
       this.logger.warn(`Stream story-video sweep failed: ${(err as Error).message}`);
-      return 0;
     }
+    return stale.size;
   }
 
   // Best-effort cleanup when a Stream-hosted reel is deleted. Never throws.

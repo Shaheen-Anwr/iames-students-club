@@ -7,13 +7,14 @@ import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import { messagePreview } from '@/lib/chat-helpers';
 import { chatApi, MESSAGE_PAGE_SIZE } from '@/lib/chat-api';
-import { createChatMessageCache } from '@/lib/chat-message-cache';
+import { rememberConversations, rememberedConversations, sessionChatMessageCache } from '@/lib/chat-message-cache';
 import { preloadChatBackground } from '@/lib/chat-background';
 import { syncChatAlertConversations } from '@/lib/chat-sounds';
+import type { ChatMessageCache } from '@/lib/chat-message-cache';
 import type { Conversation, Message } from '@/lib/types';
 
 interface ChatContextValue {
-  messageCache: ReturnType<typeof createChatMessageCache>;
+  messageCache: ChatMessageCache;
   preloadConversation: (id: string) => void;
   conversations: Conversation[];
   loading: boolean;
@@ -34,15 +35,18 @@ const TYPING_TIMEOUT_MS = 2500;
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { socket } = useSocket();
   const { user } = useAuth();
-  // A new account gets a separate cache, including its in-flight requests.
-  const messageCache = useMemo(() => createChatMessageCache(chatApi.latest, MESSAGE_PAGE_SIZE), [user?._id]);
+  // One cache per signed-in user for the whole session (it outlives this provider), so a thread
+  // seen earlier opens instantly; a different account gets its own.
+  const messageCache = useMemo(() => sessionChatMessageCache(user?._id ?? '', chatApi.latest, MESSAGE_PAGE_SIZE), [user?._id]);
   const preloadConversation = useCallback((id: string) => {
     preloadChatBackground(id);
     messageCache.preload(id);
   }, [messageCache]);
   const pathname = usePathname();
-  const [conversations, setConversations] = useState<Conversation[]>([]);
-  const [loading, setLoading] = useState(true);
+  // Start from the last list this session saw (the app-wide unread badge fetches it at startup),
+  // so the chat tab paints immediately and refreshes underneath.
+  const [conversations, setConversations] = useState<Conversation[]>(() => (user ? rememberedConversations(user._id) : null) ?? []);
+  const [loading, setLoading] = useState(() => !(user && rememberedConversations(user._id)));
   const [error, setError] = useState(false);
   const [typingConversationIds, setTypingConversationIds] = useState<Set<string>>(new Set());
   const [recordingConversationIds, setRecordingConversationIds] = useState<Set<string>>(new Set());
@@ -88,10 +92,25 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     conversationsRef.current = conversations;
   }, [conversations]);
 
-  // Keep the in-app alert sounds' mute list current (muting re-pulls this list).
+  // Keep the in-app alert sounds' mute list current (muting re-pulls this list), and the session's
+  // remembered list for the next time the chat tab opens.
   useEffect(() => {
-    if (user && !loading) syncChatAlertConversations(conversations, user._id);
+    if (!user || loading) return;
+    syncChatAlertConversations(conversations, user._id);
+    rememberConversations(user._id, conversations);
   }, [conversations, user, loading]);
+
+  // Warm the most recent chats once the list is in, a few at a time, so the first tap on any of
+  // them opens straight onto its messages. Skipped when the browser asks to save data.
+  const warmed = useRef(false);
+  const warmTimers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  useEffect(() => () => warmTimers.current.forEach(clearTimeout), []);
+  useEffect(() => {
+    if (loading || warmed.current || !conversations.length) return;
+    warmed.current = true;
+    if ((navigator as Navigator & { connection?: { saveData?: boolean } }).connection?.saveData) return;
+    warmTimers.current = conversations.slice(0, 8).map((c, i) => setTimeout(() => messageCache.preload(c._id), 400 + i * 250));
+  }, [loading, conversations, messageCache]);
 
   // Keep the conversation list live as messages land while you're elsewhere in the app.
   // Deliberately narrow so the open ChatWindow is never disturbed (that was why the old
@@ -132,6 +151,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     const onNewMessage = (message: Message) => {
       if (!message?.conversation || message.threadRoot) return;
       ensureKnown(message.conversation);
+      messageCache.append(message);
       // WhatsApp-style: raise the unread badge only for messages from someone else that land
       // in a conversation the user isn't currently viewing.
       const fromMe = !!userIdRef.current && message.sender?._id === userIdRef.current;
@@ -186,7 +206,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       socket.off('messageDeleted', onMessageDeleted);
       socket.off('connect', onConnect);
     };
-  }, [socket, refresh]);
+  }, [socket, refresh, messageCache]);
 
   // Opening a conversation clears its unread badge immediately (the server-side markRead is
   // fired separately by ChatWindow over the socket). Re-runs when the list grows so a thread

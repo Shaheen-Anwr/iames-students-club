@@ -82,6 +82,15 @@ function snippetAround(text: string, query: string, radius = 48): string {
   return `…${clean.slice(at - radius, at + query.length + radius)}`;
 }
 
+// A plain tap on a chat switches threads with history.pushState: the chat layout renders the
+// thread from the URL, so it opens at once -- no server round-trip, no loading screen. Ctrl/⌘/
+// middle-clicks (new tab) and taps a swipe gesture already cancelled stay normal link behaviour.
+function openThreadInstantly(event: React.MouseEvent<HTMLAnchorElement>, href: string) {
+  if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  event.preventDefault();
+  if (`${window.location.pathname}${window.location.search}` !== href) window.history.pushState(null, '', href);
+}
+
 export function ConversationList() {
   const { user } = useAuth();
   const { conversations, loading, error, refresh, preloadConversation, typingConversationIds, recordingConversationIds } = useChat();
@@ -256,6 +265,7 @@ export function ConversationList() {
                 <Link
                   key={conversation._id}
                   href={`/chat/${conversation._id}`}
+                  onClick={(e) => openThreadInstantly(e, `/chat/${conversation._id}`)}
                   onPointerEnter={() => preloadConversation(conversation._id)}
                   onFocus={() => preloadConversation(conversation._id)}
                   onTouchStart={() => preloadConversation(conversation._id)}
@@ -427,6 +437,7 @@ export function ConversationList() {
                       >
                         <Link
                           href={href}
+                          onClick={(e) => openThreadInstantly(e, href)}
                           onPointerEnter={() => preloadConversation(conversation._id)}
                           onFocus={() => preloadConversation(conversation._id)}
                           onTouchStart={() => preloadConversation(conversation._id)}

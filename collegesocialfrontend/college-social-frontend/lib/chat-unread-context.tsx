@@ -13,6 +13,7 @@ import { usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
+import { rememberConversations } from '@/lib/chat-message-cache';
 import { syncChatAlertConversations } from '@/lib/chat-sounds';
 import type { Conversation, Message } from '@/lib/types';
 
@@ -48,6 +49,8 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
       .then((list) => {
         if (cancelled) return;
         syncChatAlertConversations(list, user._id);
+        // The chat tab paints from this the first time it opens (ChatProvider refreshes it).
+        rememberConversations(user._id, list);
         setUnreadIds(new Set(list.filter((c) => (c.unreadCount ?? 0) > 0).map((c) => c._id)));
       })
       .catch(() => {});

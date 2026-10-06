@@ -5,7 +5,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { Model, Types } from 'mongoose';
 import { AiService } from '../ai/ai.service';
 import { purposeTag, StorageService } from '../upload/storage.service';
-import { STATUS_VIDEO_NAME, StreamService } from '../stream/stream.service';
+import { StreamService } from '../stream/stream.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { Conversation, ConversationDocument } from './schemas/conversation.schema';
 import { ChatStatus, ChatStatusDocument } from './schemas/chat-status.schema';
@@ -120,14 +120,14 @@ export class ChatStatusService {
     if (cloudinary + stream > 0) this.logger.log(`Deleted ${cloudinary + stream} expired story video(s).`);
   }
 
-  // Accepts only this user's own story upload (Stream: creator + story name; Cloudinary: the
+  // Accepts only this user's own story upload (Stream: creator + meta.purpose; Cloudinary: the
   // signed owner_/purpose_status tags) -- the video gets deleted later, so it must be theirs.
   private async resolveVideo(userId: string, input: CreateChatStatusDto): Promise<StatusVideo> {
     let video: StatusVideo;
     if (input.streamUid) {
       if (!this.stream.isConfigured) throw new BadRequestException('رفع الفيديو غير متاح حاليًا');
       const status = await this.stream.getStatus(input.streamUid);
-      if (status.creator !== userId || status.name !== `${STATUS_VIDEO_NAME}:${userId}`) {
+      if (status.creator !== userId || status.purpose !== 'status') {
         throw new BadRequestException('الفيديو المرفوع غير مطابق للمتوقع');
       }
       if (!status.ready) throw new BadRequestException('الفيديو لا يزال قيد المعالجة، حاول مرة أخرى بعد قليل');
