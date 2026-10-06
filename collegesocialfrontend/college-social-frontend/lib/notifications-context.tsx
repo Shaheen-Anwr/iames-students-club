@@ -1,7 +1,6 @@
 'use client';
 
-import { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
-import { usePathname } from 'next/navigation';
+import { createContext, useCallback, useContext, useEffect, useState } from 'react';
 import { api } from '@/lib/api';
 import { useAuth } from './auth-context';
 import { useSocket } from './socket-context';
@@ -49,9 +48,6 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
   const { user } = useAuth();
   const { socket } = useSocket();
   const { showToast } = useToast();
-  const pathname = usePathname();
-  const pathnameRef = useRef(pathname);
-  pathnameRef.current = pathname;
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [unreadCount, setUnreadCount] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -98,9 +94,9 @@ export function NotificationsProvider({ children }: { children: React.ReactNode 
         showToast(who ? `📢 ${who}: ${headline}` : `📢 ${headline}`, 'info');
         return;
       }
-      // A message in the conversation that's open on screen is already in front of the user --
-      // no toast for it (it still lands in the bell's list).
-      if (notification.conversationId && pathnameRef.current === `/chat/${notification.conversationId}`) return;
+      // Chat messages (and chat @mentions) already get ChatAlertsHost's banner + sound -- no
+      // second toast for them (they still land in the bell's list).
+      if (notification.conversationId) return;
       const actorName = notification.actor?.name ?? 'مستخدم';
       showToast(`${actorName} ${NOTIFICATION_LABELS[notification.type]}`, 'info');
     };
