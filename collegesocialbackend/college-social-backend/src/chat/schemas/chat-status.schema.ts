@@ -14,6 +14,23 @@ export class ChatStatus {
   @Prop({ type: String, default: null })
   imageUrl: string | null;
 
+  // Video stories: a Cloudflare Stream HLS manifest ('stream') or a Cloudinary MP4 ('cloudinary'),
+  // the Stream uid (to delete it), a poster frame and the server-verified length in seconds.
+  @Prop({ type: String, default: null })
+  videoUrl: string | null;
+
+  @Prop({ type: String, enum: ['cloudinary', 'stream'], default: null })
+  videoProvider: 'cloudinary' | 'stream' | null;
+
+  @Prop({ type: String, default: null })
+  videoUid: string | null;
+
+  @Prop({ type: String, default: null })
+  posterUrl: string | null;
+
+  @Prop({ type: Number, default: null })
+  durationSec: number | null;
+
   @Prop({ required: true })
   expiresAt: Date;
 }

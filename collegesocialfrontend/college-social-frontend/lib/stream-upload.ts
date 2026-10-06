@@ -26,9 +26,14 @@ interface StreamStatus {
 
 export async function uploadToStream(
   file: File,
-  opts: { onProgress?: (percent: number) => void; signal?: AbortSignal } = {},
+  // purpose 'status': a story video -- the server tags it so only this user's story can use it and
+  // it gets deleted once the story is gone.
+  opts: { onProgress?: (percent: number) => void; signal?: AbortSignal; purpose?: 'status' } = {},
 ): Promise<StreamUploadResult> {
-  const { uploadURL, uid } = await api.post<{ uploadURL: string; uid: string }>('/stream/direct-upload');
+  const { uploadURL, uid } = await api.post<{ uploadURL: string; uid: string }>(
+    '/stream/direct-upload',
+    opts.purpose ? { purpose: opts.purpose } : undefined,
+  );
 
   await new Promise<void>((resolve, reject) => {
     const xhr = new XMLHttpRequest();

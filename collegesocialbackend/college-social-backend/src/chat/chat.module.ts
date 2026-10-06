@@ -19,6 +19,7 @@ import { GroupsModule } from '../groups/groups.module';
 import { NotificationsModule } from '../notifications/notifications.module';
 import { UsersModule } from '../users/users.module';
 import { UploadModule } from '../upload/upload.module';
+import { StreamModule } from '../stream/stream.module';
 import { GamificationModule } from '../gamification/gamification.module';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { Post, PostSchema } from '../posts/schemas/post.schema';
@@ -53,6 +54,7 @@ import { ChatVoiceRoomsService } from './chat-voice-rooms.service';
     NotificationsModule,
     UsersModule, // presence (online/last-seen) tracking on connect/disconnect
     UploadModule,
+    StreamModule,
     GamificationModule, // points for the daily question (ChatService.votePoll)
   ],
   controllers: [ChatController, ChatStatusController],

@@ -23,6 +23,7 @@ import { StorageService } from './storage.service';
 import { ConfirmDirectUploadDto } from './dto/confirm-direct-upload.dto';
 import { SignDirectFileUploadDto } from './dto/sign-direct-file-upload.dto';
 import { ConfirmDirectFileUploadDto } from './dto/confirm-direct-file-upload.dto';
+import { SignVideoUploadDto } from './dto/sign-video-upload.dto';
 
 // All endpoints require a valid JWT and expect multipart/form-data with a single field named "file".
 // Files are streamed to a temp file on disk (see multer.config.ts) and uploaded to cloud storage
@@ -122,10 +123,12 @@ export class UploadController {
   // name + api key (both public by design) and the exact params the signature covers. The api_secret
   // never leaves the server. See StorageService.createDirectUploadTicket / confirmDirectUpload and
   // the frontend lib/cloudinary-upload.ts.
+  // Every ticket is bound to the uploader (a signed owner_<id> tag); a story also asks for purpose
+  // 'status', so only that user's story uploads can become a story and be swept after 24h.
   @Post('video/sign')
   @Throttle({ default: { limit: 30, ttl: 60000 } })
-  signVideoUpload() {
-    return this.storageService.createDirectUploadTicket('videos');
+  signVideoUpload(@CurrentUser() user: AuthenticatedUser, @Body() dto: SignVideoUploadDto) {
+    return this.storageService.createDirectUploadTicket('videos', { ownerId: user.userId, purpose: dto.purpose });
   }
 
   // POST /api/upload/video/confirm -> called by the browser once it has pushed every piece to

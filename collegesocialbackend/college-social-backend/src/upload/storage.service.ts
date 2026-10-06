@@ -80,6 +80,24 @@ const DIRECT_UPLOAD_TAG = 'direct';
 // per-piece cap, comfortably above any real lecture recording and a guard against an absurd request.
 const MAX_DIRECT_UPLOAD_PIECES = 24;
 
+// Optional binding of a direct video upload to who asked for it and what for. Each becomes one more
+// signed tag (`owner_<userId>`, `purpose_<name>`), so a caller can insist on its own upload at
+// confirm time, and sweepTaggedVideos() can find every story video by its purpose tag later.
+export interface DirectUploadBinding {
+  ownerId?: string;
+  purpose?: 'status';
+}
+
+export function purposeTag(purpose: NonNullable<DirectUploadBinding['purpose']>): string {
+  return `purpose_${purpose}`;
+}
+
+function directUploadTags(binding: DirectUploadBinding): string {
+  return [DIRECT_UPLOAD_TAG, binding.ownerId && `owner_${binding.ownerId}`, binding.purpose && purposeTag(binding.purpose)]
+    .filter(Boolean)
+    .join(',');
+}
+
 // Margin below Cloudinary's actual per-asset cap when splitting an oversized upload into pieces --
 // leaves headroom against off-by-one edge cases (raw byte-splitting is exact, but better safe) and,
 // for video, against a segment landing slightly over its target due to keyframe-aligned cuts.
@@ -259,11 +277,11 @@ export class StorageService {
   // Params the client MUST echo back verbatim in its upload request -- they're what the signature
   // covers. Kept deliberately tiny (folder + a fixed tag + timestamp); everything else about the
   // upload is fixed by the /video/upload endpoint path, not signable params.
-  private directUploadSignedParams(timestamp: number): Record<string, string | number> {
-    return { folder: 'videos', tags: DIRECT_UPLOAD_TAG, timestamp };
+  private directUploadSignedParams(timestamp: number, tags: string): Record<string, string | number> {
+    return { folder: 'videos', tags, timestamp };
   }
 
-  createDirectUploadTicket(category: UploadCategory): {
+  createDirectUploadTicket(category: UploadCategory, binding: DirectUploadBinding = {}): {
     cloudName: string;
     apiKey: string;
     timestamp: number;
@@ -285,7 +303,8 @@ export class StorageService {
     }
     const apiSecret = this.config.get<string>('cloudinary.apiSecret') ?? '';
     const timestamp = Math.floor(Date.now() / 1000);
-    const signature = cloudinary.utils.api_sign_request(this.directUploadSignedParams(timestamp), apiSecret);
+    const tags = directUploadTags(binding);
+    const signature = cloudinary.utils.api_sign_request(this.directUploadSignedParams(timestamp, tags), apiSecret);
 
     return {
       cloudName: this.config.get<string>('cloudinary.cloudName') ?? '',
@@ -293,7 +312,7 @@ export class StorageService {
       timestamp,
       signature,
       folder: 'videos',
-      tags: DIRECT_UPLOAD_TAG,
+      tags,
       maxPieceBytes: Math.floor(CLOUDINARY_ASSET_CAP_MB.videos * 1_000_000 * CHUNK_SAFETY_FACTOR),
       chunkSize: UPLOAD_CHUNK_SIZE_BYTES,
     };
@@ -304,7 +323,11 @@ export class StorageService {
   // the plan's size cap -- then returns the canonical URL to persist (a plain secure_url for one
   // piece, a splice URL for several). Throws if anything doesn't check out, so a forged or
   // mismatched id can't be stored.
-  async confirmDirectUpload(category: UploadCategory, publicIds: string[]): Promise<UploadOutcome> {
+  async confirmDirectUpload(
+    category: UploadCategory,
+    publicIds: string[],
+    binding: DirectUploadBinding = {},
+  ): Promise<UploadOutcome> {
     if (!this.configured) throw new BadRequestException('رفع الملفات غير متاح حالياً');
     if (category !== 'videos') throw new BadRequestException('الرفع المباشر مدعوم للفيديو فقط');
     if (!Array.isArray(publicIds) || publicIds.length === 0 || publicIds.length > MAX_DIRECT_UPLOAD_PIECES) {
@@ -333,6 +356,12 @@ export class StorageService {
       // carry it if it was created through a ticket this server issued. Folder placement varies by
       // account mode (fixed vs dynamic folders), so it isn't relied on here.
       if (resource.resource_type !== 'video' || !tags.includes(DIRECT_UPLOAD_TAG)) {
+        throw new BadRequestException('الملف المرفوع غير مطابق للمتوقع');
+      }
+      // Callers that will later DELETE the asset (story videos) also require it to be this user's
+      // upload for this purpose -- otherwise anyone could point a story at someone else's video.
+      const required = directUploadTags(binding).split(',').filter((tag) => tag !== DIRECT_UPLOAD_TAG);
+      if (required.some((tag) => !tags.includes(tag))) {
         throw new BadRequestException('الملف المرفوع غير مطابق للمتوقع');
       }
       // A little headroom over the exact decimal cap: Cloudinary itself accepted it, and a re-muxed
@@ -469,6 +498,31 @@ export class StorageService {
 
     this.logger.log(`Confirmed direct file upload of ${partCount} part(s) (group ${groupId}).`);
     return { url: resources[0].secure_url, chunkCount: partCount };
+  }
+
+  // Deletes every video asset tagged `tag` that was uploaded more than `olderThanMs` ago. Story
+  // videos (purpose_status) are only needed for 24h, so one sweep reclaims expired stories and
+  // abandoned uploads alike, without depending on the status rows still existing. Never throws.
+  async sweepTaggedVideos(tag: string, olderThanMs: number): Promise<number> {
+    if (!this.configured) return 0;
+    const cutoff = Date.now() - olderThanMs;
+    const stale: string[] = [];
+    try {
+      let cursor: string | undefined;
+      do {
+        const page = await cloudinary.api.resources_by_tag(tag, { resource_type: 'video', max_results: 500, next_cursor: cursor });
+        for (const r of page.resources ?? []) {
+          if (Date.parse(r.created_at) < cutoff) stale.push(r.public_id);
+        }
+        cursor = page.next_cursor;
+      } while (cursor);
+      for (let i = 0; i < stale.length; i += 100) {
+        await cloudinary.api.delete_resources(stale.slice(i, i + 100), { resource_type: 'video' });
+      }
+    } catch (err) {
+      this.logger.warn(`Sweep of "${tag}" videos failed: ${(err as Error).message}`);
+    }
+    return stale.length;
   }
 
   // Best-effort teardown of the Cloudinary asset(s) behind a stored video URL -- called when a
