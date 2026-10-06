@@ -39,6 +39,12 @@ const TOUR = [
   { icon: Bot, title: 'رافد', text: 'مساعدك الذكي — اسأله عن أي شيء أو لخّص محاضراتك.' },
 ];
 
+// Whether the first-run sheet is on screen right now -- SecurityNote reads it so the two never stack.
+let showing = false;
+export function onboardingShowing(): boolean {
+  return showing;
+}
+
 function alreadyDone(userId: string): boolean {
   try {
     return localStorage.getItem(FLAG_PREFIX + userId) === '1';
@@ -89,6 +95,12 @@ export function OnboardingFlow() {
   useEffect(() => {
     if (active) track(AnalyticsEvent.OnboardingStepViewed, { step, step_name: STEP_NAMES[step] ?? `step_${step}` });
   }, [active, step]);
+  useEffect(() => {
+    showing = active;
+    return () => {
+      showing = false;
+    };
+  }, [active]);
 
   if (!user || !open || user.role === 'admin') return null;
 

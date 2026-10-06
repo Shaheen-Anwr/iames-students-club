@@ -12,6 +12,7 @@ import { TopNavbar } from './TopNavbar';
 import { MobileNav } from './MobileNav';
 import { AiFab } from '@/components/ai/AiFab';
 import { OnboardingFlow } from '@/components/onboarding/OnboardingFlow';
+import { SecurityNote } from './SecurityNote';
 import { StreakFreezeToast } from '@/components/gamification/StreakFreezeToast';
 import { ChatAlertsHost } from '@/components/chat/ChatAlertsHost';
 
@@ -72,6 +73,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       {showMobileNav && <MobileNav />}
       <AiFab />
       <OnboardingFlow />
+      <SecurityNote />
       <StreakFreezeToast />
       <ChatAlertsHost />
     </div>
