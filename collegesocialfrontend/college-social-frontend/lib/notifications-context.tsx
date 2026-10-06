@@ -30,6 +30,7 @@ const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   comment_reply: 'رد على تعليقك',
   comment_reaction: 'تفاعل مع تعليقك',
   qa_answer: 'أجاب على سؤالك',
+  mention: 'أشار إليك',
   friend_request: 'أرسل لك طلب صحبة',
   friend_accept: 'قبل طلب صحبتك',
   reel_like: 'أعجب بالريل الخاص بك',

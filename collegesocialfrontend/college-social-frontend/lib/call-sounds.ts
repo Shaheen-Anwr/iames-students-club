@@ -11,7 +11,8 @@ let ctx: AudioContext | null = null;
 let unlockInstalled = false;
 let loopTimer: ReturnType<typeof setInterval> | null = null;
 
-function audioContext(): AudioContext | null {
+// Shared with lib/chat-sounds.ts -- one AudioContext (and one unlock) for every app sound.
+export function audioContext(): AudioContext | null {
   if (typeof window === 'undefined') return null;
   const Ctor =
     window.AudioContext || (window as unknown as { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;

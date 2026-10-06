@@ -1011,6 +1011,8 @@ export type NotificationType =
   | 'comment_reply'
   | 'comment_reaction'
   | 'qa_answer'
+  // @mentioned in a chat message (carries conversationId) or elsewhere.
+  | 'mention'
   | 'friend_request'
   | 'friend_accept'
   // Academia Reels -- all link to /reels/<reelId>.

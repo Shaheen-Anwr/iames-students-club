@@ -19,6 +19,7 @@ export const NOTIFICATION_LABELS: Record<Notification['type'], string> = {
   comment_reply: 'رد على تعليقك',
   comment_reaction: 'تفاعل مع تعليقك',
   qa_answer: 'أجاب على سؤالك',
+  mention: 'أشار إليك',
   friend_request: 'أرسل لك طلب صحبة',
   friend_accept: 'قبل طلب صحبتك',
   reel_like: 'أعجب بالريل الخاص بك',
@@ -41,6 +42,7 @@ export const NOTIFICATION_ICONS: Record<Notification['type'], React.ComponentTyp
   comment_reply: MessageSquareText,
   comment_reaction: Heart,
   qa_answer: HelpCircle,
+  mention: AtSign,
   friend_request: UserPlus,
   friend_accept: UserCheck,
   reel_like: Heart,
@@ -58,6 +60,9 @@ export function notificationHref(notification: Notification): string {
       return notification.link ?? '/announcements';
     case 'chat_message':
       return notification.conversationId ? `/chat/${notification.conversationId}` : '/chat';
+    // An @mention inside a chat lands in that chat; any other mention keeps the feed fallback.
+    case 'mention':
+      return notification.conversationId ? `/chat/${notification.conversationId}` : '/feed';
     case 'channel_message':
       return notification.groupId && notification.channelId ? `/groups/${notification.groupId}/${notification.channelId}` : '/groups';
     case 'qa_answer':

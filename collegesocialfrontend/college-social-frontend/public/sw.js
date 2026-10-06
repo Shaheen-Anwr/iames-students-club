@@ -8,11 +8,11 @@
 //
 // Bump VERSION on any change here so `activate` drops the old caches.
 
-const VERSION = 'v4';
+const VERSION = 'v5';
 const STATIC_CACHE = `iaems-static-${VERSION}`;
 const PAGES_CACHE = `iaems-pages-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
-const PRECACHE = [OFFLINE_URL, '/manifest.json', '/icons/icon-192.png'];
+const PRECACHE = [OFFLINE_URL, '/manifest.json', '/icons/icon-192.png', '/icons/badge-96.png'];
 
 self.addEventListener('install', (event) => {
   event.waitUntil(
@@ -95,29 +95,72 @@ self.addEventListener('message', (event) => {
 
 /* ------------------------------- Web Push -------------------------------- */
 
+// A chat push carries `conversationId` and a per-conversation `tag` (chat-<id>), so each chat
+// gets one notification that updates in place -- `renotify` makes every update ring, vibrate and
+// pop up again (without it a replacement is silent). Several unread messages from one chat stack
+// into that notification's body, like WhatsApp. While the app is open in front of the user the
+// page plays its own sound and in-app banner instead (lib/chat-sounds.ts), so a chat push is
+// skipped then -- Chrome only forces a notification when no window of the site is visible.
 self.addEventListener('push', (event) => {
   if (!event.data) return;
-  const data = event.data.json();
-  event.waitUntil(
-    self.registration.showNotification(data.title, {
-      body: data.body,
-      icon: data.icon,
-      badge: '/icons/icon-192.png',
-      tag: data.tag,
-      data: { url: data.url },
-    }),
-  );
+  let data;
+  try {
+    data = event.data.json();
+  } catch {
+    return;
+  }
+  event.waitUntil(showPush(data));
 });
 
+async function showPush(data) {
+  if (data.conversationId) {
+    const windows = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+    if (windows.some((c) => c.visibilityState === 'visible' && c.focused)) return;
+  }
+
+  let lines = [data.body || ''];
+  let count = 1;
+  if (data.conversationId && data.tag) {
+    const [previous] = await self.registration.getNotifications({ tag: data.tag });
+    if (previous?.data?.lines) {
+      lines = [...previous.data.lines, data.body || ''].slice(-5);
+      count = (previous.data.count || 1) + 1;
+    }
+  }
+
+  return self.registration.showNotification(count > 1 ? `${data.title} (${count})` : data.title, {
+    body: lines.filter(Boolean).join('\n'),
+    icon: data.icon,
+    // Android draws the status-bar icon from this image's alpha channel -- a white silhouette.
+    badge: '/icons/badge-96.png',
+    tag: data.tag,
+    renotify: Boolean(data.tag),
+    silent: false,
+    vibrate: [180, 80, 180],
+    timestamp: Date.now(),
+    lang: 'ar',
+    dir: 'rtl',
+    data: { url: data.url, conversationId: data.conversationId || null, lines, count },
+  });
+}
+
+// Tapping a notification: reuse the open app (client-side route change, no reload) when there
+// is one, otherwise launch it at the notification's page.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
   const url = event.notification.data?.url;
   if (!url) return;
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then((clientList) => {
-      const existing = clientList.find((c) => c.url === url);
-      if (existing) return existing.focus();
+    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
+      const exact = clientList.find((c) => c.url === url);
+      if (exact) return exact.focus();
+      const open = clientList[0];
+      if (open) {
+        await open.focus();
+        open.postMessage({ type: 'notification-click', url });
+        return;
+      }
       return self.clients.openWindow(url);
     }),
   );

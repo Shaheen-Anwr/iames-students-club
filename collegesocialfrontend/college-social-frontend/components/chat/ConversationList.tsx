@@ -38,6 +38,7 @@ import { TypingDots } from './ChatChrome';
 import { CreateOrJoinGroupModal } from '@/components/groups/CreateOrJoinGroupModal';
 import { ChatHomeTools } from './ChatHomeTools';
 import { StatusTray } from './StatusTray';
+import { EnablePushCard } from './EnablePushCard';
 
 type Filter = 'all' | 'unread' | 'groups' | 'class' | 'public';
 
@@ -237,6 +238,7 @@ export function ConversationList() {
         </div>
       </div>
 
+      {!searching && !showArchived && <EnablePushCard />}
       {!searching && !showArchived && <StatusTray />}
 
       <AnimatePresence initial={false}>

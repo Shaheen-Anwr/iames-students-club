@@ -1,18 +1,20 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, BellOff, BellRing, Sunrise, Clock3 } from 'lucide-react';
+import { Bell, BellOff, BellRing, Sunrise, Clock3, MessageCircle, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Switch } from '@/components/ui/Switch';
 import { ApiError } from '@/lib/api';
 import { useToast } from '@/lib/toast-context';
+import { chatSoundsEnabled, playChatSound, setChatSoundsEnabled } from '@/lib/chat-sounds';
 import {
   getPushPreferences,
   getPushSubscriptionState,
   isPushSupported,
   sendClassReminderTest,
   sendDigestTest,
+  sendPushTest,
   setPushPreferences,
   subscribeToPush,
   unsubscribeFromPush,
@@ -30,7 +32,10 @@ export function PushNotificationsToggle() {
   // Preferences -- null until loaded (only fetched once push is actually enabled).
   const [prefs, setPrefs] = useState<PushPreferences | null>(null);
   const [prefsBusy, setPrefsBusy] = useState(false);
-  const [testBusy, setTestBusy] = useState<'digest' | 'class' | null>(null);
+  const [testBusy, setTestBusy] = useState<'digest' | 'class' | 'push' | null>(null);
+  // In-app message sounds -- a per-device setting, read after mount (localStorage).
+  const [sounds, setSounds] = useState(true);
+  useEffect(() => setSounds(chatSoundsEnabled()), []);
 
   const loadPrefs = () =>
     getPushPreferences()
@@ -92,10 +97,11 @@ export function PushNotificationsToggle() {
     }
   }
 
-  async function runTest(which: 'digest' | 'class') {
+  async function runTest(which: 'digest' | 'class' | 'push') {
     setTestBusy(which);
     try {
-      const { message } = which === 'digest' ? await sendDigestTest() : await sendClassReminderTest();
+      const { message } =
+        which === 'push' ? await sendPushTest() : which === 'digest' ? await sendDigestTest() : await sendClassReminderTest();
       showToast(message);
     } catch (err) {
       showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال الإشعار التجريبي.', 'error');
@@ -105,6 +111,12 @@ export function PushNotificationsToggle() {
   }
 
   const isIos = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
+
+  function toggleSounds(on: boolean) {
+    setChatSoundsEnabled(on);
+    setSounds(on);
+    if (on) playChatSound('notify', { force: true });
+  }
 
   return (
     <Card className="p-5">
@@ -141,6 +153,30 @@ export function PushNotificationsToggle() {
             <BellRing className="h-4 w-4 animate-pulse text-muted-foreground" />
           ) : (
             <>
+              <div>
+                <div className="flex items-start gap-2.5">
+                  <MessageCircle className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <div>
+                    <h3 className="text-sm font-medium text-foreground">رسائل الدردشة</h3>
+                    <p className="mt-0.5 text-xs text-muted-foreground">
+                      كل رسالة جديدة تظهر أعلى الشاشة بصوت واهتزاز حتى والتطبيق مقفول. المحادثات المكتومة لا تُنبّهك.
+                    </p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => runTest('push')}
+                  disabled={testBusy === 'push'}
+                  className="mt-2.5 text-xs font-medium text-accent hover:underline disabled:opacity-50"
+                >
+                  إرسال إشعار تجريبي
+                </button>
+                <p className="mt-1.5 text-[11px] leading-relaxed text-muted-foreground">
+                  {isIos
+                    ? 'لا يظهر أو بدون صوت؟ إعدادات الآيفون ← الإشعارات ← التطبيق: فعّل «السماح بالإشعارات» و«الأصوات» و«اللافتات».'
+                    : 'لا يظهر أعلى الشاشة أو بدون صوت؟ إعدادات الهاتف ← التطبيقات ← التطبيق (أو Chrome) ← الإشعارات: فعّل «الظهور على الشاشة» و«الصوت».'}
+                </p>
+              </div>
               <PrefRow
                 icon={<Clock3 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />}
                 id="class-reminders-pref"
@@ -169,6 +205,24 @@ export function PushNotificationsToggle() {
           )}
         </div>
       )}
+
+      <div className="mt-4 flex items-center justify-between gap-3 border-t border-border pt-4">
+        <div className="flex items-start gap-2.5">
+          <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+          <div>
+            <h3 id="chat-sounds-pref" className="text-sm font-medium text-foreground">
+              أصوات الرسائل داخل التطبيق
+            </h3>
+            <p className="mt-0.5 text-xs text-muted-foreground">
+              صوت خفيف عند وصول رسالة أو إرسالها وأنت تستخدم التطبيق.{' '}
+              <button type="button" onClick={() => playChatSound('notify', { force: true })} className="font-medium text-accent hover:underline">
+                تجربة
+              </button>
+            </p>
+          </div>
+        </div>
+        <Switch checked={sounds} onCheckedChange={toggleSounds} aria-labelledby="chat-sounds-pref" />
+      </div>
     </Card>
   );
 }

@@ -94,3 +94,22 @@ export async function sendDigestTest(): Promise<{ delivered: boolean; message: s
 export async function sendClassReminderTest(): Promise<{ message: string }> {
   return api.post<{ message: string }>('/schedule/reminders/test');
 }
+
+// A sample notification a few seconds from now, so the user can leave the app and see exactly
+// how a message will pop up (sound, vibration, banner) on this phone.
+export async function sendPushTest(): Promise<{ message: string }> {
+  return api.post<{ message: string }>('/push/test');
+}
+
+// Opening a conversation clears its notification from the phone's notification shade, the way
+// WhatsApp does (sw.js tags chat notifications `chat-<conversationId>`).
+export async function closeChatNotifications(conversationId: string): Promise<void> {
+  if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
+  try {
+    const registration = await navigator.serviceWorker.getRegistration();
+    const open = await registration?.getNotifications({ tag: `chat-${conversationId}` });
+    open?.forEach((n) => n.close());
+  } catch {
+    /* notifications unsupported here */
+  }
+}

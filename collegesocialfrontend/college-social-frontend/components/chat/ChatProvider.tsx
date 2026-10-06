@@ -9,6 +9,7 @@ import { messagePreview } from '@/lib/chat-helpers';
 import { chatApi, MESSAGE_PAGE_SIZE } from '@/lib/chat-api';
 import { createChatMessageCache } from '@/lib/chat-message-cache';
 import { preloadChatBackground } from '@/lib/chat-background';
+import { syncChatAlertConversations } from '@/lib/chat-sounds';
 import type { Conversation, Message } from '@/lib/types';
 
 interface ChatContextValue {
@@ -86,6 +87,11 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     conversationsRef.current = conversations;
   }, [conversations]);
+
+  // Keep the in-app alert sounds' mute list current (muting re-pulls this list).
+  useEffect(() => {
+    if (user && !loading) syncChatAlertConversations(conversations, user._id);
+  }, [conversations, user, loading]);
 
   // Keep the conversation list live as messages land while you're elsewhere in the app.
   // Deliberately narrow so the open ChatWindow is never disturbed (that was why the old

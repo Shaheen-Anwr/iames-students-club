@@ -16,6 +16,17 @@ export interface PushEnqueuer {
   enqueueUsers(userIds: string[], payload: PushPayload): Promise<void>;
 }
 
+// web-push's defaults are 'normal' urgency and a 4-week TTL -- fine for a "new comment" ping, but
+// a chat message sent as 'normal' can sit undelivered on a dozing Android phone for minutes.
+function requestOptions(payload: PushPayload): webpush.RequestOptions {
+  return {
+    urgency: payload.urgency ?? 'normal',
+    ...(payload.ttl ? { TTL: payload.ttl } : {}),
+  };
+}
+
+const TEST_PUSH_DELAY_MS = 5000;
+
 @Injectable()
 export class PushService {
   private readonly logger = new Logger(PushService.name);
@@ -93,6 +104,28 @@ export class PushService {
     return this.getDigestPreference(userId);
   }
 
+  // "Send me a test notification" from the settings card. Delayed a few seconds so the user can
+  // leave the app or lock the screen first -- that's when a real message would pop up. Carries no
+  // conversationId, so the SW shows it even if the app is still in front.
+  async sendTest(userId: string): Promise<{ message: string }> {
+    const frontendUrl = this.config.get<string>('frontendUrl')!;
+    if (!this.enabled) return { message: 'إشعارات الهاتف غير مفعّلة على الخادم حاليًا.' };
+    const user = await this.userModel.findById(userId).select('pushSubscriptions').lean().exec();
+    if (!user?.pushSubscriptions?.length) return { message: 'لا يوجد جهاز مفعّل عليه الإشعارات لحسابك. فعّلها أولًا.' };
+
+    const payload: PushPayload = {
+      title: '🔔 إشعار تجريبي',
+      body: 'هكذا ستظهر رسائل الدردشة على شاشتك — مع صوت واهتزاز.',
+      url: `${frontendUrl}/chat`,
+      icon: `${frontendUrl}/icons/icon-192.png`,
+      tag: 'push-test',
+      urgency: 'high',
+      ttl: 60,
+    };
+    setTimeout(() => void this.deliverToUser(userId, payload).catch(() => undefined), TEST_PUSH_DELAY_MS);
+    return { message: 'سيصلك إشعار تجريبي خلال 5 ثوانٍ — اخرج من التطبيق أو اقفل الشاشة لتراه.' };
+  }
+
   // Never throws -- a push failure must never break the in-app notification path that calls it.
   // With a queue attached, hand off and return immediately; otherwise deliver inline (as before).
   async sendToUser(userId: string, payload: PushPayload): Promise<void> {
@@ -109,7 +142,7 @@ export class PushService {
     const user = await this.userModel.findById(userId).select('pushSubscriptions').exec();
     if (!user || user.pushSubscriptions.length === 0) return;
 
-    await this.dispatch(userId, user.pushSubscriptions, JSON.stringify(payload));
+    await this.dispatch(userId, user.pushSubscriptions, JSON.stringify(payload), requestOptions(payload));
   }
 
   // Fan a single payload out to every subscribed device across many users (announcement
@@ -131,10 +164,11 @@ export class PushService {
     if (users.length === 0) return;
 
     const body = JSON.stringify(payload);
+    const options = requestOptions(payload);
     const BATCH = 50;
     for (let i = 0; i < users.length; i += BATCH) {
       await Promise.allSettled(
-        users.slice(i, i + BATCH).map((u) => this.dispatch(u._id.toString(), u.pushSubscriptions, body)),
+        users.slice(i, i + BATCH).map((u) => this.dispatch(u._id.toString(), u.pushSubscriptions, body, options)),
       );
     }
   }
@@ -147,6 +181,7 @@ export class PushService {
     if (!this.enabled) return { enabled: false, users: 0, sent: 0, failed: 0 };
 
     const body = JSON.stringify(payload);
+    const options = requestOptions(payload);
     const cursor = this.userModel
       .find({ 'pushSubscriptions.0': { $exists: true } })
       .select('_id pushSubscriptions')
@@ -168,7 +203,7 @@ export class PushService {
 
     for await (const user of cursor) {
       users += 1;
-      batch.push(this.dispatch(user._id.toString(), user.pushSubscriptions, body));
+      batch.push(this.dispatch(user._id.toString(), user.pushSubscriptions, body, options));
       if (batch.length >= 50) await drain();
     }
     await drain();
@@ -184,10 +219,11 @@ export class PushService {
     userId: string,
     subscriptions: { endpoint: string; keys: { p256dh: string; auth: string } }[],
     body: string,
+    options: webpush.RequestOptions,
   ): Promise<{ sent: number; failed: number }> {
     const results = await Promise.allSettled(
       subscriptions.map((sub) =>
-        webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, body).catch((err) => {
+        webpush.sendNotification({ endpoint: sub.endpoint, keys: sub.keys }, body, options).catch((err) => {
           throw { statusCode: err?.statusCode, endpoint: sub.endpoint };
         }),
       ),

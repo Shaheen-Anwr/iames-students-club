@@ -6,8 +6,19 @@ export interface PushPayload {
   body: string;
   url: string;
   icon: string;
+  /** Same tag = one notification that updates in place (the SW re-alerts on every update). */
   tag: string;
+  /** Chat pushes only: the SW skips the system notification while the user has the app open in
+   *  front of them -- the page plays its own sound and in-app banner instead. */
+  conversationId?: string;
+  /** Delivery hints for the push service (see PushService.requestOptions). 'high' wakes a dozing
+   *  Android phone right away instead of batching the push for its next maintenance window. */
+  urgency?: 'normal' | 'high';
+  /** Seconds the push service keeps trying an offline device before dropping the push. */
+  ttl?: number;
 }
+
+const DAY_SECONDS = 24 * 60 * 60;
 
 // Arabic label per notification type, shown as the push title's action phrase (prefixed with the
 // actor's name). Mirrors NOTIFICATION_LABELS in the frontend's NotificationBell.tsx -- kept in
@@ -46,6 +57,9 @@ function relativeHref(notification: NotificationDocument): string {
   switch (notification.type) {
     case 'chat_message':
       return notification.conversationId ? `/chat/${notification.conversationId}` : '/chat';
+    // An @mention inside a chat lands in that chat; any other mention keeps the feed fallback.
+    case 'mention':
+      return notification.conversationId ? `/chat/${notification.conversationId}` : '/feed';
     case 'channel_message':
       return notification.groupId && notification.channelId
         ? `/groups/${notification.groupId}/${notification.channelId}`
@@ -71,7 +85,6 @@ function relativeHref(notification: NotificationDocument): string {
     case 'post_share':
     case 'comment_reply':
     case 'comment_reaction':
-    case 'mention':
     default:
       return '/feed';
   }
@@ -79,13 +92,28 @@ function relativeHref(notification: NotificationDocument): string {
 
 export function buildPushPayload(notification: NotificationDocument, frontendUrl: string): PushPayload {
   const actorName = (notification.actor as { name?: string } | null)?.name ?? 'شخص ما';
-  return {
+  const payload: PushPayload = {
     title: notification.type === 'chat_reminder' ? `⏰ ${LABELS.chat_reminder}` : `${actorName} ${LABELS[notification.type]}`,
     body: notification.preview ?? '',
     url: `${frontendUrl}${relativeHref(notification)}`,
     icon: `${frontendUrl}/icons/icon-192.png`,
     tag: notification.type,
   };
+
+  // Messages: one notification per conversation/channel (WhatsApp-style), delivered urgently.
+  // A single shared 'chat_message' tag used to fold every chat into one silent notification.
+  const conversationId = notification.conversationId?.toString();
+  if ((notification.type === 'chat_message' || notification.type === 'mention') && conversationId) {
+    return { ...payload, tag: `chat-${conversationId}`, conversationId, urgency: 'high', ttl: DAY_SECONDS };
+  }
+  if (notification.type === 'channel_message') {
+    const channelId = notification.channelId?.toString();
+    return { ...payload, tag: channelId ? `channel-${channelId}` : payload.tag, urgency: 'high', ttl: DAY_SECONDS };
+  }
+  if (notification.type === 'chat_reminder' || notification.type === 'thread_reply') {
+    return { ...payload, urgency: 'high', ttl: DAY_SECONDS };
+  }
+  return payload;
 }
 
 // Push payload for a platform/department announcement broadcast. Leads with the announcer's name

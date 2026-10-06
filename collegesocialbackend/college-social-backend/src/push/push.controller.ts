@@ -32,6 +32,12 @@ export class PushController {
     return this.pushService.getDigestPreference(user.userId);
   }
 
+  // Sends the caller a sample notification a few seconds from now (see PushService.sendTest).
+  @Post('test')
+  sendTest(@CurrentUser() user: AuthenticatedUser) {
+    return this.pushService.sendTest(user.userId);
+  }
+
   @Patch('preferences')
   setPreferences(@Body() dto: UpdatePushPreferencesDto, @CurrentUser() user: AuthenticatedUser) {
     return this.pushService.setDigestPreference(user.userId, {

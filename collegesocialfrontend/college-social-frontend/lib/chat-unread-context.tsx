@@ -13,7 +13,8 @@ import { usePathname } from 'next/navigation';
 import { api } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
-import type { Message } from '@/lib/types';
+import { syncChatAlertConversations } from '@/lib/chat-sounds';
+import type { Conversation, Message } from '@/lib/types';
 
 const ChatUnreadContext = createContext<number>(0);
 
@@ -43,9 +44,10 @@ export function ChatUnreadProvider({ children }: { children: React.ReactNode }) 
     }
     let cancelled = false;
     api
-      .get<{ _id: string; unreadCount?: number }[]>('/chat/conversations')
+      .get<Conversation[]>('/chat/conversations')
       .then((list) => {
         if (cancelled) return;
+        syncChatAlertConversations(list, user._id);
         setUnreadIds(new Set(list.filter((c) => (c.unreadCount ?? 0) > 0).map((c) => c._id)));
       })
       .catch(() => {});

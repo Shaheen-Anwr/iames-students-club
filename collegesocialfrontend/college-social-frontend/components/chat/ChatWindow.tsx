@@ -36,6 +36,7 @@ import { useSocket } from '@/lib/socket-context';
 import { useToast } from '@/lib/toast-context';
 import { saveBlob } from '@/lib/download';
 import { claimEffectPlay, playChatEffect } from '@/lib/chat-effects';
+import { playChatSound } from '@/lib/chat-sounds';
 import { buildChatRows } from '@/lib/chat-grouping';
 import {
   canPinInConversation,
@@ -1045,6 +1046,7 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     };
     setMessages((prev) => [...prev, optimistic]);
     emitSend({ text: payload.text, attachments: payload.attachments, replyTo, effect: payload.effect, silent: payload.silent }, tempId);
+    playChatSound('sent');
     if (payload.effect) playChatEffect(payload.effect);
     setReplyingTo(null);
     return true;
