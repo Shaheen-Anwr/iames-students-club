@@ -483,7 +483,11 @@ function StatusViewer({
                 item.text && (
                   <p
                     dir="auto"
-                    className="absolute inset-x-4 bottom-4 mx-auto max-w-md rounded-xl bg-black/50 px-4 py-2 text-center text-[15px] leading-relaxed"
+                    className={cn(
+                      'absolute inset-x-4 mx-auto max-w-md rounded-xl bg-black/50 px-4 py-2 text-center text-[15px] leading-relaxed',
+                      // Your own story has no reply bar underneath -- keep clear of the home indicator.
+                      own ? 'bottom-[calc(1rem+var(--safe-bottom,0px))]' : 'bottom-4',
+                    )}
                   >
                     {item.text}
                   </p>

@@ -169,14 +169,22 @@ export class ChatStatusService {
       // client without introducing a circular module dependency just for text moderation.
       const ai = this.modules.get(AiService, { strict: false });
       if (!ai?.isConfigured) return;
+      // The model only ever sees the caption -- say so, or it invents rules about the photo/video a
+      // caption mentions (it rejected "أول حالة فيديو" as "Video content not allowed").
       result = await ai.completeJson<{ allowed?: boolean; reason?: string }>(
-        'أنت مشرف حالات طلابية. امنع التنمر الموجه والتهديد والعنف والكراهية والمحتوى الجنسي الصريح ' +
-        'وكشف معلومات خاصة. اسمح بالدردشة والنقد والطرافة. أعد JSON فقط: {"allowed": boolean, "reason": "سبب قصير"}.',
+        'أنت مشرف نصوص الحالات الطلابية. الحالة قد تكون نصًا فقط أو صورة أو فيديو مع تعليق، وأنت تحكم على النص المكتوب وحده. ' +
+        'ذكر صورة أو فيديو أو تسجيل أو محاضرة مسموح تمامًا وليس سببًا للمنع. ' +
+        'امنع فقط: التنمر الموجه، والتهديد، والعنف، والكراهية، والمحتوى الجنسي الصريح، وكشف معلومات خاصة. ' +
+        'اسمح بالدردشة والنقد والطرافة والإيموجي. أعد JSON فقط: {"allowed": boolean, "reason": "سبب قصير بالعربية"}.',
         text, { maxTokens: 200, temperature: 0, timeoutMs: 15_000 },
       );
     } catch (error) {
       this.logger.warn(`Status text moderation unavailable: ${(error as Error).message}`);
     }
-    if (result?.allowed === false) throw new BadRequestException(result.reason || 'الحالة مخالفة لقواعد المنصة');
+    if (result?.allowed === false) {
+      // Users read this in a toast -- never pass an English (or empty) model reason through.
+      const reason = result.reason && /[\u0600-\u06FF]/.test(result.reason) ? result.reason : 'الحالة مخالفة لقواعد المنصة';
+      throw new BadRequestException(reason);
+    }
   }
 }
