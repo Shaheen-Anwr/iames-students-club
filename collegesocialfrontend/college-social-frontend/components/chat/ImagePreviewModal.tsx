@@ -621,11 +621,14 @@ export function ImagePreviewModal<T extends PreviewMessage>({
             <div className="relative mx-auto flex w-fit max-w-full items-center gap-1 rounded-full bg-white/10 p-1.5 ring-1 ring-white/15 backdrop-blur-xl">
               <AnimatePresence>
                 {reactOpen && (
+                  // Centred with framer's own `x`, not Tailwind's -translate-x-1/2: framer writes the
+                  // whole inline `transform` for the pop-in, which silently dropped the Tailwind
+                  // translate and pushed half the bar off the right edge of the screen.
                   <motion.div
-                    initial={{ opacity: 0, y: 8, scale: 0.9 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: 8, scale: 0.9 }}
-                    className="absolute bottom-full left-1/2 mb-3 flex -translate-x-1/2 gap-0.5 rounded-full bg-neutral-900/95 p-1.5 shadow-2xl ring-1 ring-white/10"
+                    initial={{ opacity: 0, x: '-50%', y: 8, scale: 0.9 }}
+                    animate={{ opacity: 1, x: '-50%', y: 0, scale: 1 }}
+                    exit={{ opacity: 0, x: '-50%', y: 8, scale: 0.9 }}
+                    className="absolute bottom-full left-1/2 mb-3 flex gap-0.5 rounded-full bg-neutral-900/95 p-1.5 shadow-2xl ring-1 ring-white/10"
                   >
                     {QUICK_REACTIONS.map((emoji) => (
                       <button
@@ -636,7 +639,7 @@ export function ImagePreviewModal<T extends PreviewMessage>({
                           setReactOpen(false);
                           showToast(`تم التفاعل ${emoji}`);
                         }}
-                        className="flex h-10 w-10 items-center justify-center rounded-full text-[22px] transition-transform hover:scale-125"
+                        className="flex h-9 w-9 items-center justify-center rounded-full text-[20px] transition-transform hover:scale-125 min-[400px]:h-10 min-[400px]:w-10 min-[400px]:text-[22px]"
                       >
                         {emoji}
                       </button>
@@ -645,10 +648,10 @@ export function ImagePreviewModal<T extends PreviewMessage>({
                 )}
                 {deleteOpen && (
                   <motion.div
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0, y: 8 }}
-                    className="absolute bottom-full left-1/2 mb-3 w-56 -translate-x-1/2 overflow-hidden rounded-2xl bg-neutral-900/95 py-1 shadow-2xl ring-1 ring-white/10"
+                    initial={{ opacity: 0, x: '-50%', y: 8 }}
+                    animate={{ opacity: 1, x: '-50%', y: 0 }}
+                    exit={{ opacity: 0, x: '-50%', y: 8 }}
+                    className="absolute bottom-full left-1/2 mb-3 w-56 overflow-hidden rounded-2xl bg-neutral-900/95 py-1 shadow-2xl ring-1 ring-white/10"
                   >
                     {isOwn && (
                       <button
