@@ -17,8 +17,10 @@ interface Prefs {
 
 // Category -> the notification types it covers. Toggling a category off adds all its types to
 // `mutedTypes` (phone push only; the in-app bell is unaffected).
-const CATEGORIES: { key: string; label: string; hint: string; types: string[] }[] = [
-  { key: 'messages', label: 'الرسائل', hint: 'الدردشة ومجموعات الدراسة', types: ['chat_message', 'channel_message'] },
+// `locked`: chat pushes are mandatory (the backend sends them regardless -- isForcedChatPush), so
+// that row shows as permanently on instead of offering a switch that wouldn't do anything.
+const CATEGORIES: { key: string; label: string; hint: string; types: string[]; locked?: boolean }[] = [
+  { key: 'messages', label: 'الرسائل', hint: 'الدردشة ومجموعات الدراسة — إجبارية ولا يمكن إيقافها', types: ['chat_message', 'channel_message'], locked: true },
   {
     key: 'engagement',
     label: 'التفاعل مع منشوراتك',
@@ -95,14 +97,14 @@ export function NotificationSettings() {
       ) : (
         <div className="space-y-1">
           {CATEGORIES.map((c) => {
-            const on = categoryEnabled(c.types);
+            const on = c.locked || categoryEnabled(c.types);
             return (
               <div key={c.key} className="flex items-center justify-between gap-3 border-b border-border/60 py-2.5 last:border-0">
                 <div className="min-w-0">
                   <p className="text-sm text-foreground">{c.label}</p>
-                  <p className="truncate text-[11px] text-muted-foreground">{c.hint}</p>
+                  <p className="text-[11px] leading-snug text-muted-foreground">{c.hint}</p>
                 </div>
-                <Switch checked={on} onCheckedChange={(v) => toggleCategory(c.types, v)} aria-label={c.label} />
+                <Switch checked={on} disabled={c.locked} onCheckedChange={(v) => toggleCategory(c.types, v)} aria-label={c.label} />
               </div>
             );
           })}
@@ -114,7 +116,7 @@ export function NotificationSettings() {
                 <Moon className="mt-0.5 h-4 w-4 shrink-0 text-muted-foreground" />
                 <div>
                   <p className="text-sm text-foreground">ساعات الهدوء</p>
-                  <p className="text-[11px] text-muted-foreground">لا إشعارات هاتف خلال هذه الفترة.</p>
+                  <p className="text-[11px] text-muted-foreground">لا إشعارات هاتف خلال هذه الفترة — ما عدا رسائل الدردشة.</p>
                 </div>
               </div>
               <Switch

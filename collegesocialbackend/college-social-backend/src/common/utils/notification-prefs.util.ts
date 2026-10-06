@@ -24,6 +24,21 @@ export function inQuietHours(prefs: NotificationPrefs | null | undefined, offset
   return s < e ? h >= s && h < e : h >= s || h < e; // s<e: normal; s>e: wraps midnight
 }
 
+/**
+ * Chat pushes are mandatory (product decision, 2026-10-07): the per-type switches and quiet hours
+ * never hold back a chat message, a study-group channel message, a thread reply or an @mention
+ * inside a chat. The only thing that silences chat is muting a GROUP conversation (ChatService);
+ * private chats can't be muted at all.
+ */
+export function isForcedChatPush(type: string, conversationId?: string | null): boolean {
+  return (
+    type === 'chat_message' ||
+    type === 'channel_message' ||
+    type === 'thread_reply' ||
+    (type === 'mention' && !!conversationId)
+  );
+}
+
 /** Should a push for `type` be suppressed for this user right now? (in-app is never suppressed) */
 export function pushSuppressed(
   prefs: NotificationPrefs | null | undefined,

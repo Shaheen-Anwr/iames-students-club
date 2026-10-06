@@ -7,7 +7,7 @@ import { User, UserDocument } from '../users/schemas/user.schema';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { PushService } from '../push/push.service';
 import { buildPushPayload } from '../push/push-payload.util';
-import { pushSuppressed, type NotificationPrefs } from '../common/utils/notification-prefs.util';
+import { isForcedChatPush, pushSuppressed, type NotificationPrefs } from '../common/utils/notification-prefs.util';
 import { UpdateNotificationPrefsDto } from './dto/update-notification-prefs.dto';
 
 export interface NotificationStats {
@@ -99,9 +99,12 @@ export class NotificationsService {
 
   private async maybePush(recipientId: string, type: NotificationType, populated: NotificationDocument): Promise<void> {
     try {
-      const prefs = await this.userModel.findById(recipientId).select('notificationPrefs').lean().exec();
-      const offset = this.config.get<number>('appTzOffsetHours') ?? 3;
-      if (pushSuppressed(prefs?.notificationPrefs, type, offset)) return;
+      // Chat always goes out (see isForcedChatPush); everything else respects the user's switches.
+      if (!isForcedChatPush(type, populated.conversationId)) {
+        const prefs = await this.userModel.findById(recipientId).select('notificationPrefs').lean().exec();
+        const offset = this.config.get<number>('appTzOffsetHours') ?? 3;
+        if (pushSuppressed(prefs?.notificationPrefs, type, offset)) return;
+      }
       const frontendUrl = this.config.get<string>('frontendUrl')!;
       await this.pushService.sendToUser(recipientId, buildPushPayload(populated, frontendUrl));
     } catch (err) {

@@ -659,8 +659,10 @@ export class ChatService {
     mentionedIds: Set<string>,
   ): void {
     const now = Date.now();
+    // Only groups can be muted -- a private chat always notifies (any mute left over from before
+    // that rule is ignored).
     const mutedIds = new Set(
-      (conversation.mutedBy ?? [])
+      (conversation.isGroup ? conversation.mutedBy ?? [] : [])
         .filter((m) => !m.until || new Date(m.until).getTime() > now)
         .map((m) => m.user.toString()),
     );
@@ -765,8 +767,10 @@ export class ChatService {
     mentionedIds: Set<string>,
   ): void {
     const now = Date.now();
+    // Only groups can be muted -- a private chat always notifies (any mute left over from before
+    // that rule is ignored).
     const mutedIds = new Set(
-      (conversation.mutedBy ?? [])
+      (conversation.isGroup ? conversation.mutedBy ?? [] : [])
         .filter((m) => !m.until || new Date(m.until).getTime() > now)
         .map((m) => m.user.toString()),
     );
@@ -1556,6 +1560,7 @@ export class ChatService {
 
   async muteConversation(conversationId: string, userId: string, minutes?: number): Promise<ConversationDocument> {
     const conversation = await this.assertCanAccessConversation(conversationId, userId, { autoJoin: false });
+    if (!conversation.isGroup) throw new BadRequestException('لا يمكن كتم المحادثات الخاصة — الكتم متاح للمجموعات فقط.');
     const until = minutes ? new Date(Date.now() + minutes * 60_000) : null;
     conversation.mutedBy = [
       ...conversation.mutedBy.filter((m) => m.user.toString() !== userId),

@@ -31,7 +31,10 @@ export function isArchived(conversation: Conversation, userId: string): boolean 
   return !!conversation.archivedBy?.includes(userId);
 }
 
+// Only groups can be muted -- private chats always notify (a mute left over from before that
+// rule doesn't count).
 export function isMuted(conversation: Conversation, userId: string): boolean {
+  if (!conversation.isGroup) return false;
   const entry = conversation.mutedBy?.find((m) => m.user === userId);
   if (!entry) return false;
   if (!entry.until) return true;

@@ -53,6 +53,11 @@ export class PushService {
   }
 
   async subscribe(userId: string, dto: SubscribeDto, userAgent: string | null): Promise<void> {
+    // One device, one account: a phone that signs into another account must stop receiving the
+    // previous account's (private) chat pushes.
+    await this.userModel
+      .updateMany({ _id: { $ne: userId }, 'pushSubscriptions.endpoint': dto.endpoint }, { $pull: { pushSubscriptions: { endpoint: dto.endpoint } } })
+      .exec();
     // Pull any existing subscription with the same endpoint first (a device re-subscribing gets
     // fresh keys/timestamp) -- $pull and $push can't target the same array path in one update.
     await this.userModel.updateOne({ _id: userId }, { $pull: { pushSubscriptions: { endpoint: dto.endpoint } } }).exec();

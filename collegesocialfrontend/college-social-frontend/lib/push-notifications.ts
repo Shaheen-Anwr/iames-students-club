@@ -113,3 +113,36 @@ export async function closeChatNotifications(conversationId: string): Promise<vo
     /* notifications unsupported here */
   }
 }
+
+// Chat notifications are mandatory, so a device's subscription must follow whoever is signed in.
+// Once per app load (and again after switching accounts) this re-posts the existing subscription:
+// the server moves the endpoint off any other account (a shared phone stops getting the previous
+// person's chats) and re-adds it if it had been pruned.
+let syncedFor: string | null = null;
+export async function resyncPushSubscription(userId: string): Promise<void> {
+  if (syncedFor === userId || !isPushSupported() || Notification.permission !== 'granted') return;
+  syncedFor = userId;
+  try {
+    const registration = await navigator.serviceWorker.ready;
+    const subscription = await registration.pushManager.getSubscription();
+    if (!subscription) return;
+    const json = subscription.toJSON();
+    await api.post('/push/subscribe', { endpoint: json.endpoint, keys: json.keys });
+  } catch {
+    syncedFor = null; // try again next time
+  }
+}
+
+// Signing out: stop sending this account's chats to this device. The browser subscription itself
+// stays, so the next account to sign in here picks it up through resyncPushSubscription().
+export async function detachPushSubscription(): Promise<void> {
+  syncedFor = null;
+  try {
+    if (!isPushSupported()) return;
+    const registration = await navigator.serviceWorker.getRegistration();
+    const subscription = await registration?.pushManager.getSubscription();
+    if (subscription) await api.post('/push/unsubscribe', { endpoint: subscription.endpoint });
+  } catch {
+    /* best effort -- signing out must never fail on this */
+  }
+}

@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { Bell, BellOff, BellRing, Sunrise, Clock3, MessageCircle, Volume2 } from 'lucide-react';
+import { Bell, BellRing, Sunrise, Clock3, MessageCircle, Volume2 } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Card } from '@/components/ui/Card';
 import { Switch } from '@/components/ui/Switch';
@@ -17,7 +17,6 @@ import {
   sendPushTest,
   setPushPreferences,
   subscribeToPush,
-  unsubscribeFromPush,
   type PushPreferences,
   type PushSubscriptionState,
 } from '@/lib/push-notifications';
@@ -63,20 +62,6 @@ export function PushNotificationsToggle() {
     } catch (err) {
       showToast(err instanceof Error ? err.message : 'تعذّر تفعيل الإشعارات.', 'error');
       setState(await getPushSubscriptionState());
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function handleDisable() {
-    setBusy(true);
-    try {
-      await unsubscribeFromPush();
-      setState('granted');
-      setPrefs(null);
-      showToast('تم إلغاء تفعيل إشعارات الهاتف.');
-    } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر إلغاء تفعيل الإشعارات.', 'error');
     } finally {
       setBusy(false);
     }
@@ -128,7 +113,7 @@ export function PushNotificationsToggle() {
             {state === 'unsupported' && !isIos && 'متصفحك لا يدعم إشعارات الدفع.'}
             {state === 'denied' && 'تم رفض إذن الإشعارات من إعدادات المتصفح. فعّله من هناك للمتابعة.'}
             {(state === 'default' || state === 'granted') && 'فعّل الإشعارات لتصلك تنبيهات على هاتفك حتى عند إغلاق التطبيق.'}
-            {state === 'subscribed' && 'الإشعارات مفعّلة على هذا الجهاز.'}
+            {state === 'subscribed' && 'الإشعارات مفعّلة على هذا الجهاز. إشعارات الدردشة إجبارية ولا يمكن إيقافها.'}
             {state === 'checking' && 'جارٍ التحقق...'}
           </p>
         </div>
@@ -136,12 +121,6 @@ export function PushNotificationsToggle() {
           <Button variant="ghost" size="sm" onClick={handleEnable} loading={busy}>
             <Bell className="h-3.5 w-3.5" />
             تفعيل
-          </Button>
-        )}
-        {state === 'subscribed' && (
-          <Button variant="ghost" size="sm" onClick={handleDisable} loading={busy}>
-            <BellOff className="h-3.5 w-3.5" />
-            إلغاء التفعيل
           </Button>
         )}
         {state === 'checking' && <BellRing className="h-4 w-4 animate-pulse text-muted-foreground" />}
@@ -159,7 +138,7 @@ export function PushNotificationsToggle() {
                   <div>
                     <h3 className="text-sm font-medium text-foreground">رسائل الدردشة</h3>
                     <p className="mt-0.5 text-xs text-muted-foreground">
-                      كل رسالة جديدة تظهر أعلى الشاشة بصوت واهتزاز حتى والتطبيق مقفول. المحادثات المكتومة لا تُنبّهك.
+                      كل رسالة جديدة تظهر أعلى الشاشة بصوت واهتزاز حتى والتطبيق مقفول. إشعارات الدردشة لا يمكن إيقافها، ويمكن كتم المجموعات فقط.
                     </p>
                   </div>
                 </div>

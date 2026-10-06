@@ -7,6 +7,7 @@ import { useVisualViewport } from '@/lib/use-visual-viewport';
 import { useAuth } from '@/lib/auth-context';
 import { Spinner } from '@/components/ui/Spinner';
 import { SetDepartmentBanner } from './SetDepartmentBanner';
+import { PushRequiredBanner } from './PushRequiredBanner';
 import { TopNavbar } from './TopNavbar';
 import { MobileNav } from './MobileNav';
 import { AiFab } from '@/components/ai/AiFab';
@@ -55,6 +56,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       <div className={inChatThread ? 'hidden md:contents' : 'contents'}>
         <TopNavbar />
         <SetDepartmentBanner />
+        <PushRequiredBanner />
       </div>
       <main
         id="main-content"

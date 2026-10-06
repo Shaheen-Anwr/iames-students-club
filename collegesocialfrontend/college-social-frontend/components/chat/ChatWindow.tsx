@@ -1515,7 +1515,10 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     },
     { label: 'تحديد رسائل', icon: CheckSquare, onClick: () => setSelection([]) },
     { label: 'مظهر المحادثة', icon: Palette, onClick: () => setBackgroundModalOpen(true) },
-    { label: muted ? 'إلغاء كتم الإشعارات' : 'كتم الإشعارات', icon: muted ? Bell : BellOff, onClick: () => void toggleMute() },
+    // Only groups can be muted -- private chats always notify.
+    ...(isGroup
+      ? [{ label: muted ? 'إلغاء كتم الإشعارات' : 'كتم الإشعارات', icon: muted ? Bell : BellOff, onClick: () => void toggleMute() }]
+      : []),
     { label: 'تصدير المحادثة', icon: Download, onClick: () => void exportChat() },
   ];
   const lastMessageId = [...messages].reverse().find((m) => !isPlaceholderId(m._id))?._id ?? null;

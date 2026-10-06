@@ -8,7 +8,7 @@
 //
 // Bump VERSION on any change here so `activate` drops the old caches.
 
-const VERSION = 'v5';
+const VERSION = 'v6';
 const STATIC_CACHE = `iaems-static-${VERSION}`;
 const PAGES_CACHE = `iaems-pages-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
@@ -135,6 +135,8 @@ async function showPush(data) {
     badge: '/icons/badge-96.png',
     tag: data.tag,
     renotify: Boolean(data.tag),
+    // Chat stays on screen until the user acts on it (desktop; a phone keeps it in the shade).
+    requireInteraction: Boolean(data.conversationId),
     silent: false,
     vibrate: [180, 80, 180],
     timestamp: Date.now(),
@@ -144,24 +146,54 @@ async function showPush(data) {
   });
 }
 
-// Tapping a notification: reuse the open app (client-side route change, no reload) when there
-// is one, otherwise launch it at the notification's page.
+// Tapping a notification lands in the installed app, not a browser tab. The target is rebuilt on
+// this worker's own origin (always inside the manifest scope, whatever host the backend put in the
+// payload); an open app window is reused (client-side route change, no reload); and on a phone a
+// plain browser tab is never picked -- clients.openWindow() launches the installed app there.
 self.addEventListener('notificationclick', (event) => {
   event.notification.close();
-  const url = event.notification.data?.url;
-  if (!url) return;
+  const raw = event.notification.data?.url;
+  if (!raw) return;
+  let url;
+  try {
+    const parsed = new URL(raw, self.location.origin);
+    url = new URL(`${parsed.pathname}${parsed.search}${parsed.hash}`, self.location.origin).href;
+  } catch {
+    return;
+  }
 
   event.waitUntil(
-    self.clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (clientList) => {
-      const exact = clientList.find((c) => c.url === url);
-      if (exact) return exact.focus();
-      const open = clientList[0];
-      if (open) {
-        await open.focus();
-        open.postMessage({ type: 'notification-click', url });
+    (async () => {
+      const clientList = await self.clients.matchAll({ type: 'window', includeUncontrolled: true });
+      const modes = await Promise.all(clientList.map(displayMode));
+      const app = clientList.find((_, i) => modes[i] === 'standalone');
+      const phone = /Android|iPhone|iPad|iPod/i.test(self.navigator.userAgent);
+      const target = app || (phone ? null : clientList[0]);
+      if (target) {
+        await target.focus();
+        if (target.url !== url) target.postMessage({ type: 'notification-click', url });
         return;
       }
-      return self.clients.openWindow(url);
-    }),
+      await self.clients.openWindow(url);
+    })(),
   );
 });
+
+// Asks an open page whether it's running as the installed app (pages answer from ChatAlertsHost).
+// One that doesn't answer in time -- an old version, a frozen tab -- counts as a browser tab.
+function displayMode(client) {
+  return new Promise((resolve) => {
+    const channel = new MessageChannel();
+    const timer = setTimeout(() => resolve('unknown'), 250);
+    channel.port1.onmessage = (event) => {
+      clearTimeout(timer);
+      resolve(event.data?.mode || 'unknown');
+    };
+    try {
+      client.postMessage({ type: 'display-mode?' }, [channel.port2]);
+    } catch {
+      clearTimeout(timer);
+      resolve('unknown');
+    }
+  });
+}

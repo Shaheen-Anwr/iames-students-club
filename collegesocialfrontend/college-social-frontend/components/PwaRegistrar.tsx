@@ -2,6 +2,8 @@
 
 import { useEffect } from 'react';
 import { initOfflineQueue } from '@/lib/offline-queue';
+// Side effect: starts listening for the browser's install prompt as early as possible.
+import '@/lib/pwa-install';
 
 // Registers the service worker (regardless of login state) so the browser can offer "Add to
 // Home Screen", receive push events, and serve the offline layer in public/sw.js. The actual

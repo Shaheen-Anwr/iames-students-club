@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useState } from 'rea
 import { api, ApiError, clearToken, setToken } from './api';
 import { useToast } from './toast-context';
 import { AnalyticsEvent, track } from './analytics';
+import { detachPushSubscription } from './push-notifications';
 import { BADGE_META, type BadgeId, type Role, type User } from './types';
 import type { Department } from './departments';
 
@@ -173,6 +174,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, [showToast]);
 
   const logout = useCallback(async () => {
+    // While still authenticated: stop this device receiving the signed-out account's chat pushes.
+    await detachPushSubscription();
     try {
       // Revokes the session server-side and clears the httpOnly refresh cookie.
       await api.post('/auth/logout');

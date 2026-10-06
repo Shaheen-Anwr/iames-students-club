@@ -38,7 +38,6 @@ import { TypingDots } from './ChatChrome';
 import { CreateOrJoinGroupModal } from '@/components/groups/CreateOrJoinGroupModal';
 import { ChatHomeTools } from './ChatHomeTools';
 import { StatusTray } from './StatusTray';
-import { EnablePushCard } from './EnablePushCard';
 
 type Filter = 'all' | 'unread' | 'groups' | 'class' | 'public';
 
@@ -247,7 +246,6 @@ export function ConversationList() {
         </div>
       </div>
 
-      {!searching && !showArchived && <EnablePushCard />}
       {!searching && !showArchived && <StatusTray />}
 
       <AnimatePresence initial={false}>
@@ -419,13 +417,18 @@ export function ConversationList() {
                             active: pinnedFlag,
                             onClick: () => runAction(() => api.post(`/chat/conversations/${conversation._id}/pin`)),
                           },
-                          {
-                            key: 'mute',
-                            icon: <BellOff className="h-4 w-4" />,
-                            label: muted ? 'إلغاء الكتم' : 'كتم',
-                            active: muted,
-                            onClick: () => runAction(() => chatApi.markMuted(conversation._id, !muted)),
-                          },
+                          // Only groups can be muted -- private chats always notify.
+                          ...(conversation.isGroup
+                            ? [
+                                {
+                                  key: 'mute',
+                                  icon: <BellOff className="h-4 w-4" />,
+                                  label: muted ? 'إلغاء الكتم' : 'كتم',
+                                  active: muted,
+                                  onClick: () => runAction(() => chatApi.markMuted(conversation._id, !muted)),
+                                },
+                              ]
+                            : []),
                           {
                             key: 'archive',
                             icon: <Archive className="h-4 w-4" />,

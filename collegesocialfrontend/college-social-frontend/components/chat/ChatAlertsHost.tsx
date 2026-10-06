@@ -29,8 +29,8 @@ const BANNER_MS = 4500;
 //   - in any other conversation         -> a chime + a tappable banner at the top (no banner on
 //                                          the chat list itself, which already shows it)
 // Muted conversations stay silent unless you were @mentioned. Also routes notification taps
-// (sw.js posts 'notification-click') through the client router, and clears a conversation's
-// phone notifications once it's opened.
+// (sw.js posts 'notification-click') through the client router, answers sw.js's "are you the
+// installed app?" question, and clears a conversation's phone notifications once it's opened.
 export function ChatAlertsHost() {
   const { user } = useAuth();
   const { socket } = useSocket();
@@ -91,6 +91,15 @@ export function ChatAlertsHost() {
   useEffect(() => {
     if (typeof navigator === 'undefined' || !('serviceWorker' in navigator)) return;
     const onMessage = (event: MessageEvent) => {
+      // sw.js asks every open window this before handling a notification tap, so the tap lands in
+      // the installed app rather than a browser tab.
+      if (event.data?.type === 'display-mode?') {
+        const standalone =
+          window.matchMedia('(display-mode: standalone)').matches ||
+          (navigator as Navigator & { standalone?: boolean }).standalone === true;
+        event.ports[0]?.postMessage({ mode: standalone ? 'standalone' : 'browser' });
+        return;
+      }
       if (event.data?.type !== 'notification-click' || typeof event.data.url !== 'string') return;
       try {
         const target = new URL(event.data.url, window.location.origin);
