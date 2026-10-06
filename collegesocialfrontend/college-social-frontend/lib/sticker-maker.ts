@@ -51,6 +51,60 @@ function roundedRect(ctx: CanvasRenderingContext2D, x: number, y: number, w: num
   ctx.closePath();
 }
 
+type Rect = { x: number; y: number; w: number; h: number };
+
+const boundsCache = new WeakMap<HTMLImageElement, Rect>();
+
+// A transparent PNG (a cut-out subject) usually carries a wide empty margin; the "free" shape trims
+// to the visible pixels so the subject fills the sticker, like WhatsApp does. Scanned on a <=256px
+// probe and cached per image, since the preview re-renders on every slider/drag change.
+function opaqueBounds(image: HTMLImageElement): Rect {
+  const cached = boundsCache.get(image);
+  if (cached) return cached;
+  const iw = image.naturalWidth || image.width;
+  const ih = image.naturalHeight || image.height;
+  let result: Rect = { x: 0, y: 0, w: iw, h: ih };
+  try {
+    const k = Math.min(1, 256 / Math.max(iw, ih));
+    const w = Math.max(1, Math.round(iw * k));
+    const h = Math.max(1, Math.round(ih * k));
+    const probe = document.createElement('canvas');
+    probe.width = w;
+    probe.height = h;
+    const ctx = probe.getContext('2d', { willReadFrequently: true });
+    if (ctx) {
+      ctx.drawImage(image, 0, 0, w, h);
+      const data = ctx.getImageData(0, 0, w, h).data;
+      let minX = w;
+      let minY = h;
+      let maxX = -1;
+      let maxY = -1;
+      for (let y = 0; y < h; y++) {
+        for (let x = 0; x < w; x++) {
+          if (data[(y * w + x) * 4 + 3] > 8) {
+            if (x < minX) minX = x;
+            if (x > maxX) maxX = x;
+            if (y < minY) minY = y;
+            if (y > maxY) maxY = y;
+          }
+        }
+      }
+      if (maxX >= 0) {
+        // One probe pixel of slack on each side, mapped back to source pixels.
+        const x0 = Math.max(0, (minX - 1) / k);
+        const y0 = Math.max(0, (minY - 1) / k);
+        const x1 = Math.min(iw, (maxX + 2) / k);
+        const y1 = Math.min(ih, (maxY + 2) / k);
+        result = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+      }
+    }
+  } catch {
+    /* unreadable pixels -- keep the whole image */
+  }
+  boundsCache.set(image, result);
+  return result;
+}
+
 function appFontFamily(): string {
   if (typeof document === 'undefined') return 'sans-serif';
   return getComputedStyle(document.body).fontFamily || 'sans-serif';
@@ -72,12 +126,13 @@ export function renderSticker(image: HTMLImageElement, opts: StickerOptions): HT
   ctx.clip();
   const iw = image.naturalWidth || image.width;
   const ih = image.naturalHeight || image.height;
-  const base = opts.shape === 'free' ? Math.min(area / iw, area / ih) : Math.max(area / iw, area / ih);
+  const src: Rect = opts.shape === 'free' ? opaqueBounds(image) : { x: 0, y: 0, w: iw, h: ih };
+  const base = opts.shape === 'free' ? Math.min(area / src.w, area / src.h) : Math.max(area / src.w, area / src.h);
   const scale = base * opts.zoom;
-  const dw = iw * scale;
-  const dh = ih * scale;
+  const dw = src.w * scale;
+  const dh = src.h * scale;
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(image, S / 2 - dw / 2 + opts.offsetX, S / 2 - dh / 2 + opts.offsetY, dw, dh);
+  ctx.drawImage(image, src.x, src.y, src.w, src.h, S / 2 - dw / 2 + opts.offsetX, S / 2 - dh / 2 + opts.offsetY, dw, dh);
   ctx.restore();
 
   // 2. The caption -- part of the content, so the outline wraps its letters too.
