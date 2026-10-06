@@ -931,6 +931,21 @@ export const MessageInput = forwardRef<MessageInputHandle, MessageInputProps>(fu
                   aiBusy && 'animate-pulse',
                 )}
               />
+              {/* Stickers one tap away while the box is empty (WhatsApp keeps them in the input too). */}
+              {!text.trim() && !editingMessage && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeMenus();
+                    setStickersOpen(true);
+                  }}
+                  aria-label="الملصقات"
+                  title="الملصقات"
+                  className="flex h-11 w-9 shrink-0 items-center justify-center text-muted-foreground transition-colors hover:text-accent"
+                >
+                  <Sticker className="h-[20px] w-[20px]" />
+                </button>
+              )}
               <div ref={aiWrapRef} className="relative">
                 <button
                   type="button"

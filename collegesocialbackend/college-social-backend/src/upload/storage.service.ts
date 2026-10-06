@@ -25,6 +25,7 @@ const RESOURCE_TYPE_BY_CATEGORY: Record<UploadCategory, 'image' | 'video' | 'raw
   'post-images': 'image',
   'chat-backgrounds': 'image',
   'group-photos': 'image',
+  stickers: 'image',
   videos: 'video',
   audio: 'video',
   lectures: 'raw',
@@ -45,6 +46,8 @@ const IMAGE_MAX_DIMENSION: Partial<Record<UploadCategory, number>> = {
   'cover-photos': 1600,
   'post-images': 1920,
   'chat-backgrounds': 1920,
+  // Shown at ~150px; 512 is the usual sticker canvas (and what the sticker maker exports).
+  stickers: 512,
 };
 
 // Longest-edge cap for actual video (not voice notes/audio, which have no picture to downscale).

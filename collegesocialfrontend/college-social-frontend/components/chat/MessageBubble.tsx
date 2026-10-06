@@ -49,7 +49,6 @@ import {
   senderColor,
   type TickStatus,
 } from '@/lib/chat-helpers';
-import { builtinSticker } from '@/lib/chat-stickers';
 import { AiMarkdown } from '@/components/ai/AiMarkdown';
 import { aiErrorMessage, chatApi } from '@/lib/chat-api';
 import { assetUrl, cn } from '@/lib/utils';
@@ -64,6 +63,7 @@ import { DocumentAttachment, ImageAlbum, VideoAttachment } from './MessageAttach
 import { useChatActions, useChatInfo } from './ChatThreadContext';
 import { BubbleTail } from './BubbleTail';
 import { PlatformCard } from './PlatformCard';
+import { StickerView } from './StickerView';
 
 export interface TranslationState {
   status: 'loading' | 'done' | 'error';
@@ -194,26 +194,9 @@ function RowAvatar({ message }: { message: Message }) {
   return message.bot ? <BotAvatar bot={message.bot} /> : <SenderAvatar sender={message.sender} />;
 }
 
-// A sticker: one of the built-in packs (rendered as a big animated glyph) or an uploaded image.
+// A sticker: built-in artwork, an Arabic text sticker, or a user-made image -- see lib/chat-stickers.
 function StickerImage({ attachment }: { attachment: Attachment }) {
-  const builtin = builtinSticker(attachment.url);
-  if (builtin) {
-    return (
-      <span role="img" aria-label={builtin.label} title={builtin.label} className="animate-reaction-pop select-none text-[5.5rem] leading-none drop-shadow-md">
-        {builtin.emoji}
-      </span>
-    );
-  }
-  return (
-    // eslint-disable-next-line @next/next/no-img-element
-    <img
-      src={assetUrl(attachment.url) ?? ''}
-      alt={attachment.name ?? 'ملصق'}
-      loading="lazy"
-      draggable={false}
-      className="h-36 w-36 select-none object-contain drop-shadow-md"
-    />
-  );
+  return <StickerView url={attachment.url} name={attachment.name} size={148} className="animate-reaction-pop" />;
 }
 
 // "N ردود" under a message that has a discussion: recent repliers' faces, count, last activity.

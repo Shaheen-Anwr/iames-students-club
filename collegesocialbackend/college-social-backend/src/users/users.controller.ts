@@ -1,4 +1,4 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
+import { BadRequestException, Body, Controller, Delete, Get, Param, Patch, Post, Query, UseGuards } from '@nestjs/common';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../common/decorators/current-user.decorator';
 import { AuthenticatedUser } from '../auth/types/authenticated-user.type';
@@ -69,9 +69,11 @@ export class UsersController {
     return this.usersService.addSticker(user.userId, dto.url);
   }
 
+  // The URL comes as ?url= (DELETE requests from the web client carry no body).
   @Delete('me/stickers')
-  async removeSticker(@CurrentUser() user: AuthenticatedUser, @Body() dto: StickerDto) {
-    return this.usersService.removeSticker(user.userId, dto.url);
+  async removeSticker(@CurrentUser() user: AuthenticatedUser, @Query('url') url?: string) {
+    if (!url) throw new BadRequestException('رابط الملصق مطلوب');
+    return this.usersService.removeSticker(user.userId, url);
   }
 
   @Get('search')

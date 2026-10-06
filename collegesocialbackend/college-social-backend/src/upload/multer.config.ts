@@ -14,6 +14,9 @@ export type UploadCategory =
   | 'audio'
   | 'chat-backgrounds'
   | 'group-photos'
+  // A user-made chat sticker (see the composer's sticker maker): a small square image, usually a
+  // transparent PNG/WebP, so it stays an image (alpha kept) and is capped well below other images.
+  | 'stickers'
   // Source files for محوّل الملفات (see src/convert). Never uploaded to Cloudinary -- the temp
   // file is read, converted in-process, and deleted; the converted output is written to disk.
   | 'conversions';
@@ -24,6 +27,7 @@ const ALLOWED_MIME_BY_CATEGORY: Record<UploadCategory, RegExp> = {
   'post-images': /^image\/(jpe?g|png|webp|gif)$/,
   'chat-backgrounds': /^image\/(jpe?g|png|webp|gif)$/,
   'group-photos': /^image\/(jpe?g|png|webp|gif)$/,
+  stickers: /^image\/(png|webp|gif|jpe?g)$/,
   lectures: /^(application\/pdf|application\/vnd\.(openxmlformats|ms-powerpoint|ms-excel).*|application\/msword|text\/plain)$/,
   files: /.*/, // any file type is allowed for the generic "files" category
   videos: /^video\/(mp4|quicktime|x-matroska|webm)$/,
@@ -49,6 +53,7 @@ export const CLOUDINARY_ASSET_CAP_MB: Record<UploadCategory, number> = {
   'post-images': 10,
   'chat-backgrounds': 10,
   'group-photos': 10,
+  stickers: 10,
   lectures: 10,
   files: 10,
   videos: 100,
@@ -76,6 +81,7 @@ const SIZE_LIMIT_MB_BY_CATEGORY: Record<UploadCategory, { envKey: string; defaul
   'post-images': { envKey: 'MAX_POST_IMAGE_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB['post-images'] },
   'chat-backgrounds': { envKey: 'MAX_CHAT_BACKGROUND_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB['chat-backgrounds'] },
   'group-photos': { envKey: 'MAX_GROUP_PHOTO_SIZE_MB', defaultMb: CLOUDINARY_ASSET_CAP_MB['group-photos'] },
+  stickers: { envKey: 'MAX_STICKER_SIZE_MB', defaultMb: 2 },
   lectures: { envKey: 'MAX_LECTURE_SIZE_MB', defaultMb: 300 }, // PDF/PPT/DOC notes and scanned books -- chunked
   files: { envKey: 'MAX_GENERIC_FILE_SIZE_MB', defaultMb: 200 }, // chunked
   videos: { envKey: 'MAX_VIDEO_SIZE_MB', defaultMb: 1024 }, // lecture recordings -- chunked

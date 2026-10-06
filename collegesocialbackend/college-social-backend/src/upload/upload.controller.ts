@@ -213,6 +213,15 @@ export class UploadController {
     return { url, originalName: file.originalname, size: file.size, mimeType: file.mimetype };
   }
 
+  // POST /api/upload/sticker -> a user-made chat sticker (512px, transparency kept)
+  @Post('sticker')
+  @UseInterceptors(FileInterceptor('file', buildMulterOptions('stickers')))
+  async uploadSticker(@UploadedFile() file: Express.Multer.File) {
+    if (!file) throw new BadRequestException('لم يتم رفع أي ملف');
+    const { url } = await this.storageService.upload(file, 'stickers');
+    return { url, size: file.size, mimeType: file.mimetype };
+  }
+
   // POST /api/upload/chat-background -> a custom wallpaper image for a chat conversation
   @Post('chat-background')
   @UseInterceptors(FileInterceptor('file', buildMulterOptions('chat-backgrounds')))

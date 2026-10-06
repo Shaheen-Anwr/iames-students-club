@@ -49,7 +49,7 @@ export interface UserStats {
 }
 
 // Personal sticker collection cap (UsersService.addSticker).
-const MAX_STICKERS = 60;
+const MAX_STICKERS = 200;
 
 @Injectable()
 export class UsersService {
