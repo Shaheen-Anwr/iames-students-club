@@ -1499,7 +1499,12 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
   ) : null;
 
   const menuItems: DropdownItem[] = [
-    { label: isGroup ? 'معلومات المجموعة' : 'معلومات جهة الاتصال', icon: Info, onClick: () => setInfoOpen(true) },
+    // Type-specific entries wait for the conversation itself: a chat opened cold (say from a
+    // notification) shows its messages before the conversation list has arrived, and a group must
+    // never briefly offer "contact info" (or lose its mute option) in the meantime.
+    ...(conversation
+      ? [{ label: isGroup ? 'معلومات المجموعة' : 'معلومات جهة الاتصال', icon: Info, onClick: () => setInfoOpen(true) }]
+      : []),
     { label: 'بحث في المحادثة', icon: Search, onClick: () => setSearchOpen(true) },
     { label: 'ملخص ذكي', icon: Sparkles, onClick: () => setSummaryOpen(true) },
     ...(!isGroup && conversation
