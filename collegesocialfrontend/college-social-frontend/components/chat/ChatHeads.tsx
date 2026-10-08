@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import { AnimatePresence, animate, motion, useMotionValue } from 'framer-motion';
 import { Loader2, Maximize2, Send, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
+import { AiMarkdown } from '@/components/ai/AiMarkdown';
 import { useAuth } from '@/lib/auth-context';
 import { useSocket } from '@/lib/socket-context';
 import { chatApi, MESSAGE_PAGE_SIZE } from '@/lib/chat-api';
 import { sessionChatMessageCache } from '@/lib/chat-message-cache';
-import { messagePreview } from '@/lib/chat-helpers';
+import { messagePreview, stripMentionTokens } from '@/lib/chat-helpers';
+import { stripFormatting } from '@/lib/chat-format';
 import { playChatSound } from '@/lib/chat-sounds';
 import { clearChatHeads, openChatHead, removeChatHead, useChatHeads, type ChatHead } from '@/lib/chat-heads';
 import { closeChatNotifications } from '@/lib/push-notifications';
@@ -28,7 +30,6 @@ import type { Message } from '@/lib/types';
 const HEAD = 56;
 const EDGE = 10;
 const POS_KEY = 'chat:heads:pos';
-const MENTION_RE = /@\[([^\]]+)\]\((?:[0-9a-fA-F]{24}|rafed)\)/g;
 
 type Side = 'left' | 'right';
 
@@ -115,9 +116,10 @@ function HeadStack({ heads, onOpen }: { heads: ChatHead[]; onOpen: (conversation
     return () => window.removeEventListener('resize', place);
   }, [x, y]);
 
-  // A message arriving pops a preview next to the stack (not for bubbles restored after a reload).
+  // A message arriving pops a preview next to the stack -- including the very first one, which is
+  // what makes the stack appear -- but not for bubbles restored from an earlier page load.
   const latest = heads[0];
-  const lastSeenAt = useRef(latest?.at ?? 0);
+  const lastSeenAt = useRef(latest && Date.now() - latest.at > 2000 ? latest.at : 0);
   useEffect(() => {
     if (!latest || latest.at <= lastSeenAt.current) return;
     lastSeenAt.current = latest.at;
@@ -274,7 +276,7 @@ function ExpandedHeads({ heads, openId, onCollapse }: { heads: ChatHead[]; openI
     <motion.div className="fixed inset-0 z-[45]" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}>
       <div className="absolute inset-0 bg-black/45 backdrop-blur-sm" onClick={onCollapse} aria-hidden />
 
-      <div role="tablist" aria-label="فقاعات الدردشة" className="relative flex justify-center gap-3 px-3 pt-[calc(env(safe-area-inset-top)+12px)]">
+      <div role="tablist" aria-label="فقاعات الدردشة" className="relative z-10 flex justify-center gap-3 px-3 pt-[calc(env(safe-area-inset-top)+12px)]">
         {heads.map((head) => {
           const selected = head.conversationId === current.conversationId;
           return (
@@ -511,10 +513,12 @@ function MiniThread({ head, onOpenFull, onClose }: { head: ChatHead; onOpenFull:
 }
 
 function MiniBubble({ message, mine, showName }: { message: Message; mine: boolean; showName: boolean }) {
+  // رافد writes Markdown -- render it the way the full chat does (MessageBubble uses AiMarkdown too).
+  const rafed = message.bot === 'rafed' && !message.deletedForEveryone && !!message.text?.trim();
   const body = message.deletedForEveryone
     ? 'تم حذف هذه الرسالة'
     : message.text?.trim()
-      ? message.text.replace(MENTION_RE, '@$1')
+      ? stripFormatting(stripMentionTokens(message.text)) // plain text here: no **bold** markers
       : messagePreview(message) || 'رسالة';
   return (
     <div className={cn('flex', mine ? 'justify-end' : 'justify-start')}>
@@ -531,9 +535,13 @@ function MiniBubble({ message, mine, showName }: { message: Message; mine: boole
             {message.sender?.name ?? (message.bot === 'rafed' ? 'رافد' : '')}
           </p>
         )}
-        <p dir="auto" className="whitespace-pre-wrap break-words">
-          {body}
-        </p>
+        {rafed ? (
+          <AiMarkdown text={stripMentionTokens(message.text)} />
+        ) : (
+          <p dir="auto" className="whitespace-pre-wrap break-words">
+            {body}
+          </p>
+        )}
       </div>
     </div>
   );
