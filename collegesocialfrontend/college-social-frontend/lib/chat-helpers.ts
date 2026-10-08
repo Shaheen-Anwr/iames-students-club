@@ -98,7 +98,7 @@ export function messagePreview(message: {
   poll?: { question?: string | null } | null;
   attachments?: { type: string }[] | null;
   call?: { type: string; outcome: string } | null;
-  card?: { title: string } | null;
+  card?: { kind?: string; title: string; meta?: Record<string, unknown> | null } | null;
 }): string {
   if (message.call) {
     const missed = ['no_answer', 'canceled', 'busy'].includes(message.call.outcome);
@@ -107,6 +107,10 @@ export function messagePreview(message: {
   const raw = stripMentionTokens(message.text ?? '');
   // One-line surfaces show the words, not the *markers* (a code block keeps its contents).
   const text = (hasFormatting(raw) ? stripFormatting(raw) : raw).replace(/\s+/g, ' ').trim();
+  // A reply / quick reaction to a story (the card is the story).
+  if (text && message.card?.kind === 'status') {
+    return (message.card.meta?.reaction ? `${text} تفاعل مع الحالة` : `↩️ ردّ على الحالة: ${text}`).slice(0, 120);
+  }
   if (text) return text.slice(0, 120);
   if (message.card?.title) return `🔗 ${message.card.title}`;
   if (message.poll?.question) return `📊 ${message.poll.question}`;

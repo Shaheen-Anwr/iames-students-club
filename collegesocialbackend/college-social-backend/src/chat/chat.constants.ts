@@ -143,7 +143,7 @@ export function messagePreviewText(message: {
   poll?: { question?: string | null } | null;
   attachments?: { type?: string | null }[] | null;
   call?: { type?: string | null; outcome?: string | null } | null;
-  card?: { kind?: string | null; title?: string | null } | null;
+  card?: { kind?: string | null; title?: string | null; meta?: Record<string, unknown> | null } | null;
 }): string {
   if (message.call) {
     const kind = message.call.type === 'video' ? 'مكالمة فيديو' : 'مكالمة صوتية';
@@ -151,6 +151,10 @@ export function messagePreviewText(message: {
     return `${message.call.type === 'video' ? '🎥' : '📞'} ${kind}${missed ? ' فائتة' : ''}`;
   }
   const text = message.text?.trim();
+  // A reply / quick reaction to a story (the card is the story). Worded for both sides of the chat.
+  if (message.card?.kind === 'status' && text) {
+    return (message.card.meta?.reaction ? `${text} تفاعل مع الحالة` : `↩️ ردّ على الحالة: ${stripRafedTokens(text)}`).slice(0, 120);
+  }
   if (text) return stripRafedTokens(text).slice(0, 120);
   if (message.card?.title) {
     const icon = isCardKind(message.card.kind) ? CARD_PREVIEW_ICONS[message.card.kind] : '📌';

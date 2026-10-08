@@ -3,6 +3,23 @@ import { HydratedDocument, Types } from 'mongoose';
 
 export type ChatStatusDocument = HydratedDocument<ChatStatus>;
 
+// One person who opened the story (once each), and the quick reaction they left on it, if any.
+// Only the author ever gets this list (ChatStatusService.viewers); everyone else just sees whether
+// *they* watched it.
+@Schema({ _id: false })
+export class StatusView {
+  @Prop({ type: Types.ObjectId, ref: 'User', required: true })
+  user: Types.ObjectId;
+
+  @Prop({ type: Date, required: true })
+  at: Date;
+
+  @Prop({ type: String, default: null })
+  reaction: string | null;
+}
+
+export const StatusViewSchema = SchemaFactory.createForClass(StatusView);
+
 @Schema({ timestamps: true })
 export class ChatStatus {
   @Prop({ type: Types.ObjectId, ref: 'User', required: true, index: true })
@@ -30,6 +47,9 @@ export class ChatStatus {
 
   @Prop({ type: Number, default: null })
   durationSec: number | null;
+
+  @Prop({ type: [StatusViewSchema], default: [] })
+  views: StatusView[];
 
   @Prop({ required: true })
   expiresAt: Date;

@@ -9,6 +9,8 @@ import { StreamService } from '../stream/stream.service';
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { Conversation, ConversationDocument } from './schemas/conversation.schema';
 import { ChatStatus, ChatStatusDocument } from './schemas/chat-status.schema';
+import type { MessageCard } from './schemas/message.schema';
+import { ChatService } from './chat.service';
 import { CreateChatStatusDto } from './dto/create-chat-status.dto';
 
 export const STATUS_LIFETIME_MS = 24 * 60 * 60 * 1000;
@@ -47,7 +49,19 @@ export class ChatStatusService {
     private readonly modules: ModuleRef,
     private readonly storage: StorageService,
     private readonly stream: StreamService,
+    private readonly chatService: ChatService,
   ) {}
+
+  // What a status looks like to `viewerId`: the author gets a view count, everyone else only
+  // whether *they* watched it -- the list of viewers itself is author-only (viewers()).
+  private toPublic(status: Record<string, unknown> & { views?: { user: unknown }[] }, viewerId: string) {
+    const { views = [], ...rest } = status;
+    const author = rest.author as { _id?: unknown } | null;
+    const own = String(author?._id ?? author) === viewerId;
+    return own
+      ? { ...rest, viewCount: views.length }
+      : { ...rest, viewedByMe: views.some((v) => String(v.user) === viewerId) };
+  }
 
   async list(userId: string) {
     const uid = new Types.ObjectId(userId);
@@ -64,8 +78,9 @@ export class ChatStatusService {
       _id: { $in: [...candidates].map((id) => new Types.ObjectId(id)), $nin: viewer.blockedUsers ?? [] },
       blockedUsers: { $ne: uid },
     }).select('_id').lean().exec();
-    return this.statuses.find({ author: { $in: authors.map((author) => author._id) }, expiresAt: { $gt: new Date() } })
-      .sort({ createdAt: -1 }).limit(200).populate('author', 'name photoUrl').exec();
+    const statuses = await this.statuses.find({ author: { $in: authors.map((author) => author._id) }, expiresAt: { $gt: new Date() } })
+      .sort({ createdAt: -1 }).limit(200).populate('author', 'name photoUrl').lean().exec();
+    return statuses.map((status) => this.toPublic(status as never, userId));
   }
 
   async create(userId: string, input: CreateChatStatusDto) {
@@ -88,7 +103,8 @@ export class ChatStatusService {
         ...(video ?? {}),
         expiresAt: new Date(now.getTime() + STATUS_LIFETIME_MS),
       });
-      return status.populate('author', 'name photoUrl');
+      await status.populate('author', 'name photoUrl');
+      return this.toPublic(status.toObject() as never, userId);
     } catch (err) {
       if (video) void this.destroyVideo(video);
       throw err;
@@ -109,6 +125,107 @@ export class ChatStatusService {
       });
     }
     return { success: true };
+  }
+
+  // --- Views, replies, reactions ----------------------------------------------------------------
+
+  // Opening someone's story counts once per person (the author's own views never count).
+  async view(viewerId: string, statusId: string) {
+    const status = await this.visibleStatus(viewerId, statusId);
+    if (String(status.author) !== viewerId) await this.recordView(status._id, viewerId);
+    return { ok: true };
+  }
+
+  // Author only: who watched, newest first, with the quick reaction they left (if any).
+  async viewers(authorId: string, statusId: string) {
+    if (!Types.ObjectId.isValid(statusId)) throw new NotFoundException('الحالة غير موجودة');
+    const status = await this.statuses
+      .findOne({ _id: new Types.ObjectId(statusId), author: new Types.ObjectId(authorId) })
+      .select('views')
+      .populate('views.user', 'name photoUrl')
+      .lean()
+      .exec();
+    if (!status) throw new NotFoundException('الحالة غير موجودة');
+    return (status.views ?? [])
+      .filter((view) => view.user) // accounts deleted since
+      .map((view) => ({ user: view.user, at: view.at, reaction: view.reaction ?? null }))
+      .sort((a, b) => new Date(b.at).getTime() - new Date(a.at).getTime());
+  }
+
+  // A reply goes to the author's private chat with a snapshot of the story (see sendToAuthor).
+  async reply(viewerId: string, statusId: string, text: string) {
+    const status = await this.visibleStatus(viewerId, statusId);
+    if (String(status.author) === viewerId) throw new BadRequestException('لا يمكنك الرد على حالتك');
+    await this.recordView(status._id, viewerId);
+    return this.sendToAuthor(viewerId, status, text, false);
+  }
+
+  // A quick reaction: shows next to the viewer in the author's list, and lands in their chat too.
+  async react(viewerId: string, statusId: string, emoji: string) {
+    const status = await this.visibleStatus(viewerId, statusId);
+    if (String(status.author) === viewerId) throw new BadRequestException('لا يمكنك التفاعل مع حالتك');
+    await this.recordView(status._id, viewerId, emoji);
+    return this.sendToAuthor(viewerId, status, emoji, true);
+  }
+
+  // The rule list() applies to a whole feed, for one author: friends, or people who already
+  // share a private chat -- and neither side has blocked the other.
+  private async canSee(viewerId: string, authorId: string): Promise<boolean> {
+    if (viewerId === authorId) return true;
+    const viewerOid = new Types.ObjectId(viewerId);
+    const authorOid = new Types.ObjectId(authorId);
+    const [viewer, author, direct] = await Promise.all([
+      this.users.findById(viewerOid).select('friends blockedUsers').lean().exec(),
+      this.users.findById(authorOid).select('blockedUsers').lean().exec(),
+      this.conversations.exists({ isGroup: false, participants: { $all: [viewerOid, authorOid] } }).exec(),
+    ]);
+    if (!viewer || !author) return false;
+    if ((viewer.blockedUsers ?? []).some((id) => String(id) === authorId)) return false;
+    if ((author.blockedUsers ?? []).some((id) => String(id) === viewerId)) return false;
+    return (viewer.friends ?? []).some((id) => String(id) === authorId) || !!direct;
+  }
+
+  private async visibleStatus(viewerId: string, statusId: string): Promise<ChatStatusDocument> {
+    if (!Types.ObjectId.isValid(statusId)) throw new NotFoundException('الحالة غير موجودة');
+    const status = await this.statuses.findOne({ _id: new Types.ObjectId(statusId), expiresAt: { $gt: new Date() } }).exec();
+    if (!status || !(await this.canSee(viewerId, String(status.author)))) throw new NotFoundException('الحالة غير موجودة');
+    return status;
+  }
+
+  // One entry per person; a reaction updates theirs (or creates it, for a reaction before the
+  // view call landed).
+  private async recordView(statusId: Types.ObjectId, viewerId: string, reaction?: string): Promise<void> {
+    const user = new Types.ObjectId(viewerId);
+    if (reaction) {
+      const updated = await this.statuses.updateOne({ _id: statusId, 'views.user': user }, { $set: { 'views.$.reaction': reaction } }).exec();
+      if (updated.matchedCount) return;
+    }
+    await this.statuses
+      .updateOne({ _id: statusId, 'views.user': { $ne: user } }, { $push: { views: { user, at: new Date(), reaction: reaction ?? null } } })
+      .exec();
+  }
+
+  // Replies and reactions land in the private chat with the author, carrying a snapshot of the
+  // story as a card (WhatsApp's quoted status) -- it outlives the story itself, and tapping it
+  // opens that person's stories while they last.
+  private async sendToAuthor(viewerId: string, status: ChatStatusDocument, text: string, reaction: boolean) {
+    const authorId = String(status.author);
+    const [conversation, author] = await Promise.all([
+      this.chatService.createConversation(viewerId, { participantIds: [authorId] }),
+      this.users.findById(status.author).select('name').lean().exec(),
+    ]);
+    const body = status.text?.trim() ?? '';
+    const card: MessageCard = {
+      kind: 'status',
+      refId: String(status._id),
+      title: body ? (body.length > 90 ? `${body.slice(0, 89)}…` : body) : status.videoUrl ? '🎬 فيديو' : '📷 صورة',
+      subtitle: null,
+      imageUrl: status.imageUrl ?? status.posterUrl ?? null,
+      href: `/chat?status=${authorId}`,
+      meta: { authorId, authorName: author?.name ?? null, expiresAt: status.expiresAt.toISOString(), video: !!status.videoUrl, reaction },
+    };
+    const message = await this.chatService.saveMessage(String(conversation._id), viewerId, text, undefined, undefined, { card });
+    return { message, conversationId: String(conversation._id), authorId };
   }
 
   @Cron(CronExpression.EVERY_HOUR, { name: 'chat-status-video-sweep' })

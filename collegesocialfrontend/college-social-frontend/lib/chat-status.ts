@@ -22,6 +22,47 @@ export interface ChatStatus {
   durationSec?: number | null;
   createdAt: string;
   expiresAt: string;
+  /** Your own stories: how many people watched (the list itself: GET /chat/statuses/:id/viewers). */
+  viewCount?: number;
+  /** Someone else's story: whether you've watched it (on any device). */
+  viewedByMe?: boolean;
+}
+
+export interface StatusViewer {
+  user: { _id: string; name: string; photoUrl: string | null };
+  at: string;
+  reaction: string | null;
+}
+
+/** The quick reactions offered on a story -- must match the backend's STATUS_REACTIONS. */
+export const STATUS_REACTIONS = ['❤️', '😂', '😮', '😢', '👏', '🔥'] as const;
+
+// "Open this story" from anywhere -- a story reply card inside a chat. StatusTray, which lives with
+// the chat list (mounted on every chat screen), picks the request up.
+export interface StatusOpenRequest {
+  authorId: string;
+  statusId: string;
+}
+
+let pendingOpen: StatusOpenRequest | null = null;
+const openListeners = new Set<() => void>();
+
+export function requestStatusOpen(authorId: string, statusId: string): void {
+  pendingOpen = { authorId, statusId };
+  openListeners.forEach((listener) => listener());
+}
+
+export function takeStatusOpenRequest(): StatusOpenRequest | null {
+  const request = pendingOpen;
+  pendingOpen = null;
+  return request;
+}
+
+export function onStatusOpenRequest(listener: () => void): () => void {
+  openListeners.add(listener);
+  return () => {
+    openListeners.delete(listener);
+  };
 }
 
 export const STATUS_VIDEO_MAX_SEC = 60;

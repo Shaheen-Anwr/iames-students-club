@@ -3,15 +3,23 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ImagePlus, Loader2, Play, Plus, Send, Trash2, Video, Volume2, VolumeX, X } from 'lucide-react';
+import { Eye, Heart, ImagePlus, Loader2, Play, Plus, Send, Trash2, Video, Volume2, VolumeX, X } from 'lucide-react';
 import { Avatar } from '@/components/ui/Avatar';
 import { Modal } from '@/components/ui/Modal';
 import { Button } from '@/components/ui/Button';
 import { api, ApiError } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
-import { postVideoStatus, STATUS_VIDEO_MAX_SEC, type ChatStatus, type StatusUploadPhase } from '@/lib/chat-status';
+import {
+  onStatusOpenRequest,
+  postVideoStatus,
+  STATUS_REACTIONS,
+  STATUS_VIDEO_MAX_SEC,
+  takeStatusOpenRequest,
+  type ChatStatus,
+  type StatusUploadPhase,
+  type StatusViewer as StatusViewerEntry,
+} from '@/lib/chat-status';
 import { attachHls, isHls } from '@/lib/hls';
-import { useSocket } from '@/lib/socket-context';
 import { useToast } from '@/lib/toast-context';
 import { assetUrl, cn, timeAgo } from '@/lib/utils';
 import { cldVideoOptimize, readVideoDuration } from '@/lib/video';
@@ -57,19 +65,26 @@ export function StatusTray() {
   const { user } = useAuth();
   const [statuses, setStatuses] = useState<ChatStatus[]>([]);
   const [seen, setSeen] = useState<Set<string>>(new Set());
-  const [viewing, setViewing] = useState<{ authorId: string } | null>(null);
+  // startId: opened on one particular story (from a reply card in a chat), not from the ring.
+  const [viewing, setViewing] = useState<{ authorId: string; startId?: string } | null>(null);
   const [composing, setComposing] = useState(false);
+  const { showToast } = useToast();
 
-  const load = useCallback(() => {
-    api
-      .get<ChatStatus[]>('/chat/statuses')
-      .then(setStatuses)
-      .catch(() => undefined);
-  }, []);
+  const load = useCallback(
+    () =>
+      api
+        .get<ChatStatus[]>('/chat/statuses')
+        .then((list) => {
+          setStatuses(list);
+          return list;
+        })
+        .catch(() => null),
+    [],
+  );
 
   useEffect(() => {
     setSeen(readSeen());
-    load();
+    void load();
     const t = setInterval(load, 120_000);
     return () => clearInterval(t);
   }, [load]);
@@ -85,7 +100,8 @@ export function StatusTray() {
       authorId,
       author: items[0].author!,
       items: items.sort((a, b) => a.createdAt.localeCompare(b.createdAt)),
-      unseen: items.some((i) => !seen.has(i._id)),
+      // Watched on this device, or on any other (the server remembers views).
+      unseen: items.some((i) => !seen.has(i._id) && !i.viewedByMe),
       latest: items.reduce((max, i) => (i.createdAt > max ? i.createdAt : max), ''),
     }));
     return list
@@ -107,6 +123,24 @@ export function StatusTray() {
     });
   }, []);
 
+  // A story card in a chat asked to open a story (requestStatusOpen). Checked against a fresh list:
+  // the author may have deleted it since, and a deleted story must not play from a stale cache.
+  useEffect(() => {
+    if (!user) return;
+    const handle = () => {
+      const request = takeStatusOpenRequest();
+      if (!request) return;
+      void load().then((list) => {
+        if (!list) return showToast('تعذّر فتح الحالة.', 'error');
+        if (list.some((s) => s._id === request.statusId && s.author?._id === request.authorId)) {
+          setViewing({ authorId: request.authorId, startId: request.statusId });
+        } else showToast('انتهت هذه الحالة.');
+      });
+    };
+    handle();
+    return onStatusOpenRequest(handle);
+  }, [user, load, showToast]);
+
   if (!user) return null;
 
   const viewingItems = viewing
@@ -123,7 +157,11 @@ export function StatusTray() {
           <div className="relative">
             <button
               type="button"
-              onClick={() => (mine.length ? setViewing({ authorId: user._id }) : setComposing(true))}
+              onClick={() => {
+                if (!mine.length) return setComposing(true);
+                void load(); // fresh view counts
+                setViewing({ authorId: user._id });
+              }}
               aria-label={mine.length ? 'عرض حالتك' : 'أضف حالة'}
               className={cn('rounded-full p-[2px]', mine.length ? 'bg-gradient-accent' : 'bg-border')}
             >
@@ -167,12 +205,14 @@ export function StatusTray() {
           // A fresh viewer per author, so the next person's stories start from their first one.
           key={viewing.authorId}
           items={viewingItems}
+          startIndex={viewing.startId ? Math.max(0, viewingItems.findIndex((s) => s._id === viewing.startId)) : 0}
           own={viewing.authorId === user._id}
           onSeen={markSeen}
           onClose={() => setViewing(null)}
           onDeleted={(id) => setStatuses((prev) => prev.filter((s) => s._id !== id))}
           onNextAuthor={() => {
-            if (viewing.authorId === user._id) return setViewing(null);
+            // Your own stories, or one opened from a chat: done at the end, no one else's start playing.
+            if (viewing.authorId === user._id || viewing.startId) return setViewing(null);
             const i = groups.findIndex((g) => g.authorId === viewing.authorId);
             const next = groups[i + 1];
             setViewing(next ? { authorId: next.authorId } : null);
@@ -195,11 +235,27 @@ export function StatusTray() {
 
 // Remembered for the session: once someone mutes a story video, the next one starts muted too.
 let storySound = true;
+
+// Each story counts once per person; a report that failed is retried the next time it's shown.
+const reportedViews = new Set<string>();
+function reportView(id: string) {
+  if (reportedViews.has(id)) return;
+  reportedViews.add(id);
+  void api.post(`/chat/statuses/${id}/view`).catch(() => reportedViews.delete(id));
+}
+
+function viewsLabel(n: number): string {
+  if (n === 0) return 'لا مشاهدات بعد';
+  if (n === 1) return 'مشاهدة واحدة';
+  if (n === 2) return 'مشاهدتان';
+  return n <= 10 ? `${n} مشاهدات` : `${n} مشاهدة`;
+}
 // A video that stops advancing this long (dead stream, stalled network) is treated as failed.
 const VIDEO_STALL_MS = 15_000;
 
 function StatusViewer({
   items,
+  startIndex,
   own,
   onSeen,
   onClose,
@@ -207,18 +263,26 @@ function StatusViewer({
   onNextAuthor,
 }: {
   items: ChatStatus[];
+  startIndex: number;
   own: boolean;
   onSeen: (id: string) => void;
   onClose: () => void;
   onDeleted: (id: string) => void;
   onNextAuthor: () => void;
 }) {
-  const { socket } = useSocket();
   const { showToast } = useToast();
-  const [index, setIndex] = useState(0);
+  const [index, setIndex] = useState(startIndex);
   const [paused, setPaused] = useState(false);
   const [reply, setReply] = useState('');
   const [sending, setSending] = useState(false);
+  const [replyFocused, setReplyFocused] = useState(false);
+  // The emoji that floats up after a quick reaction.
+  const [burst, setBurst] = useState<{ emoji: string; key: number } | null>(null);
+  // Feedback shown on the story itself -- the app's toasts sit underneath this full-screen layer.
+  const [notice, setNotice] = useState<{ text: string; error: boolean; key: number } | null>(null);
+  // Your own story: who watched it (fetched when the sheet opens).
+  const [viewersOpen, setViewersOpen] = useState(false);
+  const [viewers, setViewers] = useState<StatusViewerEntry[] | null>(null);
   const [progress, setProgress] = useState(0);
   const [muted, setMuted] = useState(!storySound);
   const [buffering, setBuffering] = useState(false);
@@ -237,15 +301,16 @@ function StatusViewer({
   // Photos and text run on a fixed clock; so does a video that won't play, so the story moves on.
   const timed = !videoUrl || videoFailed;
 
-  // Restart the clock whenever the story changes.
+  // Restart the clock whenever the story changes (and count the view -- never your own).
   useEffect(() => {
     onSeen(item._id);
+    if (!own) reportView(item._id);
     startedAt.current = Date.now();
     elapsedBeforePause.current = 0;
     setProgress(0);
     setVideoFailed(false);
     setNeedsTap(false);
-  }, [item._id, onSeen]);
+  }, [item._id, onSeen, own]);
 
   useEffect(() => {
     if (!timed) return;
@@ -318,11 +383,15 @@ function StatusViewer({
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') onClose();
+      if (e.key !== 'Escape') return;
+      if (viewersOpen) {
+        setViewersOpen(false);
+        setPaused(false);
+      } else onClose();
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [onClose, viewersOpen]);
 
   function step(delta: 1 | -1) {
     if (delta === 1) {
@@ -353,42 +422,75 @@ function StatusViewer({
       .catch(() => undefined);
   }
 
+  useEffect(() => {
+    if (!notice) return;
+    const t = setTimeout(() => setNotice(null), notice.error ? 3500 : 1800);
+    return () => clearTimeout(t);
+  }, [notice]);
+
+  function flash(text: string, error = false) {
+    setNotice({ text, error, key: Date.now() });
+  }
+
   async function remove() {
     try {
       await api.delete(`/chat/statuses/${item._id}`);
       onDeleted(item._id);
-      showToast('تم حذف الحالة.');
-      if (items.length <= 1) onClose();
-      else setIndex((i) => Math.max(0, Math.min(i, items.length - 2)));
+      if (items.length <= 1) {
+        showToast('تم حذف الحالة.');
+        onClose();
+      } else {
+        flash('تم حذف الحالة.');
+        setIndex((i) => Math.max(0, Math.min(i, items.length - 2)));
+      }
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر حذف الحالة.', 'error');
+      flash(err instanceof ApiError ? err.message : 'تعذّر حذف الحالة.', true);
     }
   }
 
-  // A reply is a DM to the author, quoting what it answers.
+  // A reply lands in the private chat with the author, with the story attached as a card.
   async function sendReply() {
     const text = reply.trim();
     if (!text || sending) return;
-    if (!socket?.connected) {
-      showToast('لا يوجد اتصال الآن — حاول بعد لحظات.', 'error');
-      return;
-    }
     setSending(true);
     try {
-      const conversation = await api.post<{ _id: string }>('/chat/conversations', { participantIds: [author._id] });
-      const quoted = item.text
-        ? `«${item.text.slice(0, 80)}${item.text.length > 80 ? '…' : ''}»`
-        : videoUrl
-          ? '«فيديو»'
-          : '«صورة»';
-      socket.emit('sendMessage', { conversationId: conversation._id, text: `↩️ ردًا على حالتك ${quoted}\n${text}` });
+      await api.post(`/chat/statuses/${item._id}/reply`, { text });
       setReply('');
-      showToast('تم إرسال ردك.');
+      flash('تم إرسال ردك.');
     } catch (err) {
-      showToast(err instanceof ApiError ? err.message : 'تعذّر إرسال الرد.', 'error');
+      flash(err instanceof ApiError ? err.message : 'تعذّر إرسال الرد.', true);
     } finally {
       setSending(false);
     }
+  }
+
+  // A quick reaction: floats up on the story, shows next to you in the author's viewer list and
+  // reaches their chat too.
+  async function react(emoji: string) {
+    setBurst({ emoji, key: Date.now() });
+    try {
+      await api.post(`/chat/statuses/${item._id}/react`, { emoji });
+      flash(`تم إرسال ${emoji} إلى ${author.name.split(/\s+/)[0]}.`);
+    } catch (err) {
+      flash(err instanceof ApiError ? err.message : 'تعذّر إرسال التفاعل.', true);
+    }
+  }
+
+  async function openViewers() {
+    setViewersOpen(true);
+    setPaused(true);
+    setViewers(null);
+    try {
+      setViewers(await api.get<StatusViewerEntry[]>(`/chat/statuses/${item._id}/viewers`));
+    } catch {
+      setViewers([]);
+      flash('تعذّر تحميل المشاهدات.', true);
+    }
+  }
+
+  function closeViewers() {
+    setViewersOpen(false);
+    setPaused(false);
   }
 
   return createPortal(
@@ -515,6 +617,21 @@ function StatusViewer({
         {videoUrl && !videoFailed && buffering && !needsTap && (
           <Loader2 aria-hidden className="pointer-events-none absolute h-10 w-10 animate-spin text-white/80" />
         )}
+        <AnimatePresence>
+          {burst && (
+            <motion.span
+              key={burst.key}
+              aria-hidden
+              initial={{ opacity: 0, scale: 0.4, y: 40 }}
+              animate={{ opacity: [0, 1, 1, 0], scale: [0.4, 2.2, 2.4, 2.6], y: [40, -20, -60, -120] }}
+              transition={{ duration: 1.2, times: [0, 0.25, 0.7, 1] }}
+              onAnimationComplete={() => setBurst(null)}
+              className="pointer-events-none absolute z-20 text-6xl"
+            >
+              {burst.emoji}
+            </motion.span>
+          )}
+        </AnimatePresence>
         <button type="button" aria-label="التالي" onClick={() => step(1)} className="absolute inset-y-0 start-1/2 end-0 z-10 cursor-pointer" />
         <button type="button" aria-label="السابق" onClick={() => step(-1)} className="absolute inset-y-0 start-0 end-1/2 z-10 cursor-pointer" />
         {videoUrl && !videoFailed && needsTap && (
@@ -530,32 +647,175 @@ function StatusViewer({
       </div>
 
       {!own && (
-        <form
-          className="flex items-center gap-2 px-3 pb-[calc(0.75rem+var(--safe-bottom))] pt-2"
-          onSubmit={(e) => {
-            e.preventDefault();
-            void sendReply();
-          }}
-        >
-          <input
-            value={reply}
-            onChange={(e) => setReply(e.target.value)}
-            onFocus={() => setPaused(true)}
-            onBlur={() => setPaused(false)}
-            placeholder={`رد على ${author.name.split(/\s+/)[0]}…`}
-            maxLength={1000}
-            className="h-11 min-w-0 flex-1 rounded-full bg-white/15 px-4 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-white/40"
-          />
-          <button
-            type="submit"
-            disabled={!reply.trim() || sending}
-            aria-label="إرسال الرد"
-            className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-black disabled:opacity-40"
+        <div className="px-3 pb-[calc(0.75rem+var(--safe-bottom))] pt-2">
+          {/* Quick reactions while the reply box is focused. mouseDown keeps the box focused, so
+              the row doesn't vanish under the finger before the tap lands. */}
+          <AnimatePresence>
+            {replyFocused && (
+              <motion.div
+                initial={{ opacity: 0, y: 8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: 8 }}
+                className="mb-2.5 flex justify-center gap-1.5"
+              >
+                {STATUS_REACTIONS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    aria-label={`تفاعل ${emoji}`}
+                    onMouseDown={(e) => e.preventDefault()}
+                    onClick={() => void react(emoji)}
+                    className="flex h-11 w-11 items-center justify-center rounded-full bg-white/10 text-2xl transition-transform hover:scale-110 active:scale-95"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </motion.div>
+            )}
+          </AnimatePresence>
+          <form
+            className="flex items-center gap-2"
+            onSubmit={(e) => {
+              e.preventDefault();
+              void sendReply();
+            }}
           >
-            {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 rtl:-scale-x-100" />}
-          </button>
-        </form>
+            <input
+              value={reply}
+              onChange={(e) => setReply(e.target.value)}
+              onFocus={() => {
+                setPaused(true);
+                setReplyFocused(true);
+              }}
+              onBlur={() => {
+                setPaused(false);
+                setReplyFocused(false);
+              }}
+              placeholder={`رد على ${author.name.split(/\s+/)[0]}…`}
+              maxLength={1000}
+              className="h-11 min-w-0 flex-1 rounded-full bg-white/15 px-4 text-sm text-white placeholder:text-white/60 focus:outline-none focus:ring-2 focus:ring-white/40"
+            />
+            {reply.trim() ? (
+              <button
+                type="submit"
+                disabled={sending}
+                aria-label="إرسال الرد"
+                className="flex h-11 w-11 items-center justify-center rounded-full bg-white text-black disabled:opacity-40"
+              >
+                {sending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Send className="h-4 w-4 rtl:-scale-x-100" />}
+              </button>
+            ) : (
+              <button
+                type="button"
+                aria-label="تفاعل ❤️"
+                onClick={() => void react('❤️')}
+                className="flex h-11 w-11 items-center justify-center rounded-full text-white transition-transform hover:bg-white/10 active:scale-90"
+              >
+                <Heart className="h-6 w-6" />
+              </button>
+            )}
+          </form>
+        </div>
       )}
+
+      {own && (
+        <div className="flex justify-center px-3 pb-[calc(0.75rem+var(--safe-bottom))] pt-2">
+          <button
+            type="button"
+            onClick={() => void openViewers()}
+            className="flex items-center gap-2 rounded-full bg-white/15 px-4 py-2 text-sm font-semibold backdrop-blur transition-colors hover:bg-white/25"
+          >
+            <Eye className="h-4 w-4" />
+            {viewsLabel(item.viewCount ?? 0)}
+          </button>
+        </div>
+      )}
+
+      {/* Who watched your story -- newest first, with the reaction each person left. */}
+      <AnimatePresence>
+        {viewersOpen && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={closeViewers}
+            className="absolute inset-0 z-30 flex flex-col justify-end bg-black/50"
+          >
+            <motion.div
+              role="dialog"
+              aria-label="من شاهد حالتك"
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', stiffness: 420, damping: 38 }}
+              onClick={(e) => e.stopPropagation()}
+              className="flex max-h-[70%] flex-col rounded-t-3xl bg-surface pb-[var(--safe-bottom)] text-foreground"
+            >
+              <div className="flex items-center gap-2 border-b border-border/60 px-4 py-3">
+                <Eye className="h-4 w-4 text-accent" />
+                <p className="flex-1 text-sm font-semibold">{viewers ? `شاهدها ${viewers.length}` : 'المشاهدات'}</p>
+                <button
+                  type="button"
+                  onClick={closeViewers}
+                  aria-label="إغلاق"
+                  className="rounded-full p-1.5 text-muted-foreground hover:bg-surface-2"
+                >
+                  <X className="h-4 w-4" />
+                </button>
+              </div>
+              <div className="min-h-[8rem] overflow-y-auto p-2">
+                {!viewers ? (
+                  <div className="flex h-28 items-center justify-center">
+                    <Loader2 className="h-5 w-5 animate-spin text-accent" />
+                  </div>
+                ) : viewers.length === 0 ? (
+                  <p className="py-10 text-center text-sm text-muted-foreground">لم يشاهدها أحد بعد.</p>
+                ) : (
+                  viewers.map((v) => (
+                    <div key={v.user._id} className="flex items-center gap-3 rounded-xl px-2 py-2">
+                      <Avatar src={assetUrl(v.user.photoUrl)} name={v.user.name} size="md" />
+                      <div className="min-w-0 flex-1">
+                        <p dir="auto" className="truncate text-sm font-medium">
+                          {v.user.name}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">{timeAgo(v.at)}</p>
+                      </div>
+                      {v.reaction && (
+                        <span className="text-xl" aria-label={`تفاعل ${v.reaction}`}>
+                          {v.reaction}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {notice && (
+          <motion.div
+            key={notice.key}
+            role="status"
+            aria-live={notice.error ? 'assertive' : 'polite'}
+            initial={{ opacity: 0, y: -8 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            className="pointer-events-none absolute inset-x-0 top-[calc(env(safe-area-inset-top)+4.25rem)] z-40 flex justify-center px-6"
+          >
+            <span
+              className={cn(
+                'rounded-full px-4 py-2 text-center text-sm font-medium text-white shadow-lg backdrop-blur',
+                notice.error ? 'bg-danger/90' : 'bg-black/70',
+              )}
+            >
+              {notice.text}
+            </span>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </motion.div>,
     document.body,
   );
