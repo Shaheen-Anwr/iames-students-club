@@ -637,7 +637,8 @@ function BubbleCard({
   const text = message.text ?? '';
   const hasText = !!text.trim();
   const starred = !!message.starredBy?.includes(currentUserId);
-  const emojiSize = !message.replyTo && !attachments.length && !message.poll && !message.forwarded ? bigEmojiCount(text) : 0;
+  const emojiSize =
+    !message.replyTo && !message.card && !attachments.length && !message.poll && !message.forwarded ? bigEmojiCount(text) : 0;
   const previewUrl = !attachments.length && !message.poll ? extractFirstUrl(text) : null;
   const mediaOnly =
     !hasText &&
