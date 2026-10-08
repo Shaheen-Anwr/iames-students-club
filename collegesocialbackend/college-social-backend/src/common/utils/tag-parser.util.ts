@@ -4,6 +4,12 @@
 // embeds their id directly rather than relying on fuzzy name matching at parse time.
 export const MENTION_TOKEN_RE = /@\[[^\]]+\]\(([0-9a-fA-F]{24})\)/g;
 
+// For anything a person reads outside the app's own renderer (notification previews, phone
+// pushes): `@[Display Name](id)` -> `@Display Name`. Also covers the @رافد token.
+export function mentionsToPlainText(text: string): string {
+  return text.replace(/@\[([^\]]+)\]\((?:[0-9a-fA-F]{24}|rafed)\)/g, '@$1');
+}
+
 // Plain `#word` hashtags, letters/digits/underscore only (matches how Instagram/Twitter scope a tag).
 export const HASHTAG_RE = /#([a-zA-Z0-9_]+)/g;
 

@@ -500,7 +500,7 @@ export class ChatService {
     // "Send without sound" skips notifications entirely -- the message still lands, unread badge
     // and all; nobody's phone buzzes.
     if (!extras.silent) {
-      this.notifyParticipants(conversation, senderId, previewText, new Set(validMentionIds));
+      this.notifyParticipants(conversation, senderId, previewText, new Set(validMentionIds), message);
     }
 
     // Lets other modules react to what was said (e.g. AiModule answers an @رافد mention).
@@ -765,6 +765,7 @@ export class ChatService {
     senderId: string,
     previewText: string,
     mentionedIds: Set<string>,
+    message?: MessageDocument,
   ): void {
     const now = Date.now();
     // Only groups can be muted -- a private chat always notifies (any mute left over from before
@@ -780,6 +781,13 @@ export class ChatService {
     if (!recipients.length) return;
 
     const conversationId = String(conversation._id);
+    // What the phone notification shows beyond the stored row: group name/photo, the photo.
+    const push = {
+      isGroup: !!conversation.isGroup,
+      groupName: conversation.isGroup ? conversation.name ?? null : null,
+      groupIcon: conversation.isGroup ? conversation.groupIcon ?? null : null,
+      imageUrl: message?.attachments?.find((a) => a.type === 'image')?.url ?? null,
+    };
     void (async () => {
       for (let i = 0; i < recipients.length; i += NOTIFY_BATCH) {
         // A specifically @mentioned participant gets the more specific 'mention' notification
@@ -792,6 +800,7 @@ export class ChatService {
               type: mentionedIds.has(recipientId) ? 'mention' : 'chat_message',
               conversationId,
               preview: previewText,
+              push,
             }),
           ),
         );
@@ -1008,7 +1017,7 @@ export class ChatService {
         })
         .exec();
       // One notification per target conversation, not one per forwarded message.
-      this.notifyParticipants(conversation, userId, previewText, new Set());
+      this.notifyParticipants(conversation, userId, previewText, new Set(), last);
     }
     return results;
   }

@@ -8,10 +8,12 @@
 //
 // Bump VERSION on any change here so `activate` drops the old caches.
 
-const VERSION = 'v6';
+const VERSION = 'v7';
 const STATIC_CACHE = `iaems-static-${VERSION}`;
 const PAGES_CACHE = `iaems-pages-${VERSION}`;
 const OFFLINE_URL = '/offline.html';
+// Not versioned: "when did this chat last ring" must survive service-worker updates.
+const NOTIFY_CACHE = 'iaems-notify-state';
 const PRECACHE = [OFFLINE_URL, '/manifest.json', '/icons/icon-192.png', '/icons/badge-96.png'];
 
 self.addEventListener('install', (event) => {
@@ -30,7 +32,7 @@ self.addEventListener('activate', (event) => {
       .keys()
       .then((keys) =>
         Promise.all(
-          keys.filter((k) => k !== STATIC_CACHE && k !== PAGES_CACHE).map((k) => caches.delete(k)),
+          keys.filter((k) => k !== STATIC_CACHE && k !== PAGES_CACHE && k !== NOTIFY_CACHE).map((k) => caches.delete(k)),
         ),
       )
       .then(() => self.clients.claim()),
@@ -96,11 +98,45 @@ self.addEventListener('message', (event) => {
 /* ------------------------------- Web Push -------------------------------- */
 
 // A chat push carries `conversationId` and a per-conversation `tag` (chat-<id>), so each chat
-// gets one notification that updates in place -- `renotify` makes every update ring, vibrate and
-// pop up again (without it a replacement is silent). Several unread messages from one chat stack
-// into that notification's body, like WhatsApp. While the app is open in front of the user the
-// page plays its own sound and in-app banner instead (lib/chat-sounds.ts), so a chat push is
-// skipped then -- Chrome only forces a notification when no window of the site is visible.
+// gets one notification that updates in place, worded like a messenger (sender / group name,
+// "Name: message" lines, the sender's photo, the message's photo). Several unread messages stack
+// into that notification's body. Ringing:
+//   - private chats and @mentions ring (sound, vibration, pop-up) on every message;
+//   - a group rings at most once per GROUP_QUIET_MS -- later messages in that window update the
+//     notification silently ("+3" and the newest lines), so a busy class group can't buzz all day
+//     and push people into blocking notifications altogether.
+// While the app is open in front of the user the page plays its own sound and shows its chat
+// bubble instead (ChatAlertsHost), so a chat push is skipped then -- Chrome only forces a
+// notification when no window of the site is visible.
+const GROUP_QUIET_MS = 3 * 60 * 1000;
+
+const notifyKey = (tag) => `/__notify/${encodeURIComponent(tag)}`;
+
+async function lastRangAt(tag) {
+  try {
+    const hit = await (await caches.open(NOTIFY_CACHE)).match(notifyKey(tag));
+    return hit ? Number(await hit.text()) || 0 : 0;
+  } catch {
+    return 0;
+  }
+}
+
+async function rememberRing(tag, at) {
+  try {
+    await (await caches.open(NOTIFY_CACHE)).put(notifyKey(tag), new Response(String(at)));
+  } catch {
+    /* storage full / unavailable: worst case the next group message rings too */
+  }
+}
+
+async function forgetRing(tag) {
+  try {
+    await (await caches.open(NOTIFY_CACHE)).delete(notifyKey(tag));
+  } catch {
+    /* ignore */
+  }
+}
+
 self.addEventListener('push', (event) => {
   if (!event.data) return;
   let data;
@@ -128,35 +164,76 @@ async function showPush(data) {
     }
   }
 
-  return self.registration.showNotification(count > 1 ? `${data.title} (${count})` : data.title, {
+  const now = Date.now();
+  const quiet = Boolean(data.group && !data.mention && data.tag) && now - (await lastRangAt(data.tag)) < GROUP_QUIET_MS;
+  if (data.tag && !quiet) await rememberRing(data.tag, now);
+
+  // Two buttons (Chrome's limit). Web notifications can't take typed replies, so "رد" opens the
+  // chat with the keyboard up; the others act without opening the app (POST /api/chat/push-action).
+  const actions = data.actionToken
+    ? data.group
+      ? [
+          { action: 'read', title: 'تمت القراءة' },
+          { action: 'mute', title: 'كتم ساعة' },
+        ]
+      : [
+          { action: 'reply', title: 'رد' },
+          { action: 'read', title: 'تمت القراءة' },
+        ]
+    : [];
+
+  const options = {
     body: lines.filter(Boolean).join('\n'),
     icon: data.icon,
     // Android draws the status-bar icon from this image's alpha channel -- a white silhouette.
     badge: '/icons/badge-96.png',
     tag: data.tag,
-    renotify: Boolean(data.tag),
+    renotify: Boolean(data.tag) && !quiet,
     // Chat stays on screen until the user acts on it (desktop; a phone keeps it in the shade).
     requireInteraction: Boolean(data.conversationId),
-    silent: false,
-    vibrate: [180, 80, 180],
-    timestamp: Date.now(),
+    silent: quiet,
+    timestamp: now,
     lang: 'ar',
     dir: 'rtl',
-    data: { url: data.url, conversationId: data.conversationId || null, lines, count },
-  });
+    actions,
+    data: { url: data.url, conversationId: data.conversationId || null, lines, count, actionToken: data.actionToken || null },
+  };
+  // A silent notification may not carry a vibration pattern (Chrome rejects it).
+  if (!quiet) options.vibrate = [180, 80, 180];
+  if (data.image) options.image = data.image;
+
+  return self.registration.showNotification(count > 1 ? `${data.title} (${count})` : data.title, options);
 }
 
 // Tapping a notification lands in the installed app, not a browser tab. The target is rebuilt on
 // this worker's own origin (always inside the manifest scope, whatever host the backend put in the
 // payload); an open app window is reused (client-side route change, no reload); and on a phone a
 // plain browser tab is never picked -- clients.openWindow() launches the installed app there.
+// The "تمت القراءة" / "كتم ساعة" buttons act right here without opening anything.
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
-  const raw = event.notification.data?.url;
+  const notification = event.notification;
+  const data = notification.data || {};
+  notification.close();
+
+  if ((event.action === 'read' || event.action === 'mute') && data.actionToken) {
+    event.waitUntil(
+      fetch('/api/chat/push-action', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ token: data.actionToken, action: event.action }),
+      })
+        .catch(() => undefined)
+        .then(() => (data.conversationId ? forgetRing(`chat-${data.conversationId}`) : undefined)),
+    );
+    return;
+  }
+
+  const raw = data.url;
   if (!raw) return;
   let url;
   try {
     const parsed = new URL(raw, self.location.origin);
+    if (event.action === 'reply') parsed.searchParams.set('reply', '1');
     url = new URL(`${parsed.pathname}${parsed.search}${parsed.hash}`, self.location.origin).href;
   } catch {
     return;

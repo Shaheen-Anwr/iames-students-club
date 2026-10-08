@@ -6,7 +6,9 @@ import { Notification, NotificationDocument, NotificationType, NOTIFICATION_TYPE
 import { User, UserDocument } from '../users/schemas/user.schema';
 import { RealtimeEmitterService } from '../realtime/realtime-emitter.service';
 import { PushService } from '../push/push.service';
-import { buildPushPayload } from '../push/push-payload.util';
+import { buildPushPayload, type ChatPushContext } from '../push/push-payload.util';
+import { signPushActionToken } from '../push/push-action-token';
+import { mentionsToPlainText } from '../common/utils/tag-parser.util';
 import { isForcedChatPush, pushSuppressed, type NotificationPrefs } from '../common/utils/notification-prefs.util';
 import { UpdateNotificationPrefsDto } from './dto/update-notification-prefs.dto';
 
@@ -30,6 +32,8 @@ interface CreateNotificationInput {
   preview?: string | null;
   /** Explicit click target, for destinations no id above can express (e.g. one chat message). */
   link?: string | null;
+  /** Chat messages only: extra context for the phone notification (never stored). */
+  push?: ChatPushContext;
 }
 
 @Injectable()
@@ -55,7 +59,8 @@ export class NotificationsService {
       postId: input.postId ?? null,
       reelId: input.reelId ?? null,
       questionId: input.questionId ?? null,
-      preview: input.preview ?? null,
+      // Readable as-is in the bell, the notifications page and the phone push.
+      preview: input.preview ? mentionsToPlainText(input.preview) : null,
       link: input.link ?? null,
     }).save();
 
@@ -65,7 +70,7 @@ export class NotificationsService {
     // The in-app bell row is always written above. The PHONE push, though, respects the
     // recipient's per-type mutes + quiet hours (profile > الإشعارات). Fire-and-forget -- a push
     // failure must never break notification creation itself.
-    void this.maybePush(input.recipient.toString(), input.type, populated);
+    void this.maybePush(input.recipient.toString(), input.type, populated, input.push);
 
     return populated;
   }
@@ -97,7 +102,12 @@ export class NotificationsService {
     return this.getPreferences(userId);
   }
 
-  private async maybePush(recipientId: string, type: NotificationType, populated: NotificationDocument): Promise<void> {
+  private async maybePush(
+    recipientId: string,
+    type: NotificationType,
+    populated: NotificationDocument,
+    chat?: ChatPushContext,
+  ): Promise<void> {
     try {
       // Chat always goes out (see isForcedChatPush); everything else respects the user's switches.
       if (!isForcedChatPush(type, populated.conversationId)) {
@@ -106,7 +116,10 @@ export class NotificationsService {
         if (pushSuppressed(prefs?.notificationPrefs, type, offset)) return;
       }
       const frontendUrl = this.config.get<string>('frontendUrl')!;
-      await this.pushService.sendToUser(recipientId, buildPushPayload(populated, frontendUrl));
+      const conversationId = populated.conversationId?.toString();
+      const actionToken =
+        chat && conversationId ? signPushActionToken(this.config.get<string>('jwt.secret')!, recipientId, conversationId) : undefined;
+      await this.pushService.sendToUser(recipientId, buildPushPayload(populated, frontendUrl, chat ? { ...chat, actionToken } : undefined));
     } catch (err) {
       this.logger.warn(`Push send failed: ${err instanceof Error ? err.message : err}`);
     }

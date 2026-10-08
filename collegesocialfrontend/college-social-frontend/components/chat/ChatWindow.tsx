@@ -876,6 +876,16 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, loading]);
 
+  // "رد" on a phone notification opens the chat with ?reply=1: put the cursor in the composer.
+  const wantsReply = searchParams?.get('reply') === '1';
+  useEffect(() => {
+    if (!wantsReply) return;
+    const timer = setTimeout(() => composerRef.current?.focus(), 250);
+    router.replace(`/chat/${conversationId}`, { scroll: false });
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [wantsReply]);
+
   // A deep link (?m=<id>&t=<iso>) while this chat is already open -- e.g. a search hit from the list.
   const deepLink = searchParams?.get('m');
   useEffect(() => {

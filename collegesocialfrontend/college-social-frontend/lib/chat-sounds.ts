@@ -103,11 +103,12 @@ export function syncChatAlertConversations(list: Conversation[], userId: string)
   for (const conversation of list) meta.set(conversation._id, { conversation });
 }
 
-export function conversationAlertInfo(conversationId: string): { muted: boolean; groupName: string | null } {
+export function conversationAlertInfo(conversationId: string): { muted: boolean; groupName: string | null; groupIcon: string | null } {
   const conversation = meta.get(conversationId)?.conversation;
-  if (!conversation || !metaUserId) return { muted: false, groupName: null };
+  if (!conversation || !metaUserId) return { muted: false, groupName: null, groupIcon: null };
   return {
     muted: isMuted(conversation, metaUserId),
     groupName: conversation.isGroup ? conversation.name ?? null : null,
+    groupIcon: conversation.isGroup ? conversation.groupIcon ?? null : null,
   };
 }

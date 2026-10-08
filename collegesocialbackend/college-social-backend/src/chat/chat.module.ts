@@ -29,6 +29,7 @@ import { Listing, ListingSchema } from '../marketplace/schemas/listing.schema';
 import { ChatStatus, ChatStatusSchema } from './schemas/chat-status.schema';
 import { VoiceRoom, VoiceRoomSchema } from './schemas/voice-room.schema';
 import { ChatStatusController } from './chat-status.controller';
+import { ChatPushActionsController } from './chat-push-actions.controller';
 import { ChatStatusService } from './chat-status.service';
 import { ChatVoiceRoomsService } from './chat-voice-rooms.service';
 
@@ -57,7 +58,7 @@ import { ChatVoiceRoomsService } from './chat-voice-rooms.service';
     StreamModule,
     GamificationModule, // points for the daily question (ChatService.votePoll)
   ],
-  controllers: [ChatController, ChatStatusController],
+  controllers: [ChatController, ChatStatusController, ChatPushActionsController],
   providers: [
     ChatService,
     ChatGateway,

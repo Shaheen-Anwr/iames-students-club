@@ -109,8 +109,11 @@ export async function closeChatNotifications(conversationId: string): Promise<vo
     const registration = await navigator.serviceWorker.getRegistration();
     const open = await registration?.getNotifications({ tag: `chat-${conversationId}` });
     open?.forEach((n) => n.close());
+    // sw.js keeps groups quiet for a few minutes after they ring; having read the chat, the next
+    // message should ring again (same cache name + key format as sw.js).
+    await (await caches.open('iaems-notify-state')).delete(`/__notify/${encodeURIComponent(`chat-${conversationId}`)}`);
   } catch {
-    /* notifications unsupported here */
+    /* notifications / Cache Storage unsupported here */
   }
 }
 

@@ -16,9 +16,38 @@ export interface PushPayload {
   urgency?: 'normal' | 'high';
   /** Seconds the push service keeps trying an offline device before dropping the push. */
   ttl?: number;
+  /** Chat: a group conversation -- the SW rings for a group at most once per quiet window. */
+  group?: boolean;
+  /** Chat: the recipient was @mentioned -- always rings, even inside a group's quiet window. */
+  mention?: boolean;
+  /** Chat: the message's photo, shown inside the notification (Android / desktop). */
+  image?: string;
+  /** Chat: signed token for the notification's buttons (see push-action-token.ts). */
+  actionToken?: string;
+}
+
+/** What a chat notification needs beyond the stored notification row (never persisted). */
+export interface ChatPushContext {
+  isGroup: boolean;
+  groupName: string | null;
+  groupIcon: string | null;
+  /** First photo attached to the message, if any. */
+  imageUrl: string | null;
 }
 
 const DAY_SECONDS = 24 * 60 * 60;
+
+// A face-cropped round avatar for the notification icon -- only for Cloudinary photos (anything
+// else falls back to the app icon).
+function roundAvatar(url: string | null | undefined): string | null {
+  if (!url || !url.startsWith('https://res.cloudinary.com/') || !url.includes('/upload/')) return null;
+  return url.replace('/upload/', '/upload/c_thumb,g_face,w_192,h_192,r_max,f_png/');
+}
+
+function notificationImage(url: string | null | undefined): string | undefined {
+  if (!url || !url.startsWith('https://res.cloudinary.com/') || !url.includes('/image/upload/')) return undefined;
+  return url.replace('/upload/', '/upload/c_limit,w_720,q_auto,f_jpg/');
+}
 
 // Arabic label per notification type, shown as the push title's action phrase (prefixed with the
 // actor's name). Mirrors NOTIFICATION_LABELS in the frontend's NotificationBell.tsx -- kept in
@@ -90,8 +119,13 @@ function relativeHref(notification: NotificationDocument): string {
   }
 }
 
-export function buildPushPayload(notification: NotificationDocument, frontendUrl: string): PushPayload {
-  const actorName = (notification.actor as { name?: string } | null)?.name ?? 'شخص ما';
+export function buildPushPayload(
+  notification: NotificationDocument,
+  frontendUrl: string,
+  chat?: ChatPushContext & { actionToken?: string },
+): PushPayload {
+  const actor = notification.actor as { name?: string; photoUrl?: string | null } | null;
+  const actorName = actor?.name ?? 'شخص ما';
   const payload: PushPayload = {
     title: notification.type === 'chat_reminder' ? `⏰ ${LABELS.chat_reminder}` : `${actorName} ${LABELS[notification.type]}`,
     body: notification.preview ?? '',
@@ -102,9 +136,27 @@ export function buildPushPayload(notification: NotificationDocument, frontendUrl
 
   // Messages: one notification per conversation/channel (WhatsApp-style), delivered urgently.
   // A single shared 'chat_message' tag used to fold every chat into one silent notification.
+  // Worded like a messenger: a private chat is titled with the sender, a group with its name and
+  // each line says who wrote it; the icon is the sender's (or the group's) photo.
   const conversationId = notification.conversationId?.toString();
   if ((notification.type === 'chat_message' || notification.type === 'mention') && conversationId) {
-    return { ...payload, tag: `chat-${conversationId}`, conversationId, urgency: 'high', ttl: DAY_SECONDS };
+    const mention = notification.type === 'mention';
+    const group = !!chat?.isGroup;
+    const preview = notification.preview ?? '';
+    return {
+      ...payload,
+      title: group && chat?.groupName ? chat.groupName : actorName,
+      body: group ? `${actorName}${mention ? ' أشار إليك' : ''}: ${preview}` : preview,
+      icon: roundAvatar(group ? chat?.groupIcon ?? actor?.photoUrl : actor?.photoUrl) ?? payload.icon,
+      tag: `chat-${conversationId}`,
+      conversationId,
+      group,
+      mention,
+      ...(notificationImage(chat?.imageUrl) ? { image: notificationImage(chat?.imageUrl) } : {}),
+      ...(chat?.actionToken ? { actionToken: chat.actionToken } : {}),
+      urgency: 'high',
+      ttl: DAY_SECONDS,
+    };
   }
   if (notification.type === 'channel_message') {
     const channelId = notification.channelId?.toString();
