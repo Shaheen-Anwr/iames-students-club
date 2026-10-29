@@ -1585,8 +1585,9 @@ export function ChatWindow({ conversationId }: { conversationId: string }) {
         >
           {/* Header (glass) / selection bar */}
           {/* On phones this is the top edge of the screen (the app bar is hidden in a thread), so it
-              also clears the status bar / notch of the installed PWA. */}
-          <div className="relative z-30 border-b border-border/50 bg-surface/75 pt-[env(safe-area-inset-top)] backdrop-blur-xl backdrop-saturate-150 md:pt-0">
+              also clears the status bar / notch of the installed PWA -- unless the site notice
+              above it already does (AppShell zeroes --shell-safe-top then). */}
+          <div className="relative z-30 border-b border-border/50 bg-surface/75 pt-[var(--shell-safe-top,env(safe-area-inset-top))] backdrop-blur-xl backdrop-saturate-150 md:pt-0">
             {selectionMode ? (
               <SelectionBar
                 count={selectedMessages.length}

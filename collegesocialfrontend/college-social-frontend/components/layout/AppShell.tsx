@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { Spinner } from '@/components/ui/Spinner';
 import { SetDepartmentBanner } from './SetDepartmentBanner';
 import { PushRequiredBanner } from './PushRequiredBanner';
+import { SITE_NOTICE, SiteNotice } from './SiteNotice';
 import { TopNavbar } from './TopNavbar';
 import { MobileNav } from './MobileNav';
 import { AiFab } from '@/components/ai/AiFab';
@@ -43,7 +44,12 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex h-[var(--app-height,100dvh)] flex-col overflow-hidden bg-background">
+    <div
+      className="flex h-[var(--app-height,100dvh)] flex-col overflow-hidden bg-background"
+      // The site notice is the top edge and clears the status bar itself, so the chat header (the
+      // top edge of a phone thread otherwise) must not pad for it again.
+      style={SITE_NOTICE ? ({ '--shell-safe-top': '0px' } as React.CSSProperties) : undefined}
+    >
       {/* Keyboard/screen-reader shortcut past the nav straight to the page content. Visually
           hidden until focused. */}
       <a
@@ -52,6 +58,8 @@ export function AppShell({ children }: { children: React.ReactNode }) {
       >
         تخطَّ إلى المحتوى
       </a>
+      {/* On every screen, an open phone conversation included. */}
+      <SiteNotice />
       {/* Phones: an open conversation is full-screen -- its own header is the top bar (with the
           back button), like a native messenger. */}
       <div className={inChatThread ? 'hidden md:contents' : 'contents'}>

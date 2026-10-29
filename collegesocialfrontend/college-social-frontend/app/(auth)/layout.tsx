@@ -1,5 +1,6 @@
 import { MessagesSquare, Share2, ShieldCheck } from 'lucide-react';
 import { Logo } from '@/components/ui/Logo';
+import { SiteNotice } from '@/components/layout/SiteNotice';
 
 const FEATURES = [
   { icon: Share2, text: 'شارك محاضراتك وملخصاتك وتسجيلاتك في مكان واحد' },
@@ -9,37 +10,41 @@ const FEATURES = [
 
 export default function AuthLayout({ children }: { children: React.ReactNode }) {
   return (
-    <div className="grid min-h-dvh grid-cols-1 lg:grid-cols-2">
-      <div className="bg-mesh relative hidden flex-col justify-between overflow-hidden bg-[#0B0C12] p-12 text-white lg:flex">
-        <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-accent/30 blur-3xl" />
-        <div className="absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-accent-2/20 blur-3xl" />
-        <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0B0C12] via-transparent to-transparent" />
+    // The site notice takes its height off the top; the two panes share the rest of the screen.
+    <div className="flex h-dvh flex-col">
+      <SiteNotice />
+      <div className="grid min-h-0 flex-1 grid-cols-1 grid-rows-[minmax(0,1fr)] lg:grid-cols-2">
+        <div className="bg-mesh relative hidden flex-col justify-between overflow-hidden bg-[#0B0C12] p-12 text-white lg:flex">
+          <div className="absolute -right-24 -top-24 h-80 w-80 rounded-full bg-accent/30 blur-3xl" />
+          <div className="absolute -bottom-32 -left-16 h-80 w-80 rounded-full bg-accent-2/20 blur-3xl" />
+          <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-[#0B0C12] via-transparent to-transparent" />
 
-        <div className="relative">
-          <Logo size="md" />
-        </div>
-
-        <div className="relative space-y-8">
-          <h1 className="text-3xl font-semibold leading-tight tracking-tight">
-            كل الجامعه في مكان واحد
-          </h1>
-          <div className="space-y-4">
-            {FEATURES.map(({ icon: Icon, text }) => (
-              <div key={text} className="flex items-center gap-3 text-white/80">
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10">
-                  <Icon className="h-4 w-4" />
-                </div>
-                <p className="text-sm">{text}</p>
-              </div>
-            ))}
+          <div className="relative">
+            <Logo size="md" />
           </div>
+
+          <div className="relative space-y-8">
+            <h1 className="text-3xl font-semibold leading-tight tracking-tight">
+              كل الجامعه في مكان واحد
+            </h1>
+            <div className="space-y-4">
+              {FEATURES.map(({ icon: Icon, text }) => (
+                <div key={text} className="flex items-center gap-3 text-white/80">
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white/10">
+                    <Icon className="h-4 w-4" />
+                  </div>
+                  <p className="text-sm">{text}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <p className="relative text-xs text-white/50">مخصصة لطلاب وأساتذة IEAMS Students Community فقط.</p>
         </div>
 
-        <p className="relative text-xs text-white/50">مخصصة لطلاب وأساتذة IEAMS Students Community فقط.</p>
-      </div>
-
-      <div className="flex h-dvh items-start justify-center overflow-y-auto bg-background px-6 py-8 sm:items-center sm:py-12">
-        <div className="w-full max-w-sm">{children}</div>
+        <div className="flex min-h-0 items-start justify-center overflow-y-auto bg-background px-6 py-8 sm:items-center sm:py-12">
+          <div className="w-full max-w-sm">{children}</div>
+        </div>
       </div>
     </div>
   );
